@@ -70,6 +70,7 @@ public sealed record Table(ObjectName Name, IReadOnlyList<Column> Columns,
     IReadOnlyList<ForeignKey> ForeignKeys, IReadOnlyList<CheckConstraint> Checks,
     IReadOnlyList<TableIndex> Indexes, long? ApproximateRowCount = null);
 
+/// <param name="CurrentValue">The last value the sequence handed out; null when it has never been used.</param>
 public sealed record Sequence(ObjectName Name, SqlServerType Type, long Start, long Increment,
     long? Min, long? Max, bool Cycle, long? CurrentValue = null);
 

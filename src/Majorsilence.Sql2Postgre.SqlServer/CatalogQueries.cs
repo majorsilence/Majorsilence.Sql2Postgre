@@ -117,7 +117,8 @@ internal static class CatalogQueries
         """;
 
     // A decimal or numeric sequence can range past bigint (PostgreSQL sequences cannot); its
-    // values are clamped to bigint's range so the read never overflows.
+    // values are clamped to bigint's range so the read never overflows. current_value is the
+    // last value handed out (last_used_value), NULL for a sequence never used.
     public const string Sequences = """
         SELECT SCHEMA_NAME(s.schema_id) AS schema_name, s.name, TYPE_NAME(s.system_type_id) AS type_name,
                s.precision, s.scale,
@@ -133,7 +134,7 @@ internal static class CatalogQueries
             CASE WHEN x.cv > 9223372036854775807 THEN 9223372036854775807 WHEN x.cv < -9223372036854775808 THEN -9223372036854775808 ELSE x.cv END AS current_value
             FROM (SELECT CAST(s.start_value AS decimal(38,0)) AS s, CAST(s.increment AS decimal(38,0)) AS i,
                          CAST(s.minimum_value AS decimal(38,0)) AS mn, CAST(s.maximum_value AS decimal(38,0)) AS mx,
-                         CAST(s.current_value AS decimal(38,0)) AS cv) x) v
+                         CAST(s.last_used_value AS decimal(38,0)) AS cv) x) v
         WHERE s.is_ms_shipped = 0
         ORDER BY schema_name, s.name;
         """;

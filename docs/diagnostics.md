@@ -221,6 +221,25 @@ PostgreSQL equivalent by hand.
 cast to `numeric` is the decimal `2.55`, which rounds to `2.6`. Values that end in 5 at the
 rounding digit can differ by one unit in the last place.
 
+## S2P7xxx — data copy and verification
+
+### S2P7001 NulCharacterRemoved (Warning)
+
+SQL Server strings may contain the NUL character (`CHAR(0)`); PostgreSQL text cannot. Each NUL
+is removed during the copy, and the message says how many in which column. Values that differed
+only by NULs are now equal, which can break a unique index.
+
+### S2P7002 SpatialZmDropped (Warning)
+
+Some spatial values had Z (elevation) or M (measure) coordinates. The copy reads them as
+well-known binary, which carries X and Y only, so Z and M are lost.
+
+### S2P7003 TableCopyFailed (Error)
+
+Copying a table, or setting a sequence's position, failed; the message has the error. Other
+tables are still copied. Fix the cause and run the copy again: tables already finished (with
+`--state`) are skipped, and this one is cleared and copied afresh.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

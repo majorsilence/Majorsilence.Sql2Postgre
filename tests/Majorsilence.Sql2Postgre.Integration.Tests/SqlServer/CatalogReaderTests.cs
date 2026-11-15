@@ -238,7 +238,7 @@ public class CatalogReaderTests
     {
         var s = Db.Sequences.Single(x => x.Name.Name == "invoice_no");
         Assert.That(s, Is.EqualTo(new Sequence(new ObjectName("shop", "invoice_no"), new SqlServerType("bigint"),
-            1000, 10, 1000, 999999, false, 1000)));
+            1000, 10, 1000, 999999, false, null)), "never used, so no current value");
         // A decimal(38,0) sequence ranges past bigint; its bounds are clamped to bigint's.
         var big = Db.Sequences.Single(x => x.Name.Name == "big_counter");
         Assert.That(big.Max, Is.EqualTo(long.MaxValue));

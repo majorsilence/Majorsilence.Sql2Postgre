@@ -113,6 +113,15 @@ public static class DiagnosticCodes
     /// <summary>ROUND on a float rounds the binary value in SQL Server and the decimal value in PostgreSQL.</summary>
     public const string FloatRounding = "S2P3012";
 
+    /// <summary>NUL characters were removed from text values; PostgreSQL text cannot hold them.</summary>
+    public const string NulCharacterRemoved = "S2P7001";
+
+    /// <summary>Spatial values had Z or M coordinates, which the copy drops.</summary>
+    public const string SpatialZmDropped = "S2P7002";
+
+    /// <summary>A table's data (or a sequence's position) could not be copied.</summary>
+    public const string TableCopyFailed = "S2P7003";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

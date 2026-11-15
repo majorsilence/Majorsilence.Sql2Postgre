@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **`DataCopier` copies every converted table from SQL Server to PostgreSQL with binary `COPY`,
+  several tables at once and big integer-keyed tables in key ranges, then continues identities
+  and sequences where SQL Server left them and analyzes the tables.** Values cross over by
+  documented rules (bit to boolean, datetimeoffset to UTC, 7th fractional digit rounded half to
+  even as PostgreSQL rounds, NULs removed with `S2P7001`, spatial as WKB/EWKB, hierarchyid and
+  sql_variant as text); a state file lets a rerun skip finished tables and ranges, and anything
+  unfinished is cleared first so rows are never doubled. Every edge value of every type arrives
+  as expected. (WP 1.10)
 - **`PgApplier` runs converted objects (or a directory of phase scripts) against PostgreSQL,
   each in its own transaction, and reports what applied, failed (with SQLSTATE) or was skipped;
   `StopOnError` stops at the first failure and `RecreateDatabaseAsync` drops and recreates the

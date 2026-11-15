@@ -17,6 +17,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.7 — PgAst DDL nodes and writer.
 - WP 1.8 — schema translator, SchemaConverter, ScriptPlanner; 26 DDL golden cases; shop fixture applies from catalog and script.
 - WP 1.9 — applier.
+- WP 1.10 — data copier with range splitting, resume, identity/sequence continuation.
 
 ## Measured
 
@@ -46,3 +47,7 @@ Nothing yet.
 - A computed column read from a script gets its type inferred from the expression (S2P2010) or, failing that, S2P2007 (Error).
 - The catalog reader clamps decimal sequence bounds to bigint (a decimal(38,0) sequence would overflow the read).
 - The script reader now reads CREATE SPATIAL/XML/FULLTEXT INDEX.
+- PostgreSQL rounds a 7th fractional digit half to even (checked on 17: .0000005→0, .0000015→2, .0000025→2), not half away from zero as the plan guessed; the copier rounds the same way because binary COPY would truncate.
+- `Sequence.CurrentValue` is now `last_used_value` (null when the sequence was never used), so setval is only issued for sequences that handed out values.
+- PostGIS EWKB and pgvector binary writes are implemented and unit-tested at the byte level but not run against a server with those extensions (the test PostgreSQL has none). A CI job on the postgis/postgis image would close that.
+- decimal/numeric values beyond System.Decimal's 28–29 digits fail the table's copy (SqlDataReader.GetDecimal overflows) with S2P7003; reading SqlDecimal into a BigInteger-scaled numeric would fix it.
