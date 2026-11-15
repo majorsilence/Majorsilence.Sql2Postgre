@@ -1,0 +1,6 @@
+-- options: {"excludeObjects": ["staging.*", "dbo.tmp_*"]}
+CREATE SCHEMA staging;
+GO
+CREATE TABLE staging.raw (id int NOT NULL);
+CREATE TABLE dbo.tmp_load (id int NOT NULL);
+CREATE TABLE dbo.kept (id int NOT NULL);

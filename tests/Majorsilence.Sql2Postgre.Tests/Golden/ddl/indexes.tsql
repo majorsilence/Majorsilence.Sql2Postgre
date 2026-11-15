@@ -1,0 +1,4 @@
+CREATE TABLE dbo.t (id int NOT NULL, email nvarchar(200) NULL, name nvarchar(100) NOT NULL, active bit NOT NULL);
+CREATE CLUSTERED INDEX ix_t_name ON dbo.t (name);
+CREATE UNIQUE INDEX ix_t_email ON dbo.t (email DESC) INCLUDE (name) WHERE active = 1 AND email IS NOT NULL;
+CREATE NONCLUSTERED COLUMNSTORE INDEX ncci_t ON dbo.t (id, name);

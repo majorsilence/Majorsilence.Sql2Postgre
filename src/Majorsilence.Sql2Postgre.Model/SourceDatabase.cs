@@ -6,7 +6,7 @@ public sealed record ObjectName(string Schema, string Name)
     public override string ToString() => $"{Schema}.{Name}";
 }
 
-public enum ObjectKind { Schema, Table, View, Function, Procedure, Trigger, Sequence, UserType, Index, Constraint, Synonym }
+public enum ObjectKind { Schema, Table, View, Function, Procedure, Trigger, Sequence, UserType, Index, Constraint, Synonym, Extension, Collation }
 
 /// <summary>A SQL Server column, parameter or expression type.</summary>
 /// <param name="Name">Base type name in lower case: <c>nvarchar</c>, <c>decimal</c>, <c>datetime2</c>…</param>

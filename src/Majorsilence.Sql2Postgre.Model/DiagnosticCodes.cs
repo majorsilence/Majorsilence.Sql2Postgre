@@ -20,6 +20,12 @@ public static class DiagnosticCodes
     /// <summary>A CLR function, procedure, aggregate or trigger: .NET code, not T-SQL.</summary>
     public const string ClrObject = "S2P0102";
 
+    /// <summary>Views, functions, procedures and triggers are listed but not converted until Stage 2/3.</summary>
+    public const string NotYetSupported = "S2P0201";
+
+    /// <summary>Objects depend on each other in a cycle; they are emitted in name order.</summary>
+    public const string DependencyCycle = "S2P0202";
+
     /// <summary>A name is longer than PostgreSQL's 63-byte limit and was shortened, with a hash to keep it unique.</summary>
     public const string IdentifierTruncated = "S2P1001";
 
@@ -58,6 +64,45 @@ public static class DiagnosticCodes
 
     /// <summary>The object uses a permitted extension, which the target database must have available.</summary>
     public const string ExtensionRequired = "S2P1401";
+
+    /// <summary>A non-persisted computed column becomes a STORED generated column (VIRTUAL needs PostgreSQL 18).</summary>
+    public const string GeneratedColumnStored = "S2P2001";
+
+    /// <summary>Clustered indexes and primary keys become ordinary B-tree indexes; PostgreSQL does not keep rows in index order.</summary>
+    public const string ClusteredIgnored = "S2P2002";
+
+    /// <summary>A columnstore, XML, full-text, hash or (without postgis) spatial index has no PostgreSQL equivalent and is not created.</summary>
+    public const string IndexTypeUnsupported = "S2P2003";
+
+    /// <summary>A constraint SQL Server does not trust is created NOT VALID: existing rows are not checked.</summary>
+    public const string ConstraintNotValid = "S2P2004";
+
+    /// <summary>A table type becomes a composite type; table-valued parameters need manual review.</summary>
+    public const string TableTypeAsComposite = "S2P2005";
+
+    /// <summary>A sequence's type has no PostgreSQL sequence equivalent and becomes bigint.</summary>
+    public const string SequenceTypeChanged = "S2P2006";
+
+    /// <summary>A computed column read from a script has a type that cannot be inferred; a type override is needed.</summary>
+    public const string ComputedColumnTypeUnknown = "S2P2007";
+
+    /// <summary>A computed column read from a script has its type inferred from its expression.</summary>
+    public const string ComputedColumnTypeInferred = "S2P2010";
+
+    /// <summary>An identity column on decimal/numeric becomes an integer type, as PostgreSQL identity requires.</summary>
+    public const string IdentityTypeChanged = "S2P2008";
+
+    /// <summary>A computed column's expression is not immutable, which a PostgreSQL generated column requires.</summary>
+    public const string GeneratedNotImmutable = "S2P2009";
+
+    /// <summary>ROWGUIDCOL has no meaning in PostgreSQL and is dropped.</summary>
+    public const string RowGuidColIgnored = "S2P2011";
+
+    /// <summary>SPARSE has no meaning in PostgreSQL (NULLs take no space anyway) and is dropped.</summary>
+    public const string SparseIgnored = "S2P2012";
+
+    /// <summary>A disabled constraint is created NOT VALID, but PostgreSQL will enforce it for new rows.</summary>
+    public const string DisabledConstraintEnforced = "S2P2013";
 
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";

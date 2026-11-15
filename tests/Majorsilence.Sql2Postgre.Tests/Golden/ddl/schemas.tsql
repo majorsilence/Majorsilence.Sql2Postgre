@@ -1,0 +1,4 @@
+CREATE SCHEMA Sales;
+GO
+CREATE TABLE Sales.[Order] (OrderID int NOT NULL PRIMARY KEY, [User] nvarchar(50) NULL);
+CREATE TABLE dbo.Lookup (id int NOT NULL);

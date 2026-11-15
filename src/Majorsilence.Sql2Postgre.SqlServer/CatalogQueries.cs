@@ -116,13 +116,24 @@ internal static class CatalogQueries
         ORDER BY cc.parent_object_id, cc.name;
         """;
 
+    // A decimal or numeric sequence can range past bigint (PostgreSQL sequences cannot); its
+    // values are clamped to bigint's range so the read never overflows.
     public const string Sequences = """
         SELECT SCHEMA_NAME(s.schema_id) AS schema_name, s.name, TYPE_NAME(s.system_type_id) AS type_name,
                s.precision, s.scale,
-               CAST(s.start_value AS bigint) AS start_value, CAST(s.increment AS bigint) AS increment,
-               CAST(s.minimum_value AS bigint) AS minimum_value, CAST(s.maximum_value AS bigint) AS maximum_value,
-               s.is_cycling, CAST(s.current_value AS bigint) AS current_value
+               CAST(v.start_value AS bigint) AS start_value, CAST(v.increment AS bigint) AS increment,
+               CAST(v.minimum_value AS bigint) AS minimum_value, CAST(v.maximum_value AS bigint) AS maximum_value,
+               s.is_cycling, CAST(v.current_value AS bigint) AS current_value
         FROM sys.sequences s
+        CROSS APPLY (SELECT
+            CASE WHEN x.s > 9223372036854775807 THEN 9223372036854775807 WHEN x.s < -9223372036854775808 THEN -9223372036854775808 ELSE x.s END AS start_value,
+            CASE WHEN x.i > 9223372036854775807 THEN 9223372036854775807 WHEN x.i < -9223372036854775808 THEN -9223372036854775808 ELSE x.i END AS increment,
+            CASE WHEN x.mn > 9223372036854775807 THEN 9223372036854775807 WHEN x.mn < -9223372036854775808 THEN -9223372036854775808 ELSE x.mn END AS minimum_value,
+            CASE WHEN x.mx > 9223372036854775807 THEN 9223372036854775807 WHEN x.mx < -9223372036854775808 THEN -9223372036854775808 ELSE x.mx END AS maximum_value,
+            CASE WHEN x.cv > 9223372036854775807 THEN 9223372036854775807 WHEN x.cv < -9223372036854775808 THEN -9223372036854775808 ELSE x.cv END AS current_value
+            FROM (SELECT CAST(s.start_value AS decimal(38,0)) AS s, CAST(s.increment AS decimal(38,0)) AS i,
+                         CAST(s.minimum_value AS decimal(38,0)) AS mn, CAST(s.maximum_value AS decimal(38,0)) AS mx,
+                         CAST(s.current_value AS decimal(38,0)) AS cv) x) v
         WHERE s.is_ms_shipped = 0
         ORDER BY schema_name, s.name;
         """;

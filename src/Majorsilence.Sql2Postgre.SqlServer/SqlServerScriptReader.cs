@@ -150,6 +150,15 @@ public static partial class SqlServerScriptReader
                 case CreateColumnStoreIndexStatement cs:
                     AddColumnstore(cs);
                     break;
+                case CreateSpatialIndexStatement sp:
+                    AddSpecialIndex(sp.Object, sp.Name.Value, [sp.SpatialColumnName.Value], "spatial");
+                    break;
+                case CreateXmlIndexStatement xml:
+                    AddSpecialIndex(xml.OnName, xml.Name.Value, [xml.XmlColumn.Value], "xml");
+                    break;
+                case CreateFullTextIndexStatement ft:
+                    AddSpecialIndex(ft.OnName, $"fulltext_{ft.OnName.BaseIdentifier.Value}", ft.FullTextIndexColumns.Select(c => c.Name.Value).ToList(), "fulltext");
+                    break;
                 case CreateViewStatement or CreateOrAlterViewStatement:
                     AddModule(((ViewStatementBody)statement).SchemaObjectName, ObjectKind.View, statement);
                     break;
@@ -346,6 +355,13 @@ public static partial class SqlServerScriptReader
                 : cs.Columns.Select(c => new IndexColumn(ColumnName(c))).ToList();
             table.Indexes.Add(new TableIndex(cs.Name.Value, columns, [], false, clustered,
                 cs.FilterPredicate is null ? null : TextOf(cs.FilterPredicate), "columnstore"));
+        }
+
+        /// <summary>A spatial, XML or full-text index, named as the catalog reader names it (full-text indexes have no name of their own).</summary>
+        private void AddSpecialIndex(SchemaObjectName on, string name, IReadOnlyList<string> columns, string type)
+        {
+            if (_tables.TryGetValue(NameOf(on), out var table))
+                table.Indexes.Add(new TableIndex(name, columns.Select(c => new IndexColumn(c)).ToList(), [], false, false, null, type));
         }
 
         private void AddModule(SchemaObjectName name, ObjectKind kind, TSqlStatement statement, ObjectName? parent = null) =>

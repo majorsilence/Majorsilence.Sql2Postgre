@@ -1,0 +1,9 @@
+CREATE TABLE dbo.parent (id int NOT NULL PRIMARY KEY, code int NOT NULL UNIQUE);
+CREATE TABLE dbo.child (
+    id int NOT NULL,
+    parent_id int NULL REFERENCES dbo.parent (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    code int NULL,
+    other int NULL,
+    CONSTRAINT fk_child_code FOREIGN KEY (code) REFERENCES dbo.parent (code) ON DELETE SET NULL,
+    CONSTRAINT fk_child_other FOREIGN KEY (other) REFERENCES dbo.parent (id) ON DELETE SET DEFAULT ON UPDATE NO ACTION
+);

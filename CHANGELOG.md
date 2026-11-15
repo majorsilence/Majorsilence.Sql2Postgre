@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A database's schema converts to ordered PostgreSQL scripts: extensions, schemas, domains,
+  composite types, sequences, tables (identity, generated columns, defaults, optional ICU
+  collation), then primary keys, unique and check constraints, indexes and foreign keys, written
+  as `01-schemas.sql` … `10-triggers.sql` plus `report.json`.** System-named constraints get
+  PostgreSQL-style names (`<table>_pkey`, `<table>_<cols>_fkey`), untrusted constraints are
+  `NOT VALID`, unsupported index kinds are skipped with a warning, and anything untranslatable
+  stays as a comment. The shop fixture applies to PostgreSQL from both readers. (WP 1.8)
 - **The PostgreSQL DDL the converter emits has a tree and a writer: schemas, extensions,
   collations, domains, composite types, sequences, tables (identity, generated, defaults,
   collations), primary keys, unique, check and foreign-key constraints (`NOT VALID`), indexes

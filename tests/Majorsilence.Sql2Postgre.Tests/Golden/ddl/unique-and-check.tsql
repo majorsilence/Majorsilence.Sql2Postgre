@@ -1,0 +1,9 @@
+CREATE TABLE dbo.t (
+    id int NOT NULL,
+    code varchar(10) NOT NULL,
+    qty int NOT NULL,
+    CONSTRAINT uq_t_code UNIQUE (code),
+    UNIQUE (id, qty),
+    CONSTRAINT ck_t_qty CHECK (qty > 0),
+    CHECK (code <> '')
+);

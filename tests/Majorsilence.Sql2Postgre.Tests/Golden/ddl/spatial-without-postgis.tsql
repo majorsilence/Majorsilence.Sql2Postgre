@@ -1,0 +1,3 @@
+-- options: {"extensions": []}
+CREATE TABLE dbo.place (id int NOT NULL PRIMARY KEY, loc geography NULL);
+CREATE SPATIAL INDEX six_place_loc ON dbo.place (loc);

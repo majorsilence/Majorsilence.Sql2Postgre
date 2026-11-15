@@ -54,7 +54,9 @@ public partial class ScriptMatchesCatalogTests
             Checks = t.Checks.Select(c => c with { Expression = Expr(c.Expression) }).ToList(),
             Indexes = t.Indexes.Select(i => new { i.Name, i.Keys, i.Included, i.IsUnique, i.IsClustered, Filter = i.FilterExpression is null ? null : Expr(i.FilterExpression), i.Type }).ToList(),
         }).ToList(),
-        Sequences = d.Sequences.Select(s => s with { CurrentValue = null }).ToList(),
+        // (A decimal sequence's bounds are past bigint: the catalog clamps them, the script reader
+        // takes bigint's, so they agree; its type keeps no precision on the script side.)
+        Sequences = d.Sequences.Select(s => s with { CurrentValue = null, Type = s.Type with { Precision = null, Scale = null } }).ToList(),
         UserTypes = d.UserTypes.Select(u => new
         {
             u.Name, u.IsNullable, u.IsTableType,

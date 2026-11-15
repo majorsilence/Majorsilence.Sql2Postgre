@@ -1,0 +1,2 @@
+-- options: {"caseInsensitive": "icuCollation", "targetVersion": 18}
+CREATE TABLE dbo.t (id int NOT NULL, name nvarchar(50) COLLATE Latin1_General_CI_AS NOT NULL);

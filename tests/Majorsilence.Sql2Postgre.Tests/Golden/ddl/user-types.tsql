@@ -1,0 +1,5 @@
+CREATE TYPE dbo.Phone FROM nvarchar(20) NULL;
+CREATE TYPE dbo.Code FROM char(3) NOT NULL;
+CREATE TYPE dbo.LineList AS TABLE (product_id int NOT NULL, qty int NOT NULL);
+GO
+CREATE TABLE dbo.contact (id int NOT NULL, phone dbo.Phone, code dbo.Code);

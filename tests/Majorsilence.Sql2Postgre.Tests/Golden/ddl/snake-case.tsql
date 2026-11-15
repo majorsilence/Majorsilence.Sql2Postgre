@@ -1,0 +1,3 @@
+-- options: {"nameStyle": "snakeCase"}
+CREATE TABLE dbo.OrderLine (OrderLineID int NOT NULL CONSTRAINT PK_OrderLine PRIMARY KEY, ProductName nvarchar(50) NOT NULL);
+CREATE INDEX IX_OrderLine_ProductName ON dbo.OrderLine (ProductName);

@@ -1,0 +1,1 @@
+CREATE TABLE dbo.t (v rowversion NOT NULL, s sql_variant NULL, h hierarchyid NULL, o datetimeoffset NULL, t time NULL);

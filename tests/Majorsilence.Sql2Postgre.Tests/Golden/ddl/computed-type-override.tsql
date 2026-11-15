@@ -1,0 +1,2 @@
+-- options: {"typeOverrides": {"dbo.line.total": "numeric(21,2)"}}
+CREATE TABLE dbo.line (qty int NOT NULL, price decimal(10,2) NOT NULL, total AS (qty * price) PERSISTED);

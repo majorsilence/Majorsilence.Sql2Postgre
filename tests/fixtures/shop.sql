@@ -8,6 +8,8 @@ CREATE TYPE shop.line_list AS TABLE (product_id int NOT NULL, qty int NOT NULL);
 GO
 CREATE SEQUENCE shop.invoice_no AS bigint START WITH 1000 INCREMENT BY 10 MINVALUE 1000 MAXVALUE 999999 NO CYCLE;
 GO
+CREATE SEQUENCE shop.big_counter AS decimal(38,0) START WITH 1 INCREMENT BY 1;
+GO
 CREATE TABLE shop.all_types (
     id int IDENTITY(1,1) NOT NULL CONSTRAINT pk_all_types PRIMARY KEY CLUSTERED,
     c_bit bit NULL,

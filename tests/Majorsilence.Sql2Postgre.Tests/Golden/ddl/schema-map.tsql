@@ -1,0 +1,5 @@
+-- options: {"schemaMap": {"dbo": "app", "Sales": "sales"}}
+CREATE SCHEMA Sales;
+GO
+CREATE TABLE Sales.Orders (id int NOT NULL);
+CREATE TABLE dbo.Lookup (id int NOT NULL);

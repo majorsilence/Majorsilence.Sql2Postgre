@@ -15,6 +15,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.5 — type mapper.
 - WP 1.6 — schema expression translator, PgAst expression nodes, expression writer; 60 golden cases, 36 both-engines cases.
 - WP 1.7 — PgAst DDL nodes and writer.
+- WP 1.8 — schema translator, SchemaConverter, ScriptPlanner; 26 DDL golden cases; shop fixture applies from catalog and script.
 
 ## Measured
 
@@ -38,3 +39,9 @@ Nothing yet.
 - Established on both engines: CAST(decimal|float AS int) truncates in SQL Server and rounds in PostgreSQL (→ trunc()); CAST(money AS int) rounds in both; ROUND(float, n) differs for binary halves (S2P3012). Keep these in WP 2.2's FunctionMap.
 - The expression half of `PgWriter` landed in WP 1.6 (golden tests need to print expressions); WP 1.7 adds the DDL half. `ScriptDomTypes` is a source file linked into SqlServer and Translation (neither may reference the other).
 - Golden files are copied to the test output at build: after `SQL2PG_UPDATE_GOLDEN=1` creates a new expected file, rebuild before the normal run.
+- Translation produces `TranslatedObject` (PgAst statements); `Postgres.SchemaConverter` writes them to text to make `ConvertedObject` — the writer lives in Postgres, which depends on Translation.
+- A table with an untranslatable part (a default, a check, a computed column) is still valid DDL with that part commented out. WP 1.9's applier should apply Manual objects in the Tables/Constraints/Indexes/ForeignKeys phases (skipping them would break every foreign key pointing at the table) and skip Manual Code/Triggers objects by default — a deviation from the plan's `--apply-manual` default, to confirm with the maintainer.
+- Disabled constraints are created NOT VALID with S2P2013 (PostgreSQL still enforces them for new rows); untrusted-but-enabled ones get S2P2004 (Info). The plan had one code for both.
+- A computed column read from a script gets its type inferred from the expression (S2P2010) or, failing that, S2P2007 (Error).
+- The catalog reader clamps decimal sequence bounds to bigint (a decimal(38,0) sequence would overflow the read).
+- The script reader now reads CREATE SPATIAL/XML/FULLTEXT INDEX.

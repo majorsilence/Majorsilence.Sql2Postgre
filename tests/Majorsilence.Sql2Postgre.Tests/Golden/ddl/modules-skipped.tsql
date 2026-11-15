@@ -1,0 +1,5 @@
+CREATE TABLE dbo.t (id int NOT NULL);
+GO
+CREATE VIEW dbo.v AS SELECT id FROM dbo.t;
+GO
+CREATE PROCEDURE dbo.p AS SELECT 1;

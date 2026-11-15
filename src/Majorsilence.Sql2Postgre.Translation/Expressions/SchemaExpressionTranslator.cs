@@ -53,6 +53,28 @@ public sealed class SchemaExpressionTranslator(ConversionOptions options, NameMa
         }
     }
 
+    /// <summary>
+    /// The PostgreSQL type of an expression's value, when the column types and literals it uses
+    /// make it evident: arithmetic takes the operand type of highest SQL Server precedence
+    /// (float, real, decimal, money, bigint, int, …), and exact decimals become an unconstrained
+    /// <c>numeric</c> since SQL Server's result-precision rules do not carry over. Null when unknown.
+    /// </summary>
+    public string? InferType(string tsql, Func<string, SqlServerType?> columnType)
+    {
+        var fragment = new TSql160Parser(initialQuotedIdentifiers: true).ParseExpression(new StringReader(tsql), out var errors);
+        if (errors.Count > 0 || fragment is null)
+            return null;
+        var type = TypeOf(fragment, new Context(new ObjectName("", ""), columnType));
+        return type?.Name switch
+        {
+            null => null,
+            "decimal" or "numeric" when type.Precision is null => "numeric",
+            "money" or "smallmoney" => "numeric",
+            "nvarchar" or "varchar" when type.Length is null => "text",
+            _ => types.Map(type).PgType,
+        };
+    }
+
     private static ExpressionResult Fail(Context context, ObjectName table, string message) =>
         new(null, [.. context.Diagnostics, new Diagnostic(DiagnosticCodes.UnsupportedExpression, Severity.Error, table, message)], []);
 
@@ -307,8 +329,31 @@ public sealed class SchemaExpressionTranslator(ConversionOptions options, NameMa
         FunctionCall f when f.FunctionName.Value.ToUpperInvariant() is "ISNULL" && f.Parameters.Count > 0 => TypeOf(f.Parameters[0], c),
         CoalesceExpression co when co.Expressions.Count > 0 => TypeOf(co.Expressions[0], c),
         BinaryExpression b when b.BinaryExpressionType == BinaryExpressionType.Add && (IsString(b.FirstExpression, c) || IsString(b.SecondExpression, c)) => new SqlServerType("nvarchar"),
+        BinaryExpression b => Wider(TypeOf(b.FirstExpression, c), TypeOf(b.SecondExpression, c)),
+        SearchedCaseExpression sc when sc.WhenClauses.Count > 0 => TypeOf(sc.WhenClauses[0].ThenExpression, c),
+        SimpleCaseExpression sc when sc.WhenClauses.Count > 0 => TypeOf(sc.WhenClauses[0].ThenExpression, c),
+        IIfCall iif => TypeOf(iif.ThenExpression, c),
+        FunctionCall f when f.FunctionName.Value.ToUpperInvariant() is "GETDATE" or "SYSDATETIME" or "GETUTCDATE" or "SYSUTCDATETIME" => new SqlServerType("datetime2", Scale: 6),
+        FunctionCall f when f.FunctionName.Value.ToUpperInvariant() is "NEWID" or "NEWSEQUENTIALID" => new SqlServerType("uniqueidentifier"),
+        FunctionCall f when f.FunctionName.Value.ToUpperInvariant() is "ABS" or "ROUND" && f.Parameters.Count > 0 => TypeOf(f.Parameters[0], c),
+        ParameterlessCall { ParameterlessCallType: ParameterlessCallType.CurrentTimestamp } => new SqlServerType("datetime2", Scale: 6),
         _ => null,
     };
+
+    /// <summary>SQL Server's data type precedence among the numeric types: the result of arithmetic on two of them.</summary>
+    private static readonly string[] NumericPrecedence = ["float", "real", "decimal", "numeric", "money", "smallmoney", "bigint", "int", "smallint", "tinyint", "bit"];
+
+    private static SqlServerType? Wider(SqlServerType? a, SqlServerType? b)
+    {
+        if (a is null || b is null)
+            return null;
+        int ia = Array.IndexOf(NumericPrecedence, a.Name), ib = Array.IndexOf(NumericPrecedence, b.Name);
+        if (ia < 0 || ib < 0)
+            return null;
+        var wider = ia <= ib ? a : b;
+        // Two exact types combine to an exact type whose precision SQL Server computes; leave it open.
+        return wider.Name is "decimal" or "numeric" ? new SqlServerType("decimal") : wider with { UserTypeName = null };
+    }
 
     /// <summary>
     /// decimal, numeric, float and real values that SQL Server truncates when cast to an integer

@@ -37,6 +37,16 @@ original `CREATE` script (for example through the script reader) to convert it.
 The object is a CLR function, procedure, aggregate or trigger: compiled .NET code, not T-SQL.
 PostgreSQL cannot run it; reimplement it in SQL or PL/pgSQL by hand.
 
+### S2P0201 NotYetSupported (Info)
+
+Views are converted from Stage 2, and functions, procedures and triggers from Stage 3. Until
+then they are listed in the output as skipped, so the report shows everything that remains.
+
+### S2P0202 DependencyCycle (Warning)
+
+Objects in one phase depend on each other in a cycle, so no order satisfies all of them. They
+are emitted in name order; applying may need them run twice, or one rewritten to break the cycle.
+
 ## S2P1xxx — types, names, collations
 
 ### S2P1001 IdentifierTruncated (Warning)
@@ -112,6 +122,82 @@ PostgreSQL 18, or keep the default collation for columns searched with `LIKE`.
 
 The object uses one of the permitted extensions (named in the message). The generated script
 creates it with `CREATE EXTENSION IF NOT EXISTS`; the target server must have it installed.
+
+## S2P2xxx — schema objects
+
+### S2P2001 GeneratedColumnStored (Info)
+
+A computed column that is not `PERSISTED` is calculated on read in SQL Server. PostgreSQL 18
+has the same (`VIRTUAL`); before 18 a generated column is always `STORED`, so it takes space and
+is calculated on write. Values are the same.
+
+### S2P2002 ClusteredIgnored (Info)
+
+SQL Server keeps a table's rows in its clustered index order. PostgreSQL has no clustered
+indexes: the index is an ordinary B-tree. `CLUSTER table USING index` reorders the rows once if
+that matters for performance.
+
+### S2P2003 IndexTypeUnsupported (Warning)
+
+Columnstore, XML, full-text and memory-optimized hash indexes have no PostgreSQL equivalent, nor
+do spatial indexes when `postgis` is disabled. The index is not created; queries still work but
+may be slower. Full-text search is planned for Stage 4.
+
+### S2P2004 ConstraintNotValid (Info)
+
+SQL Server does not trust the constraint (it was added `WITH NOCHECK`), so existing rows may
+break it. It is created `NOT VALID`: PostgreSQL checks new and changed rows only. Run
+`ALTER TABLE … VALIDATE CONSTRAINT …` once the data is cleaned.
+
+### S2P2005 TableTypeAsComposite (Info)
+
+A table type (`CREATE TYPE … AS TABLE`) becomes a composite type. Procedures that take it as a
+table-valued parameter need it passed as an array of that type; Stage 4 covers those.
+
+### S2P2006 SequenceTypeChanged (Info)
+
+PostgreSQL sequences are `smallint`, `integer` or `bigint`. A `decimal`/`numeric` sequence
+becomes `bigint`, with its bounds limited to bigint's range.
+
+### S2P2007 ComputedColumnTypeUnknown (Error)
+
+A computed column read from a script has no declared type, and its expression does not make one
+evident (for example it calls a function). The column is left out of the table and kept as a
+comment. Add `"typeOverrides": { "schema.table.column": "<postgres type>" }`, or read from the
+live database, whose catalog knows the type.
+
+### S2P2008 IdentityTypeChanged (Info)
+
+SQL Server allows `IDENTITY` on `decimal(p,0)`/`numeric(p,0)`; a PostgreSQL identity column must
+be `smallint`, `integer` or `bigint`. The column becomes `integer` (p ≤ 9) or `bigint`.
+
+### S2P2009 GeneratedNotImmutable (Error)
+
+A non-persisted computed column may use values that change (`GETDATE()`, `NEWID()`); a
+PostgreSQL generated column must be immutable. The column is left out and kept as a comment.
+Compute the value in the query that reads it, or use a view.
+
+### S2P2010 ComputedColumnTypeInferred (Info)
+
+A computed column read from a script has no declared type; the type shown was worked out from
+its expression. Exact decimals become an unconstrained `numeric`, since SQL Server's
+result-precision rules do not carry over. Override it if a specific precision matters.
+
+### S2P2011 RowGuidColIgnored (Info)
+
+`ROWGUIDCOL` marks a column for SQL Server replication and `$ROWGUID`. PostgreSQL has neither;
+the column stays an ordinary `uuid`.
+
+### S2P2012 SparseIgnored (Info)
+
+`SPARSE` saves space for mostly-NULL columns in SQL Server. PostgreSQL stores NULLs in a bitmap
+already, so the column is created normally.
+
+### S2P2013 DisabledConstraintEnforced (Warning)
+
+The constraint is disabled in SQL Server (`NOCHECK CONSTRAINT`), so SQL Server does not check
+it at all. It is created `NOT VALID`, which skips existing rows, but PostgreSQL still checks
+every new and changed row. Drop the constraint if it should stay off.
 
 ## S2P3xxx — expressions and built-in functions
 

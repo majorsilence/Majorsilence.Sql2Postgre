@@ -13,7 +13,8 @@ public sealed record GoldenResult(string Sql, IReadOnlyList<GoldenDiagnostic> Di
 
 /// <summary>
 /// Runs a golden case through the translator its area names. Areas: <c>harness</c> echoes its
-/// input; <c>expressions-v0</c> translates one schema expression (headers below).
+/// input; <c>expressions-v0</c> translates one schema expression (headers below); <c>ddl</c> converts a
+/// script of CREATE statements.
 /// </summary>
 public static class GoldenTranslator
 {
@@ -23,8 +24,24 @@ public static class GoldenTranslator
         return area.Split('/')[0] switch
         {
             "expressions-v0" => SchemaExpression(tsql, headers, options),
+            "ddl" => Ddl(tsql, options),
             _ => new GoldenResult(tsql, []),
         };
+    }
+
+    /// <summary>
+    /// A script of CREATE statements, read by the script reader and converted; the output is every
+    /// non-empty phase script in order, and the diagnostics are every object's plus the run's.
+    /// </summary>
+    private static GoldenResult Ddl(string tsql, ConversionOptions options)
+    {
+        var read = SqlServerScriptReader.Read([("case.sql", tsql)]);
+        var result = SchemaConverter.Convert(read.Database, options);
+        string sql = string.Concat(Enum.GetValues<Phase>()
+            .Where(p => result.Objects.Any(o => o.Phase == p))
+            .Select(p => ScriptPlanner.PhaseScript(result, p) + "\n"));
+        var diagnostics = read.Diagnostics.Concat(result.Diagnostics).Concat(result.Objects.SelectMany(o => o.Diagnostics));
+        return new GoldenResult(sql, diagnostics.Select(d => new GoldenDiagnostic(d.Code, d.Severity.ToString())).ToList());
     }
 
     /// <summary>

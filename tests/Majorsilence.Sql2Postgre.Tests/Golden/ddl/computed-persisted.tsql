@@ -1,0 +1,1 @@
+CREATE TABLE dbo.line (qty int NOT NULL, price decimal(10,2) NOT NULL, total AS (qty * price) PERSISTED, tax AS (qty * price * 0.1));

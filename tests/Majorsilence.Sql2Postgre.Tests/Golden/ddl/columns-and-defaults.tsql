@@ -1,0 +1,9 @@
+CREATE TABLE dbo.Customer (
+    CustomerID int NOT NULL,
+    Name nvarchar(100) NOT NULL,
+    Notes nvarchar(max) NULL,
+    Balance money NOT NULL CONSTRAINT DF_Customer_Balance DEFAULT 0,
+    IsActive bit NOT NULL DEFAULT ((1)),
+    CreatedAt datetime2(3) NOT NULL DEFAULT (sysdatetime()),
+    Code char(3) NULL DEFAULT 'ABC'
+);

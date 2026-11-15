@@ -1,0 +1,1 @@
+CREATE TABLE dbo.t (id uniqueidentifier ROWGUIDCOL NOT NULL DEFAULT (newid()), note nvarchar(100) SPARSE NULL);

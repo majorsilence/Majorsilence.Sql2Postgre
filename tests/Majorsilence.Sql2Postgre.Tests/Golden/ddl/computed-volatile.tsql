@@ -1,0 +1,1 @@
+CREATE TABLE dbo.t (id int NOT NULL, stamp AS (getdate()));
