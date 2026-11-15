@@ -54,6 +54,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
     private readonly Option<int> _parallel = new("--parallel") { Description = "Tables copied at once.", DefaultValueFactory = _ => 4 };
     private readonly Option<FileInfo?> _state = new("--state") { Description = "Resume file: finished tables are recorded here and skipped on a rerun." };
     private readonly Option<string?> _verify = new("--verify") { Description = "Verify copied data: 'count' or 'checksum'." };
+    private readonly Option<DirectoryInfo?> _translateOut = new("--out", "-o") { Description = "Where to write the .pgsql files (default: next to each .sql)." };
 
     public static Task<int> RunAsync(string[] args) => new Sql2PgCli(Console.Out, Console.Error).InvokeAsync(args);
 
@@ -95,6 +96,12 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
             { _source, _target, _config, _parallel, _state, _verify, _stopOnError, _applyManual, _recreate };
         migrate.SetAction((p, ct) => Guarded(() => MigrateAsync(p, ct)));
 
+        var path = new Argument<string>("path") { Description = "A .sql file, or a folder of them (searched recursively)." };
+        var translate = new Command("translate", "Translate T-SQL scripts (queries and DML) to PostgreSQL, one .pgsql per .sql.")
+            { path, _translateOut, _source, _config };
+        translate.SetAction((p, ct) => Guarded(() => TranslateAsync(p, p.GetValue(path)!, ct)));
+
+        root.Subcommands.Add(translate);
         root.Subcommands.Add(assess);
         root.Subcommands.Add(schema);
         root.Subcommands.Add(apply);
@@ -127,6 +134,40 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
     }
 
     // ---- commands ----
+
+    /// <summary>
+    /// Each .sql becomes .pgsql and .diag.json, next to it or mirrored under --out. --source gives
+    /// the database's schema for names and types; without it the conversions that need types are not made.
+    /// </summary>
+    private async Task<int> TranslateAsync(ParseResult p, string path, CancellationToken ct)
+    {
+        var options = Options(p);
+        var files = Directory.Exists(path)
+            ? Directory.EnumerateFiles(path, "*.sql", SearchOption.AllDirectories).Order(StringComparer.Ordinal).ToList()
+            : File.Exists(path) ? [path] : throw new UsageException($"'{path}' is not a file or a folder.");
+        string root = Directory.Exists(path) ? Path.GetFullPath(path) : Path.GetDirectoryName(Path.GetFullPath(path))!;
+        var model = Translation.Semantics.SemanticModel.Build(p.GetValue(_source) is { } source
+            ? (await ReadSourceAsync(source, ct)).Database
+            : new SourceDatabase("", "", 160, [], [], [], [], [], []));
+        if (p.GetValue(_source) is null)
+            await output.WriteLineAsync("No --source: column types are unknown, so conversions that depend on them are not made.");
+
+        bool errors = false;
+        foreach (string file in files)
+        {
+            var result = ScriptTranslator.Translate(await File.ReadAllTextAsync(file, ct), model, options, Path.GetFileName(file));
+            string target = p.GetValue(_translateOut) is { } outDir
+                ? Path.Combine(outDir.FullName, Path.GetRelativePath(root, file))
+                : file;
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            await File.WriteAllTextAsync(Path.ChangeExtension(target, ".pgsql"), result.Sql, ct);
+            await File.WriteAllTextAsync(Path.ChangeExtension(target, ".diag.json"), JsonSerializer.Serialize(result.Diagnostics, ConversionOptions.Json), ct);
+            int e = result.Diagnostics.Count(d => d.Severity == Severity.Error), w = result.Diagnostics.Count(d => d.Severity == Severity.Warning);
+            errors |= e > 0;
+            await output.WriteLineAsync($"  {Path.GetRelativePath(root, file)}: {e} error(s), {w} warning(s)");
+        }
+        return errors ? ExitCodes.CompletedWithProblems : ExitCodes.Success;
+    }
 
     private async Task<int> AssessAsync(ParseResult p, CancellationToken ct)
     {

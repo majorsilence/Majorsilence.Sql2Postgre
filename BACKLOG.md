@@ -26,6 +26,7 @@ What was done and measured, as it lands. The plan is in
 - WP 2.2 — expression translator and function map; WP 2.6 — mssql_compat helpers (pulled forward: WP 2.2's tests need them).
 - WP 2.3 — query and DML translator; 57 golden cases, 58 both-engines cases.
 - WP 2.4 — views; corpus views 35 converted and applied, 10 Manual with specific codes.
+- WP 2.5 — translate verb (ScriptTranslator).
 
 ## Measured
 

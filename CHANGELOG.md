@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`sql2pg translate <file-or-folder> [--out dir] [--source conn|dir]` converts ad-hoc T-SQL
+  scripts — application queries, reports, maintenance scripts — to PostgreSQL, writing a
+  `.pgsql` and a `.diag.json` per `.sql`.** Queries and DML translate against the source's schema
+  (types unknown without one); GO, USE and session SET options are dropped (`S2P0204`); SET
+  IDENTITY_INSERT OFF becomes a setval; DDL (`S2P0205`) and procedural statements (`S2P0206`)
+  stay as comments; mssql_compat helpers the script needs are created at its top so it runs on
+  its own. (WP 2.5)
 - **Views convert to PostgreSQL: CREATE VIEW (with its column list and WITH CHECK OPTION),
   indexed views as materialized views (`S2P2015`, they need refreshing), in dependency order.**
   WITH SCHEMABINDING is dropped (`S2P2016`), as is TOP 100 PERCENT … ORDER BY (`S2P4012`); a

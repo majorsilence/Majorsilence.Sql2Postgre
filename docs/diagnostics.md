@@ -53,6 +53,23 @@ The view uses something that is not converted: a function or procedure (routines
 in Stage 3), or another view that needs a person. It cannot be created until that exists, so it
 is held back, and the views built on it with it.
 
+### S2P0204 SessionStatementDropped (Info)
+
+A script's `USE` or session `SET` option (`NOCOUNT`, `ANSI_NULLS`, `DATEFORMAT`, `ROWCOUNT`,
+`TRANSACTION ISOLATION LEVEL`, …) is dropped. A PostgreSQL connection stays in one database; set
+an isolation level with `BEGIN ISOLATION LEVEL …` where it matters.
+
+### S2P0205 DdlInScript (Error)
+
+`sql2pg translate` met DDL (`CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, …). Schema objects are
+converted by `sql2pg schema`, which orders them and creates their keys and indexes after the data;
+the statement is kept as a comment.
+
+### S2P0206 ProceduralStatement (Error)
+
+`DECLARE`, `IF`, `WHILE`, `EXEC`, `BEGIN TRAN` and the rest of procedural T-SQL are translated in
+Stage 3; until then the statement is kept as a comment.
+
 ### S2P0301 ExternalReference (Error)
 
 The code names an object in another database (`otherdb.dbo.t`) or on a linked server

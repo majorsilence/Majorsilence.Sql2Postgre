@@ -26,6 +26,15 @@ public static class DiagnosticCodes
     /// <summary>The object uses another that is not converted yet (a routine, before Stage 3) or needs a person.</summary>
     public const string DependsOnUnconverted = "S2P0203";
 
+    /// <summary>USE or a session SET option in a script is dropped.</summary>
+    public const string SessionStatementDropped = "S2P0204";
+
+    /// <summary>DDL in an ad-hoc script: schema objects are converted by sql2pg schema.</summary>
+    public const string DdlInScript = "S2P0205";
+
+    /// <summary>Procedural T-SQL (DECLARE, IF, EXEC, …), translated in Stage 3.</summary>
+    public const string ProceduralStatement = "S2P0206";
+
     /// <summary>Objects depend on each other in a cycle; they are emitted in name order.</summary>
     public const string DependencyCycle = "S2P0202";
 
