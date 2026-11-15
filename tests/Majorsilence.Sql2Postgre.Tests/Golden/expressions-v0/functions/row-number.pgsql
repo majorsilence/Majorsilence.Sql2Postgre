@@ -1,0 +1,1 @@
+row_number() OVER (PARTITION BY s ORDER BY n DESC NULLS LAST)

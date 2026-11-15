@@ -296,7 +296,7 @@ public sealed record ConversionResult(IReadOnlyList<ConvertedObject> Objects, IR
 ### Script files
 
 `sql2pg schema --out <dir>` writes one file per phase, numbered in phase order
-(`01-schemas.sql`, `02-types.sql`, `03-sequences.sql`, `04-tables.sql`, `05-compat.sql`,
+(`01-schemas.sql`, `02-types.sql`, `03-compat.sql`, `04-sequences.sql`, `05-tables.sql`,
 `06-code.sql`, `07-indexes.sql`, `08-constraints.sql`, `09-foreign-keys.sql`,
 `10-triggers.sql`) plus `report.json`. Each object starts with a marker line
 
@@ -816,7 +816,7 @@ callback with `SemanticModel`.
 - Implicit conversions SQL Server makes and PostgreSQL rejects (string literal compared with a
   number, number concatenated to a string) → explicit `CAST` on the side SQL Server would
   convert (by precedence).
-- Every compat function used is recorded on the `ConvertedObject` so `05-compat.sql` contains
+- Every compat function used is recorded on the `ConvertedObject` so `03-compat.sql` contains
   only what is needed.
 
 **Tests:** a golden case per table row and per operator rule; a both-engines test per function

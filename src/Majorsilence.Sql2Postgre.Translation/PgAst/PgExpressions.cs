@@ -37,7 +37,8 @@ public sealed record PgInList(PgExpr Operand, IReadOnlyList<PgExpr> Values, bool
 
 public sealed record PgBetween(PgExpr Operand, PgExpr Low, PgExpr High, bool Negated = false) : PgExpr;
 
-public sealed record PgLike(PgExpr Operand, PgExpr Pattern, PgExpr? Escape = null, bool Negated = false) : PgExpr;
+/// <param name="Similar">SIMILAR TO (a regular-expression pattern, for T-SQL's <c>[ ]</c> character classes) instead of LIKE.</param>
+public sealed record PgLike(PgExpr Operand, PgExpr Pattern, PgExpr? Escape = null, bool Negated = false, bool Similar = false) : PgExpr;
 
 public sealed record PgWhen(PgExpr Condition, PgExpr Result);
 
@@ -48,7 +49,33 @@ public sealed record PgCase(PgExpr? Operand, IReadOnlyList<PgWhen> Whens, PgExpr
 public sealed record PgCast(PgExpr Operand, string Type) : PgExpr;
 
 /// <summary>A function call; the name is written verbatim (it may be schema-qualified).</summary>
-public sealed record PgFunctionCall(string Name, IReadOnlyList<PgExpr> Arguments) : PgExpr;
+/// <param name="Star">The argument is <c>*</c> (<c>count(*)</c>).</param>
+public sealed record PgFunctionCall(string Name, IReadOnlyList<PgExpr> Arguments) : PgExpr
+{
+    public bool Star { get; init; }
+
+    /// <summary>An aggregate over distinct values: <c>count(DISTINCT x)</c>.</summary>
+    public bool Distinct { get; init; }
+
+    /// <summary>An ordered aggregate's ORDER BY, inside the parentheses: <c>string_agg(x, ',' ORDER BY y)</c>.</summary>
+    public IReadOnlyList<PgSortKey> OrderBy { get; init; } = [];
+
+    /// <summary>A window function's OVER clause.</summary>
+    public PgWindow? Over { get; init; }
+}
+
+/// <param name="NullsFirst">NULLS FIRST (true), NULLS LAST (false), or PostgreSQL's default (null).</param>
+public sealed record PgSortKey(PgExpr Expression, bool Descending = false, bool? NullsFirst = null);
+
+/// <param name="Frame">The frame clause as PostgreSQL writes it (<c>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</c>), or null.</param>
+public sealed record PgWindow(IReadOnlyList<PgExpr> PartitionBy, IReadOnlyList<PgSortKey> OrderBy, string? Frame = null);
 
 /// <summary><c>x AT TIME ZONE zone</c>.</summary>
 public sealed record PgAtTimeZone(PgExpr Operand, PgExpr Zone) : PgExpr;
+
+/// <summary>
+/// SQL with keyword-shaped syntax no function call expresses (<c>extract(year FROM {0})</c>,
+/// <c>overlay({0} placing {1} from {2} for {3})</c>). Each <c>{n}</c> is replaced by argument n,
+/// always parenthesized, so the template never depends on precedence.
+/// </summary>
+public sealed record PgTemplate(string Template, IReadOnlyList<PgExpr> Arguments) : PgExpr;

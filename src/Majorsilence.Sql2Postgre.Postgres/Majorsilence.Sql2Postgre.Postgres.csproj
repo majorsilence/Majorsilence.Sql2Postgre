@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
     <ProjectReference Include="..\Majorsilence.Sql2Postgre.Translation\Majorsilence.Sql2Postgre.Translation.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Compat\Majorsilence.Sql2Postgre.Compat.csproj" />
   </ItemGroup>
 
   <ItemGroup>

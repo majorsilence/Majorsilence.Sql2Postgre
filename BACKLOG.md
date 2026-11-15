@@ -23,6 +23,7 @@ What was done and measured, as it lands. The plan is in
 - Default target PostgreSQL 18; CI container job on 18 only.
 - WP 1.13 — corpus download script, compile scan with positive control; Stage 1 (v0.1) exit criteria met on PostgreSQL 18 (also passed on 15, 16 and 17 before the default changed).
 - WP 2.1 — semantic model (scopes, typing, signatures, view columns, dependencies).
+- WP 2.2 — expression translator and function map; WP 2.6 — mssql_compat helpers (pulled forward: WP 2.2's tests need them).
 
 ## Measured
 
@@ -40,6 +41,20 @@ of objects that are not Manual.
 
 Skipped objects are views, routines and triggers (Stage 2 and 3) and index kinds with no
 PostgreSQL equivalent. Positive control (an identity typed as `date`) is reported.
+
+After WP 2.2 (full expression translator in schema expressions), same scan, 2026-11-15: still
+0 apply / copy / verify failures everywhere; Manual objects fell from 51 to 8.
+
+| Database | Converted | With warnings | Manual | Skipped | Error diagnostics |
+|---|---|---|---|---|---|
+| AdventureWorks2022 | 418 | 2 | 6 | 62 | 6 |
+| AdventureWorksDW2022 | 114 | 0 | 0 | 8 | 0 |
+| WideWorldImporters | 318 | 11 | 2 | 50 | 2 |
+| WideWorldImportersDW | 136 | 2 | 0 | 31 | 0 |
+| Northwind | 73 | 0 | 0 | 23 | 0 |
+| pubs | 46 | 0 | 0 | 6 | 0 |
+
+Built-ins checked on both engines (WP 2.2): 180 cases over a value grid, all agreeing.
 
 ## Notes for later
 
@@ -75,3 +90,6 @@ PostgreSQL equivalent. Positive control (an identity typed as `date`) is reporte
 - The S2P3001 errors left in the corpus (WideWorldImporters 35, WideWorldImportersDW 8, AdventureWorks 6, pubs 4) are expressions WP 2.2 should cover first: NEXT VALUE FOR in defaults, LIKE with [ ] character classes, CONVERT with styles, user-defined functions in computed columns.
 - Corpus view typing (WP 2.1): AdventureWorks 163/258 view columns typed (the rest are xml .value()/.query() results), AdventureWorksDW 59/59, Northwind 102/102, WideWorldImporters 32/32, pubs 6/6.
 - Unqualified names in a module resolve in the module's schema first, then dbo (a heuristic that matches the usual case; SQL Server's own rule depends on the owner's default schema).
+- The Compat phase now comes before Tables (file 03-compat.sql; tables are 05-tables.sql): a default or computed column may call a helper, and PostgreSQL checks it exists at CREATE TABLE.
+- Differences no translation fixes, found by the both-engines grid: string comparison, REPLACE and CHARINDEX follow the column's collation (SQL Server's defaults are case-insensitive; PostgreSQL's are not), and ORDER BY on text follows each server's collation (PostgreSQL's linguistic collations ignore leading spaces). Decimal division keeps more digits in PostgreSQL than SQL Server's result-scale rules give. CONCAT and implicit date-to-string conversions format datetimes differently.
+- In generated columns, CONCAT of strings and numbers becomes coalesce(x, '') || …; concat(), to_char() and the TRY_CAST helpers are not immutable, so columns using them are held back (S2P2009).

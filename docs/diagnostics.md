@@ -227,12 +227,83 @@ PostgreSQL equivalent by hand.
 `gen_random_uuid()`, whose values are random: inserts are no longer in key order. On PostgreSQL
 18 it becomes `uuidv7()`, which is time-ordered.
 
+### S2P3003 ConvertStyleUnsupported (Error)
+
+`CONVERT` with a style the translator does not know, or a style that is not a literal. The date
+and time styles 1–5, 10–12, 20–25, 101–105, 108, 110–112, 114, 120, 121 and 126 are translated
+(to `to_char` / `to_date` / `to_timestamp`), and money styles 1 and 2. Write the conversion by
+hand with `to_char`.
+
+### S2P3004 FormatUnsupported (Error)
+
+`FORMAT` with a culture other than en-US, a standard format letter (`'d'`, `'C'`, …) or a custom
+specifier the translator does not know. Custom date patterns (`yyyy-MM-dd HH:mm`) and the
+`N`/`F` number formats are translated to `to_char`.
+
+### S2P3005 DateFirstAssumed (Info)
+
+`DATEPART(weekday, …)` and `DATEPART(week, …)` depend on `SET DATEFIRST`. The translation
+assumes SQL Server's default, 7 (weeks start on Sunday, which is day 1). Code that sets
+`DATEFIRST` differently needs the expression adjusted.
+
+### S2P3006 ProceduralGlobal (Error)
+
+`@@ROWCOUNT`, `@@ERROR`, `SCOPE_IDENTITY()`, the `ERROR_*()` functions and the like describe the
+statement or error just before them, so they mean something only in procedural code, which
+Stage 3 translates.
+
+### S2P3007 JsonPathUnsupported (Error)
+
+`JSON_VALUE`/`JSON_QUERY` with a path that is not a simple literal `$.a.b[2]` path (a `strict`
+path, a wildcard, or a variable). Rewrite with PostgreSQL's `jsonb_path_query`.
+
+### S2P3008 HashEncodingDiffers (Warning)
+
+`HASHBYTES` on an `nvarchar` hashes its UTF-16 bytes in SQL Server; the translation hashes the
+text's UTF-8 bytes, so the same text gives a different hash. Stored hashes computed by SQL Server
+will not match; hash `varchar` (single-byte) text, or recompute the stored hashes.
+
+### S2P3009 ExtensionDisabled (Error)
+
+The construct needs one of the permitted extensions (`pgcrypto` for `HASHBYTES('SHA1')` and
+`CRYPT_GEN_RANDOM`, `vector` for `VECTOR_DISTANCE`), and the options disable it.
+
+### S2P3010 AmbiguousPlus (Warning)
+
+The operands of `+` have no known type (a column the translator could not resolve, for
+example), so it is kept as addition. If they are strings, it must be `||`.
+
 ### S2P3012 FloatRounding (Warning)
 
 `ROUND` on a `float` or `real` rounds the binary value in SQL Server: `2.55` is stored as
 `2.5499…`, so `ROUND(2.55E0, 1)` is `2.5`. PostgreSQL can round only `numeric`, and the value
 cast to `numeric` is the decimal `2.55`, which rounds to `2.6`. Values that end in 5 at the
 rounding digit can differ by one unit in the last place.
+
+### S2P3013 UnresolvedColumn (Warning)
+
+A column reference could not be resolved to a table, view or derived table in scope, so it is
+written by its name without knowing its type (and conversions that depend on the type are not
+made). Usually the column belongs to an object the reader did not see.
+
+### S2P3014 ByteLengthDiffers (Warning)
+
+`DATALENGTH` of an `nvarchar` counts UTF-16 bytes (2 per character) in SQL Server; `octet_length`
+counts UTF-8 bytes, so the results differ for non-ASCII text and by a factor of two for ASCII.
+
+### S2P3015 CollationIgnored (Info)
+
+A `COLLATE` clause in an expression is dropped; the comparison uses the column's own collation.
+
+### S2P3020 CompatDisabled (Error)
+
+The translation needs an `mssql_compat` helper (for `DATEDIFF`, `CHARINDEX`, `ISNUMERIC`,
+`TRY_CAST`, …) and `useCompatSchema` is false. Enable it, or rewrite the expression by hand.
+
+### S2P3030 SpatialMethod (Error)
+
+A spatial method (`STDistance`, `STIntersects`, `geography::Point`, …). Mapping these to PostGIS
+`ST_*` functions is planned for Stage 4.
 
 ## S2P7xxx — data copy and verification
 

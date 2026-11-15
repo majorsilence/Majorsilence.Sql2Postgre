@@ -80,6 +80,16 @@ public sealed partial class NameMapper(ConversionOptions options)
     public string Trigger(ObjectName table, string sourceName) =>
         Map($"triggers:{table.Schema}.{table.Name}".ToLowerInvariant(), sourceName, sourceName, table);
 
+    /// <summary>
+    /// A name with no object of its own to keep unique — a table alias, a select-list alias, a
+    /// column of a derived table or CTE — styled and kept within 63 bytes, but not remembered.
+    /// </summary>
+    public string Alias(string source)
+    {
+        string styled = ApplyStyle(source, options.NameStyle);
+        return Truncate(styled.Length == 0 ? "_" : styled, out _);
+    }
+
     /// <summary>Double-quotes an identifier unless PostgreSQL would read it unquoted as the same name.</summary>
     public static string Quote(string identifier) =>
         IsPlainIdentifier(identifier) ? identifier : $"\"{identifier.Replace("\"", "\"\"")}\"";

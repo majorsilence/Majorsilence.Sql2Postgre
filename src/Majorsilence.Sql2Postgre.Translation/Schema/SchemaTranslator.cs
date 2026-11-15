@@ -3,6 +3,7 @@ using Majorsilence.Sql2Postgre.Model;
 using Majorsilence.Sql2Postgre.Translation.Expressions;
 using Majorsilence.Sql2Postgre.Translation.Names;
 using Majorsilence.Sql2Postgre.Translation.PgAst;
+using Majorsilence.Sql2Postgre.Translation.Semantics;
 using Majorsilence.Sql2Postgre.Translation.Types;
 
 namespace Majorsilence.Sql2Postgre.Translation.Schema;
@@ -22,7 +23,7 @@ public sealed partial class SchemaTranslator
     private readonly ConversionOptions _options;
     private readonly NameMapper _names;
     private readonly TypeMapper _types;
-    private readonly SchemaExpressionTranslator _expressions;
+    private SchemaExpressionTranslator _expressions = null!; // set by Translate, which builds the semantic model first
 
     /// <summary>Columns left out of each table's CREATE TABLE (untranslatable computed columns), by mapped name.</summary>
     private readonly Dictionary<ObjectName, HashSet<string>> _omitted = [];
@@ -38,13 +39,16 @@ public sealed partial class SchemaTranslator
         _options = options;
         _names = new NameMapper(options);
         _types = new TypeMapper(options, _names);
-        _expressions = new SchemaExpressionTranslator(options, _names, _types);
     }
 
     public NameMapper Names => _names;
 
+    /// <summary>The mssql_compat helpers the translated schema calls (known after <see cref="Translate"/>).</summary>
+    public IReadOnlyCollection<string> UsedCompatFunctions => _expressions?.UsedCompatFunctions ?? [];
+
     public IReadOnlyList<TranslatedObject> Translate(SourceDatabase db)
     {
+        _expressions = new SchemaExpressionTranslator(_options, _names, _types, SemanticModel.Build(db));
         var objects = new List<TranslatedObject>();
         var tables = db.Tables.Where(t => !Excluded(t.Name)).ToList();
         var sequences = db.Sequences.Where(s => !Excluded(s.Name)).ToList();
@@ -186,8 +190,6 @@ public sealed partial class SchemaTranslator
 
     // ---- tables ----
 
-    private Func<string, SqlServerType?> ColumnTypes(Table t) =>
-        name => t.Columns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))?.Type;
 
     private TranslatedObject Table(Table t)
     {
@@ -227,7 +229,7 @@ public sealed partial class SchemaTranslator
         {
             // Read from a script: SQL Server would derive the type from the expression, so derive it
             // here from the column types it uses, as far as they make it evident.
-            string? inferred = c.Computed is null ? null : _expressions.InferType(c.Computed.Expression, ColumnTypes(t));
+            string? inferred = c.Computed is null ? null : _expressions.InferType(c.Computed.Expression, t.Name, t.Columns);
             if (inferred is null)
             {
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.ComputedColumnTypeUnknown, Severity.Error, t.Name,
@@ -261,7 +263,7 @@ public sealed partial class SchemaTranslator
         PgGenerated? generated = null;
         if (c.Computed is { } computed)
         {
-            var result = _expressions.Translate(computed.Expression, t.Name, ColumnTypes(t));
+            var result = _expressions.Translate(computed.Expression, t.Name, t.Columns, immutable: true);
             diagnostics.AddRange(result.Diagnostics);
             extensions.AddRange(result.Extensions);
             if (result.Expression is null)
@@ -291,7 +293,7 @@ public sealed partial class SchemaTranslator
         PgExpr? defaultValue = null;
         if (c.DefaultExpression is { } def && identity is null && generated is null)
         {
-            var result = _expressions.Translate(def, t.Name, ColumnTypes(t), c.Type);
+            var result = _expressions.Translate(def, t.Name, t.Columns, c.Type);
             diagnostics.AddRange(result.Diagnostics);
             extensions.AddRange(result.Extensions);
             if (result.Expression is null)
@@ -329,11 +331,18 @@ public sealed partial class SchemaTranslator
                || _referencedColumns.Contains($"{t.Name}.{column}");
     }
 
-    /// <summary>Values that change from one call to the next, which no generated column may use.</summary>
-    private static bool IsVolatile(PgExpr e) => e switch
+    /// <summary>
+    /// Calls PostgreSQL does not mark immutable, which no generated column may use: values that
+    /// change from call to call, and functions that depend on settings (concat and to_char format
+    /// dates by DateStyle; the TRY_CAST and ISDATE helpers parse dates).
+    /// </summary>
+    private bool IsVolatile(PgExpr e) => e switch
     {
         PgKeyword { Sql: "localtimestamp" or "current_user" } => true,
-        PgFunctionCall { Name: "now" or "gen_random_uuid" or "uuidv7" } => true,
+        PgFunctionCall { Name: "now" or "gen_random_uuid" or "uuidv7" or "random" or "nextval" or "concat" or "concat_ws"
+            or "to_char" or "to_date" or "to_timestamp" or "current_setting" or "current_database" } => true,
+        PgFunctionCall f when f.Name.StartsWith(NameMapper.Quote(_options.CompatSchemaName) + ".try_cast_", StringComparison.Ordinal)
+                              || f.Name == NameMapper.Quote(_options.CompatSchemaName) + ".isdate" => true,
         PgFunctionCall f => f.Arguments.Any(IsVolatile),
         PgUnary u => IsVolatile(u.Operand),
         PgBinary b => IsVolatile(b.Left) || IsVolatile(b.Right),
@@ -429,7 +438,7 @@ public sealed partial class SchemaTranslator
         {
             string source = ck.Name ?? GeneratedName(t.Name, $"{t.Name.Name}_check");
             string name = _names.Constraint(t.Name, source);
-            var result = _expressions.Translate(ck.Expression, t.Name, ColumnTypes(t), isPredicate: true);
+            var result = _expressions.Translate(ck.Expression, t.Name, t.Columns, isPredicate: true);
             if (Missing(t.Name, ColumnsIn(result.Expression)) is { Count: > 0 } missingCheck)
             {
                 yield return OnMissingColumns(new ObjectName(t.Name.Schema, source), ObjectKind.Constraint, $"{table.Qualified}.{NameMapper.Quote(name)}",
@@ -537,7 +546,7 @@ public sealed partial class SchemaTranslator
             PgExpr? where = null;
             if (ix.FilterExpression is { } filter)
             {
-                var result = _expressions.Translate(filter, t.Name, ColumnTypes(t), isPredicate: true);
+                var result = _expressions.Translate(filter, t.Name, t.Columns, isPredicate: true);
                 diagnostics.AddRange(result.Diagnostics);
                 where = result.Expression;
                 if (where is null)

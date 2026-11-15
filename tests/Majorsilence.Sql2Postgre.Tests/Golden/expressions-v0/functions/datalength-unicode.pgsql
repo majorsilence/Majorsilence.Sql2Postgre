@@ -1,0 +1,1 @@
+octet_length(s)

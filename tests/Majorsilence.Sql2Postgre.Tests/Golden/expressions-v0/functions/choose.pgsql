@@ -1,0 +1,1 @@
+CASE n WHEN 1 THEN 'a' WHEN 2 THEN 'b' END

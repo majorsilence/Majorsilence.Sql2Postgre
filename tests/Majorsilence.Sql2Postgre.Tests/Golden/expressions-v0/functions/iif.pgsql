@@ -1,0 +1,1 @@
+CASE WHEN n > 0 THEN 'p' ELSE 'n' END

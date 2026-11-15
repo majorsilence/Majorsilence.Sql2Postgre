@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **T-SQL expressions translate through one translator that knows names and types: string,
+  date, number, JSON, hashing, aggregate and window functions, CONVERT styles and FORMAT
+  patterns, implicit conversions SQL Server makes and PostgreSQL does not, `bit` as `boolean`,
+  `+` as `||` on strings, LIKE character classes as SIMILAR TO, NULLs sorted as SQL Server sorts
+  them, and `NEXT VALUE FOR`.** Built-ins with no inline equivalent call `mssql_compat` helpers
+  (DATEDIFF, CHARINDEX, ISNUMERIC, ISJSON, ISDATE, TRY_CAST, DATEPART(week)), plain SQL and
+  PL/pgSQL created by the generated script in a new Compat phase before the tables. 180 cases
+  agree on both engines, which settled (among others) that empty strings convert to 0 and
+  1900-01-01, that STUFF past the end and ASCII('') are NULL, that AVG of integers truncates and
+  that POWER keeps its first argument's type. Schema expressions use it too: untranslatable
+  objects in the corpus fell from 51 to 8, with no new failures. (WP 2.2, WP 2.6)
 - **`SemanticModel` knows what every name is and what type every expression has: tables, views
   (columns inferred from their SELECT, views over views included), table-valued function result
   columns, scalar function return types, procedure parameters, alias types; query scopes with

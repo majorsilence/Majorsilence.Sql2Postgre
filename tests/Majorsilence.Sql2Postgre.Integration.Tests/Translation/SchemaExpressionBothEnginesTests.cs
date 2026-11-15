@@ -55,7 +55,7 @@ public class SchemaExpressionBothEnginesTests
         var options = new ConversionOptions();
         var names = new NameMapper(options);
         var result = new SchemaExpressionTranslator(options, names, new TypeMapper(options, names))
-            .Translate(tsql, new ObjectName("dbo", "t"), _ => null);
+            .Translate(tsql, new ObjectName("dbo", "t"), []);
         Assert.That(result.Expression, Is.Not.Null, string.Join("; ", result.Diagnostics));
         await BothEngines.AssertSameResultAsync($"SELECT {tsql} AS v", $"SELECT {PgWriter.Expression(result.Expression!)} AS v");
     }

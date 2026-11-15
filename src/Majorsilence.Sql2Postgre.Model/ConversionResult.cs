@@ -3,7 +3,11 @@ namespace Majorsilence.Sql2Postgre.Model;
 public enum ObjectStatus { Converted, ConvertedWithWarnings, Manual, Skipped }
 
 /// <summary>The script phases, in the order they are applied (see <c>sql2pg schema</c>'s file names).</summary>
-public enum Phase { Schemas, Types, Sequences, Tables, Compat, Code, Indexes, Constraints, ForeignKeys, Triggers }
+/// <remarks>
+/// The mssql_compat helpers come before the tables: a default or computed column may call one,
+/// and PostgreSQL checks a function exists when the table is created.
+/// </remarks>
+public enum Phase { Schemas, Types, Compat, Sequences, Tables, Code, Indexes, Constraints, ForeignKeys, Triggers }
 
 /// <summary>One source object's PostgreSQL output.</summary>
 /// <param name="TargetName">The PostgreSQL name, schema-qualified and quoted as emitted.</param>

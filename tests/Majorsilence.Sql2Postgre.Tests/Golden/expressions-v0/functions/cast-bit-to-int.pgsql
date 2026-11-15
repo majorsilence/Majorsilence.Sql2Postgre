@@ -1,0 +1,1 @@
+CAST(b AS integer)

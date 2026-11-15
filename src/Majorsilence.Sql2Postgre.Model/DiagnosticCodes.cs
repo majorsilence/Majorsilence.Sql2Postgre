@@ -116,6 +116,30 @@ public static class DiagnosticCodes
     /// <summary>NEWSEQUENTIALID() becomes a random UUID (before PostgreSQL 18), so values are not ordered.</summary>
     public const string NotSequential = "S2P3002";
 
+    /// <summary>CONVERT with a style the translator does not know (or a non-literal style).</summary>
+    public const string ConvertStyleUnsupported = "S2P3003";
+
+    /// <summary>FORMAT with a format or culture the translator does not know.</summary>
+    public const string FormatUnsupported = "S2P3004";
+
+    /// <summary>DATEPART(weekday/week) depends on SET DATEFIRST; the default (7) is assumed.</summary>
+    public const string DateFirstAssumed = "S2P3005";
+
+    /// <summary>@@ROWCOUNT, SCOPE_IDENTITY(), ERROR_*() and the like belong to procedural code (Stage 3).</summary>
+    public const string ProceduralGlobal = "S2P3006";
+
+    /// <summary>A JSON path that is not a simple literal $.a.b[n] path.</summary>
+    public const string JsonPathUnsupported = "S2P3007";
+
+    /// <summary>HASHBYTES on nvarchar hashes UTF-16 bytes in SQL Server, UTF-8 in the translation.</summary>
+    public const string HashEncodingDiffers = "S2P3008";
+
+    /// <summary>The construct needs a permitted extension that the options disable.</summary>
+    public const string ExtensionDisabled = "S2P3009";
+
+    /// <summary>+ on operands of unknown type is kept as addition; if they are strings it must be ||.</summary>
+    public const string AmbiguousPlus = "S2P3010";
+
     /// <summary>ROUND on a float rounds the binary value in SQL Server and the decimal value in PostgreSQL.</summary>
     public const string FloatRounding = "S2P3012";
 
@@ -133,6 +157,21 @@ public static class DiagnosticCodes
 
     /// <summary>A table has the same number of rows on both sides but different values.</summary>
     public const string ChecksumMismatch = "S2P7102";
+
+    /// <summary>A column reference could not be resolved; it is written by its name without its type.</summary>
+    public const string UnresolvedColumn = "S2P3013";
+
+    /// <summary>DATALENGTH counts UTF-16 bytes for nvarchar in SQL Server, UTF-8 bytes in PostgreSQL.</summary>
+    public const string ByteLengthDiffers = "S2P3014";
+
+    /// <summary>A COLLATE clause is dropped.</summary>
+    public const string CollationIgnored = "S2P3015";
+
+    /// <summary>The translation needs an mssql_compat helper and the compat schema is disabled.</summary>
+    public const string CompatDisabled = "S2P3020";
+
+    /// <summary>A spatial method (STDistance, …), which needs the PostGIS mapping of Stage 4.</summary>
+    public const string SpatialMethod = "S2P3030";
 
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";

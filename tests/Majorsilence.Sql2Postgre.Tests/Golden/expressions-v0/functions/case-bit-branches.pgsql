@@ -1,0 +1,1 @@
+CASE WHEN n > 0 THEN CAST(b AS integer) ELSE 0 END

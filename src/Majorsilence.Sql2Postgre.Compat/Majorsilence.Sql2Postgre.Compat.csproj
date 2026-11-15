@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <EmbeddedResource Include="Sql/*.sql" LogicalName="Majorsilence.Sql2Postgre.Compat.Sql.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <Description>Optional mssql_compat helper functions, in plain SQL and PL/pgSQL, for T-SQL built-ins with no inline PostgreSQL equivalent. Part of Majorsilence.Sql2Postgre.</Description>

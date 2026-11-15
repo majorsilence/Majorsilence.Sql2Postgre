@@ -108,7 +108,7 @@ public class CliTests
         {
             Assert.That(code, Is.EqualTo(ExitCodes.Success));
             Assert.That(Directory.GetFiles(dir, "*.sql"), Has.Length.EqualTo(10));
-            Assert.That(File.ReadAllText(Path.Combine(dir, "04-tables.sql")), Does.Contain("CREATE TABLE shop.all_types"));
+            Assert.That(File.ReadAllText(Path.Combine(dir, "05-tables.sql")), Does.Contain("CREATE TABLE shop.all_types"));
         });
         Directory.Delete(dir, recursive: true);
     }

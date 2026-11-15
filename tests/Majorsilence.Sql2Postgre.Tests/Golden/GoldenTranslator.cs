@@ -62,9 +62,7 @@ public static class GoldenTranslator
 
         var names = new NameMapper(options);
         var translator = new SchemaExpressionTranslator(options, names, new TypeMapper(options, names));
-        var result = translator.Translate(tsql.Trim(), table,
-            name => columns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))?.Type,
-            target, predicate);
+        var result = translator.Translate(tsql.Trim(), table, columns, target, predicate);
         string sql = result.Expression is null ? "-- untranslated" : PgWriter.Expression(result.Expression);
         return new GoldenResult(sql + "\n", result.Diagnostics.Select(d => new GoldenDiagnostic(d.Code, d.Severity.ToString())).ToList());
     }

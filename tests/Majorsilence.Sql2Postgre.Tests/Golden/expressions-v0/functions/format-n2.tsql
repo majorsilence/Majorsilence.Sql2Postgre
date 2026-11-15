@@ -1,0 +1,2 @@
+-- columns: s nvarchar(50), s2 nvarchar(50), v varchar(20), sn varchar(10), n int, big bigint, x decimal(10,3), m money, f float, d datetime2(3), dt date, o datetimeoffset, b bit, j nvarchar(max), g uniqueidentifier
+FORMAT(f, 'N2')

@@ -1,0 +1,1 @@
+lag(n, 1, 0) OVER (ORDER BY d NULLS FIRST)

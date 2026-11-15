@@ -1,0 +1,3 @@
+-- columns: code char(10), s nvarchar(20)
+-- kind: check
+code LIKE '[A-Z][0-9]%'

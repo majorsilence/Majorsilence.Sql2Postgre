@@ -1,1 +1,1 @@
--- untranslated
+code SIMILAR TO '[A-Z]%'
