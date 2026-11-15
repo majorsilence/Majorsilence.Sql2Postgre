@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`SqlServerScriptReader` reads a folder of `CREATE` scripts into the same model as the
+  catalog reader, filling in what SQL Server fills in (`dbo`, default lengths, precisions and
+  scales, `float(24)` as `real`, implicit NOT NULL, clustered primary keys).** A batch that does
+  not parse is reported as `S2P0001` with its file and line, and reading continues. An
+  integration test creates the shop fixture on SQL Server and checks both readers agree. System-
+  generated constraint names are now read as null by both readers. (WP 1.3)
 - **`SqlServerCatalogReader` reads a live SQL Server database into the model: tables, every
   column type, identity, defaults, computed columns, keys, foreign keys, checks, indexes
   (filtered, included, columnstore, full-text), sequences, alias and table types, modules with

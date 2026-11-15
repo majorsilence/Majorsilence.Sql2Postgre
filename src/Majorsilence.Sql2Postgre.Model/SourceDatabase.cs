@@ -40,17 +40,21 @@ public sealed record Column(
 
 public sealed record IndexColumn(string Name, bool Descending = false);
 
-public sealed record PrimaryKey(string Name, IReadOnlyList<IndexColumn> Columns, bool IsClustered);
+/// <param name="Name">The constraint name, or null when SQL Server generated it (<c>PK__…</c>).</param>
+public sealed record PrimaryKey(string? Name, IReadOnlyList<IndexColumn> Columns, bool IsClustered);
 
-public sealed record UniqueConstraint(string Name, IReadOnlyList<IndexColumn> Columns);
+/// <param name="Name">The constraint name, or null when SQL Server generated it.</param>
+public sealed record UniqueConstraint(string? Name, IReadOnlyList<IndexColumn> Columns);
 
 public enum ReferentialAction { NoAction, Cascade, SetNull, SetDefault }
 
-public sealed record ForeignKey(string Name, IReadOnlyList<string> Columns, ObjectName Referenced,
+/// <param name="Name">The constraint name, or null when SQL Server generated it (<c>FK__…</c>).</param>
+public sealed record ForeignKey(string? Name, IReadOnlyList<string> Columns, ObjectName Referenced,
     IReadOnlyList<string> ReferencedColumns, ReferentialAction OnDelete = ReferentialAction.NoAction,
     ReferentialAction OnUpdate = ReferentialAction.NoAction, bool IsDisabled = false, bool IsNotTrusted = false);
 
-public sealed record CheckConstraint(string Name, string Expression, bool IsDisabled = false, bool IsNotTrusted = false);
+/// <param name="Name">The constraint name, or null when SQL Server generated it (<c>CK__…</c>).</param>
+public sealed record CheckConstraint(string? Name, string Expression, bool IsDisabled = false, bool IsNotTrusted = false);
 
 /// <summary>
 /// An index that is not the table's primary key or a unique constraint. Named <c>TableIndex</c>

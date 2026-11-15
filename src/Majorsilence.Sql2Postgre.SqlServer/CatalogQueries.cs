@@ -4,6 +4,11 @@ namespace Majorsilence.Sql2Postgre.SqlServer;
 /// Every query the catalog reader runs, one per concern, all against the catalog views of the
 /// current database. Objects SQL Server itself ships (<c>is_ms_shipped = 1</c>) are excluded.
 /// </summary>
+/// <remarks>
+/// Constraint names SQL Server generated itself (<c>PK__order__…</c>, different every time the
+/// script runs) are read as NULL: the translator then names the constraint the way PostgreSQL
+/// would, so the output does not depend on generated names.
+/// </remarks>
 internal static class CatalogQueries
 {
     public const string Database = """
@@ -51,11 +56,12 @@ internal static class CatalogQueries
         """;
 
     public const string KeyConstraints = """
-        SELECT kc.parent_object_id AS object_id, kc.name, kc.type, i.type AS index_type, i.index_id
+        SELECT kc.parent_object_id AS object_id, CASE WHEN kc.is_system_named = 0 THEN kc.name END AS name,
+               kc.type, i.type AS index_type, i.index_id
         FROM sys.key_constraints kc
         JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id
         JOIN sys.tables t ON t.object_id = kc.parent_object_id AND t.is_ms_shipped = 0
-        ORDER BY kc.parent_object_id, kc.name;
+        ORDER BY kc.parent_object_id, kc.type, kc.name;
         """;
 
     // Indexes that are not a primary key or unique constraint. Heaps (type 0) are not indexes.
@@ -84,7 +90,8 @@ internal static class CatalogQueries
         """;
 
     public const string ForeignKeys = """
-        SELECT fk.object_id AS fk_id, fk.parent_object_id AS object_id, fk.name,
+        SELECT fk.object_id AS fk_id, fk.parent_object_id AS object_id,
+               CASE WHEN fk.is_system_named = 0 THEN fk.name END AS name,
                SCHEMA_NAME(rt.schema_id) AS ref_schema, rt.name AS ref_table,
                fk.delete_referential_action, fk.update_referential_action, fk.is_disabled, fk.is_not_trusted
         FROM sys.foreign_keys fk
@@ -102,7 +109,8 @@ internal static class CatalogQueries
         """;
 
     public const string CheckConstraints = """
-        SELECT cc.parent_object_id AS object_id, cc.name, cc.definition, cc.is_disabled, cc.is_not_trusted
+        SELECT cc.parent_object_id AS object_id, CASE WHEN cc.is_system_named = 0 THEN cc.name END AS name,
+               cc.definition, cc.is_disabled, cc.is_not_trusted
         FROM sys.check_constraints cc
         WHERE cc.is_ms_shipped = 0
         ORDER BY cc.parent_object_id, cc.name;

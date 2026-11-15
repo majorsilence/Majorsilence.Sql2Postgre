@@ -165,7 +165,7 @@ public class CatalogReaderTests
             Assert.That(T("customer").PrimaryKey!.IsClustered, Is.False);
             Assert.That(T("customer").PrimaryKey!.Columns, Is.EqualTo(new[] { new IndexColumn("customer_id") }));
             Assert.That(T("order_line").PrimaryKey!.Columns.Select(c => c.Name), Is.EqualTo(new[] { "order_id", "line_no" }));
-            Assert.That(T("order").PrimaryKey!.Name, Does.StartWith("PK__"));
+            Assert.That(T("order").PrimaryKey!.Name, Is.Null, "system-named");
             Assert.That(T("sales_fact").PrimaryKey, Is.Null);
         });
     }

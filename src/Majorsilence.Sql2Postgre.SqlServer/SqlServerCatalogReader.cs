@@ -38,7 +38,7 @@ public static class SqlServerCatalogReader
 
         var keyConstraints = (await QueryAsync(conn, CatalogQueries.KeyConstraints, r => new
         {
-            ObjectId = r.GetInt32(0), Name = r.GetString(1), Type = r.GetString(2).Trim(), IndexType = (int)r.GetByte(3), IndexId = r.GetInt32(4),
+            ObjectId = r.GetInt32(0), Name = r.IsDBNull(1) ? null : r.GetString(1), Type = r.GetString(2).Trim(), IndexType = (int)r.GetByte(3), IndexId = r.GetInt32(4),
         }, ct)).ToLookup(x => x.ObjectId);
 
         var indexes = (await QueryAsync(conn, CatalogQueries.Indexes, r => new
@@ -55,14 +55,14 @@ public static class SqlServerCatalogReader
         var foreignKeys = (await QueryAsync(conn, CatalogQueries.ForeignKeys, r =>
         {
             int fkId = r.GetInt32(0);
-            return (ObjectId: r.GetInt32(1), Fk: new ForeignKey(r.GetString(2),
+            return (ObjectId: r.GetInt32(1), Fk: new ForeignKey(r.IsDBNull(2) ? null : r.GetString(2),
                 fkColumns[fkId].Select(c => c.Column).ToList(), new ObjectName(r.GetString(3), r.GetString(4)),
                 fkColumns[fkId].Select(c => c.RefColumn).ToList(),
                 Action(r.GetByte(5)), Action(r.GetByte(6)), r.GetBoolean(7), r.GetBoolean(8)));
         }, ct)).ToLookup(x => x.ObjectId, x => x.Fk);
 
         var checks = (await QueryAsync(conn, CatalogQueries.CheckConstraints, r => (Id: r.GetInt32(0),
-            Check: new CheckConstraint(r.GetString(1), r.GetString(2), r.GetBoolean(3), r.GetBoolean(4))), ct))
+            Check: new CheckConstraint(r.IsDBNull(1) ? null : r.GetString(1), r.GetString(2), r.GetBoolean(3), r.GetBoolean(4))), ct))
             .ToLookup(x => x.Id, x => x.Check);
 
         var tables = await QueryAsync(conn, CatalogQueries.Tables, r =>
