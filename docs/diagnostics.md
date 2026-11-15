@@ -37,6 +37,23 @@ original `CREATE` script (for example through the script reader) to convert it.
 The object is a CLR function, procedure, aggregate or trigger: compiled .NET code, not T-SQL.
 PostgreSQL cannot run it; reimplement it in SQL or PL/pgSQL by hand.
 
+## S2P1xxx — types, names, collations
+
+### S2P1001 IdentifierTruncated (Warning)
+
+PostgreSQL identifiers are at most 63 bytes (UTF-8); longer ones are silently cut by the
+server, which can make two names equal. sql2pg shortens the name itself to its first 54 bytes,
+`_`, and 8 hex digits of a hash of the whole name, so different long names stay different. Code
+that refers to the object by its old name must use the new one; consider renaming it to
+something shorter with a name map.
+
+### S2P1002 IdentifierCollision (Warning)
+
+Two different SQL Server names become the same PostgreSQL name (for example `OrderID` and
+`Order_ID` under snake_case, or a table and an index that share a name: PostgreSQL keeps tables,
+views, sequences, indexes and types in one namespace per schema). The later one gets `_2`, `_3`, …
+Check that code referring to it uses the new name.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

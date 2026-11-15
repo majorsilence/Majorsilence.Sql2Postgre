@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`NameMapper` turns SQL Server names into PostgreSQL identifiers: lower case (or snake_case,
+  or preserved), quoted only when PostgreSQL needs it (keywords taken from PostgreSQL 18's own
+  `pg_get_keywords()`), shortened with a hash past 63 bytes (`S2P1001`), and given `_2`,
+  `_3` on collisions per PostgreSQL namespace (`S2P1002`).** It answers the same way for every
+  reference to a name, matching SQL Server's case-insensitive lookup. (WP 1.4)
 - **`SqlServerScriptReader` reads a folder of `CREATE` scripts into the same model as the
   catalog reader, filling in what SQL Server fills in (`dbo`, default lengths, precisions and
   scales, `float(24)` as `real`, implicit NOT NULL, clustered primary keys).** A batch that does

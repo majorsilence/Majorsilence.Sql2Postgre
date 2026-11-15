@@ -11,6 +11,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.1 — model, diagnostics, options, conversion result.
 - WP 1.2 — catalog reader, `tests/fixtures/shop.sql` fixture, 37 reader tests.
 - WP 1.3 — script reader; catalog/script agreement test on the shop fixture.
+- WP 1.4 — name mapper with embedded PostgreSQL 18 keyword list.
 
 ## Measured
 
@@ -28,3 +29,5 @@ Nothing yet.
 - SQL Server stores defaults and checks in its own normalized form: `((1))`, `([qty]>(0))`, `([email] like '%@%')`. WP 1.6 parses these, so it must accept the extra parentheses and bracketed names.
 - Constraint names SQL Server generates (`PK__…`, `FK__…`, `CK__…`) are null in the model (contract change: `PrimaryKey`/`UniqueConstraint`/`ForeignKey`/`CheckConstraint.Name` are `string?`). The DDL translator (WP 1.8) must name those constraints the way PostgreSQL does (`<table>_pkey`, `<table>_<cols>_fkey`, …).
 - The script reader cannot know a computed column's type (SQL Server derives it); it records `SqlServerType("computed")`. WP 1.8 needs a type for a generated column: from the catalog it has one, from scripts it must come from WP 2.1's type inference — until then such columns need a `TypeOverrides` entry or are reported.
+- `NameMapper` adds `Type(ObjectName)` beside the plan's methods: SQL Server keeps types in their own namespace, PostgreSQL in the relations' one, so a type and a table of the same name collide.
+- Quoting covers reserved, type/function-name and column-name keywords (catcodes R, T, C): over-quoting a lower-case name is harmless (it is the same identifier).

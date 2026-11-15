@@ -20,6 +20,12 @@ public static class DiagnosticCodes
     /// <summary>A CLR function, procedure, aggregate or trigger: .NET code, not T-SQL.</summary>
     public const string ClrObject = "S2P0102";
 
+    /// <summary>A name is longer than PostgreSQL's 63-byte limit and was shortened, with a hash to keep it unique.</summary>
+    public const string IdentifierTruncated = "S2P1001";
+
+    /// <summary>Two names map to the same PostgreSQL identifier; the later one gets a numeric suffix.</summary>
+    public const string IdentifierCollision = "S2P1002";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

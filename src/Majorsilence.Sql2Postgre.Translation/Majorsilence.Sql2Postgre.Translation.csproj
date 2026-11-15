@@ -4,6 +4,15 @@
     <ProjectReference Include="..\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="System.IO.Hashing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Names/postgres-keywords.txt" LogicalName="postgres-keywords.txt" />
+  </ItemGroup>
+
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <Description>Translates SQL Server schema and T-SQL code to PostgreSQL. Part of Majorsilence.Sql2Postgre.</Description>
