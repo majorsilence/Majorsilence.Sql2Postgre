@@ -5,6 +5,10 @@
     <ProjectReference Include="..\Majorsilence.Sql2Postgre.Translation\Majorsilence.Sql2Postgre.Translation.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <Description>Writes, orders and applies PostgreSQL scripts produced by the translator. Part of Majorsilence.Sql2Postgre.</Description>

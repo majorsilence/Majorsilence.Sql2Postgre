@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`PgApplier` runs converted objects (or a directory of phase scripts) against PostgreSQL,
+  each in its own transaction, and reports what applied, failed (with SQLSTATE) or was skipped;
+  `StopOnError` stops at the first failure and `RecreateDatabaseAsync` drops and recreates the
+  target.** Manual tables, constraints and indexes are applied (their DDL is complete with the
+  untranslatable part as a comment); Manual views, routines and triggers only with
+  `ApplyManual`. (WP 1.9)
 - **A database's schema converts to ordered PostgreSQL scripts: extensions, schemas, domains,
   composite types, sequences, tables (identity, generated columns, defaults, optional ICU
   collation), then primary keys, unique and check constraints, indexes and foreign keys, written

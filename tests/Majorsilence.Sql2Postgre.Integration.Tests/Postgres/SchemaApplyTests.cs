@@ -2,7 +2,6 @@ using Majorsilence.Sql2Postgre.Integration.Tests.Infrastructure;
 using Majorsilence.Sql2Postgre.Model;
 using Majorsilence.Sql2Postgre.Postgres;
 using Majorsilence.Sql2Postgre.SqlServer;
-using Npgsql;
 
 namespace Majorsilence.Sql2Postgre.Integration.Tests.Postgres;
 
@@ -34,22 +33,8 @@ public class SchemaApplyTests
     private static async Task AssertAppliesAsync(ConversionResult result)
     {
         await using var target = await PostgresDatabase.CreateAsync();
-        var failures = new List<string>();
-        await using var conn = new NpgsqlConnection(target.ConnectionString);
-        await conn.OpenAsync();
-        foreach (var o in result.Objects.Where(o => o.Status is not (ObjectStatus.Manual or ObjectStatus.Skipped)))
-        {
-            try
-            {
-                await using var cmd = new NpgsqlCommand(o.Sql, conn);
-                await cmd.ExecuteNonQueryAsync();
-            }
-            catch (PostgresException ex)
-            {
-                failures.Add($"{o.TargetName}: {ex.SqlState} {ex.MessageText}\n{o.Sql}");
-            }
-        }
-        Assert.That(failures, Is.Empty);
+        var report = await PgApplier.ApplyAsync(result.Objects.Where(o => o.Status != ObjectStatus.Manual), target.ConnectionString);
+        Assert.That(report.Outcomes.Where(o => o.Status == ApplyStatus.Failed).Select(o => $"{o.TargetName}: {o.SqlState} {o.Message}"), Is.Empty);
         Assert.That(result.Objects.Count(o => o.Kind == ObjectKind.Table && o.Status != ObjectStatus.Manual), Is.EqualTo(6));
     }
 }

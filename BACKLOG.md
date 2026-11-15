@@ -16,6 +16,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.6 — schema expression translator, PgAst expression nodes, expression writer; 60 golden cases, 36 both-engines cases.
 - WP 1.7 — PgAst DDL nodes and writer.
 - WP 1.8 — schema translator, SchemaConverter, ScriptPlanner; 26 DDL golden cases; shop fixture applies from catalog and script.
+- WP 1.9 — applier.
 
 ## Measured
 
