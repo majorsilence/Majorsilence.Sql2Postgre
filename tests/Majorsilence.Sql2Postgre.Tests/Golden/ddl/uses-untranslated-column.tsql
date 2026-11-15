@@ -1,0 +1,3 @@
+CREATE TABLE dbo.t (id int NOT NULL, code varchar(10) NOT NULL, label AS (dbo.f(code)), CONSTRAINT pk_t PRIMARY KEY (id), CONSTRAINT ck_label CHECK (label <> ''));
+CREATE INDEX ix_t_label ON dbo.t (label) INCLUDE (code);
+CREATE INDEX ix_t_code ON dbo.t (code);

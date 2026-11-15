@@ -199,6 +199,13 @@ The constraint is disabled in SQL Server (`NOCHECK CONSTRAINT`), so SQL Server d
 it at all. It is created `NOT VALID`, which skips existing rows, but PostgreSQL still checks
 every new and changed row. Drop the constraint if it should stay off.
 
+### S2P2014 UsesUntranslatedColumn (Error)
+
+A primary key, unique constraint, check, foreign key or index uses a column that was left out of
+the table because its definition could not be translated (usually a computed column calling a
+user-defined function or a `hierarchyid` method). It is kept as a comment. Once the column has
+been added by hand, create this object too.
+
 ## S2P3xxx — expressions and built-in functions
 
 ### S2P3001 UnsupportedExpression (Error)

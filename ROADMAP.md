@@ -234,7 +234,7 @@ cannot commit; empty-string vs. `NULL` handling in some functions; identifier ca
 
 ```
 sql2pg assess   --source <conn|dir> [--html report.html] [--json report.json]
-sql2pg schema   --source … --out <dir> [--target-version 17]
+sql2pg schema   --source … --out <dir> [--target-version 18]
 sql2pg translate <file-or-dir.sql> [-o <outdir>]       # ad-hoc SQL, no database needed
 sql2pg data     --source <conn> --target <conn> [--tables …] [--parallel 4] [--verify]
 sql2pg migrate  --source <conn> --target <conn>        # schema + data + post-data + verify
@@ -328,4 +328,4 @@ sync.
    script creates, so still pure PostgreSQL, but extra objects in the target — or inline
    everything (no extra objects; some constructs become manual). Recommended: on by default,
    off by flag.
-5. **Minimum PostgreSQL version.** Recommended 15.
+5. **Target PostgreSQL version.** Decided: PostgreSQL 18 only for the foreseeable future; what 15, 16 and 17 need is checked once 18 is in good shape.

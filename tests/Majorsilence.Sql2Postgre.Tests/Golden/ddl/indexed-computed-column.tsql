@@ -1,0 +1,2 @@
+CREATE TABLE dbo.orders (id int NOT NULL PRIMARY KEY, n int NOT NULL, number AS (N'SO' + CAST(n AS nvarchar(10))), label AS (n * 2));
+CREATE UNIQUE INDEX ak_orders_number ON dbo.orders (number);

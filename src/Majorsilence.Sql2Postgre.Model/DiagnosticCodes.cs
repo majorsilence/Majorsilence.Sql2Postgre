@@ -26,6 +26,9 @@ public static class DiagnosticCodes
     /// <summary>Objects depend on each other in a cycle; they are emitted in name order.</summary>
     public const string DependencyCycle = "S2P0202";
 
+    /// <summary>Code refers to an object in another database or on a linked server.</summary>
+    public const string ExternalReference = "S2P0301";
+
     /// <summary>A name is longer than PostgreSQL's 63-byte limit and was shortened, with a hash to keep it unique.</summary>
     public const string IdentifierTruncated = "S2P1001";
 
@@ -103,6 +106,9 @@ public static class DiagnosticCodes
 
     /// <summary>A disabled constraint is created NOT VALID, but PostgreSQL will enforce it for new rows.</summary>
     public const string DisabledConstraintEnforced = "S2P2013";
+
+    /// <summary>A key, index or constraint uses a column that was left out of the table (it could not be translated).</summary>
+    public const string UsesUntranslatedColumn = "S2P2014";
 
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";

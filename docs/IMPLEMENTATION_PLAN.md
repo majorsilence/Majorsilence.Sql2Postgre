@@ -45,7 +45,7 @@ These apply to every WP. A PR that breaks one is not mergeable.
    SQL Server. Package dependencies listed under [Dependencies](#dependencies) are allowed;
    adding any other package needs the reviewer's OK in the PR description.
 2. **Pure, unmodified PostgreSQL output.** Everything emitted must run on stock community
-   PostgreSQL 15, 16, 17 and 18: core features, plus only these permitted extensions —
+   PostgreSQL 18 (see *Target version* below): core features, plus only these permitted extensions —
 
    | Extension | `CREATE EXTENSION` name | Used for |
    |---|---|---|
@@ -87,6 +87,13 @@ These apply to every WP. A PR that breaks one is not mergeable.
    `sealed` records for data, no `static` mutable state. Comments say what SQL Server or
    PostgreSQL does and why the code does this; no history of attempts.
 
+## Target version
+
+**PostgreSQL 18 only, for the foreseeable future** (maintainer's decision, 2026-11-15). New work
+targets 18 and tests run against 18; do not add fallbacks for 15–17. The version switches that
+already exist (Stage 1) stay. Once 18 is in good shape, a separate pass decides what 15, 16 and
+17 need. Where this plan says "PostgreSQL 15–18", read "PostgreSQL 18" until then.
+
 ## Defaults for open decisions
 
 ROADMAP.md lists five decisions. Until the maintainer says otherwise, implement these defaults
@@ -98,7 +105,7 @@ ROADMAP.md lists five decisions. Until the maintainer says otherwise, implement 
 | Case-insensitive collation | Report only (diagnostic `S2P1301` per CI text column) | `CaseInsensitive = Report \| IcuCollation` |
 | Procedures returning rows | `FUNCTION … RETURNS TABLE` (single result set); `PROCEDURE` with `refcursor` params (several) | `ResultSetStyle = Function \| Refcursor` |
 | Compat schema | On; schema name `mssql_compat` | `UseCompatSchema`, `CompatSchemaName` |
-| Minimum PostgreSQL | 15; emit for `TargetVersion` (default 17) | `TargetVersion = 15..18` |
+| Target PostgreSQL | 18 only for now (see *Target version*); the 15–17 switches from Stage 1 remain | `TargetVersion = 15..18` |
 | `dbo` schema | Mapped to `public` | `SchemaMap` dictionary |
 | Extensions | All permitted ones allowed; only those needed are emitted | `Extensions` set (empty = core only) |
 
@@ -249,7 +256,7 @@ it means and what a person should do.
 ```csharp
 public sealed record ConversionOptions
 {
-    public int TargetVersion { get; init; } = 17;              // 15..18
+    public int TargetVersion { get; init; } = 18;              // 15..18
     public NameStyle NameStyle { get; init; } = NameStyle.Lower;
     public CaseInsensitiveStrategy CaseInsensitive { get; init; } = CaseInsensitiveStrategy.Report;
     public ResultSetStyle ResultSetStyle { get; init; } = ResultSetStyle.Function;
@@ -324,7 +331,7 @@ failing; a reviewer then reads the diff. Never set it in CI.
 
 ```csharp
 // In Integration.Tests. One SQL Server and one PostgreSQL container per test run (OneTimeSetUp),
-// PostgreSQL version from SQL2PG_PG_VERSION (default 17). Images:
+// PostgreSQL version from SQL2PG_PG_VERSION (default 18). Images:
 //   mcr.microsoft.com/mssql/server:2022-latest   postgres:<version>
 await BothEngines.AssertSameResultAsync(
     tsql:   "SELECT LEN('ab  ') AS n",

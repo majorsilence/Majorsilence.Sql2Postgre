@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **All six public sample databases (AdventureWorks, AdventureWorksDW, WideWorldImporters,
+  WideWorldImportersDW, Northwind, pubs) migrate to PostgreSQL 18 with no apply, copy or
+  checksum failures — about 7.5 million rows — and a deliberately wrong mapping is caught.**
+  `scripts/download-corpus.sh` fetches them (SHA-256 checked) into the git-ignored
+  `tests/corpus/`. The scan found and fixed: keys and indexes on computed columns that could not
+  be translated (now held back with `S2P2014`), two unnamed checks on one table both named
+  `<table>_check` (now `_check`, `_check1`), and indexes on `VIRTUAL` generated columns. (WP 1.13)
+- **PostgreSQL 18 is the default target, and the only one tested for now** (`targetVersion`
+  defaults to 18; tests and CI run against `postgres:18`). The Stage 1 switches for 15–17 stay;
+  support for those versions is revisited once 18 is in good shape. A non-persisted computed
+  column that is indexed or part of a key is created `STORED`, since PostgreSQL 18 cannot index a
+  `VIRTUAL` one.
 - **`sql2pg` has its verbs: `assess` (summary of objects by kind and status, the most frequent
   diagnostics, `--json` report), `schema` (phase scripts to `--out`), `apply`, `data`
   (`--tables`, `--parallel`, `--state`, `--verify count|checksum`) and `migrate` (tables,

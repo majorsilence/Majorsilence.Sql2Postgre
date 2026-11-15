@@ -16,7 +16,7 @@ public sealed record ConversionOptions
     public const int MaxTargetVersion = 18;
 
     /// <summary>The PostgreSQL major version the output is written for (15–18).</summary>
-    public int TargetVersion { get; init; } = 17;
+    public int TargetVersion { get; init; } = 18;
 
     public NameStyle NameStyle { get; init; } = NameStyle.Lower;
 

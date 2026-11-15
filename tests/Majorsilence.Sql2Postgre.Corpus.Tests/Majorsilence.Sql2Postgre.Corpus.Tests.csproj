@@ -6,6 +6,9 @@
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit.Analyzers" />
     <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
@@ -25,6 +28,12 @@
 
   <ItemGroup>
     <None Include="..\fixtures\**\*.sql" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The container fixtures are shared with the integration tests, as linked source. -->
+  <ItemGroup>
+    <Compile Include="../Majorsilence.Sql2Postgre.Integration.Tests/Infrastructure/*.cs" LinkBase="Infrastructure" />
+    <Compile Include="../Majorsilence.Sql2Postgre.Integration.Tests/EnginesTeardown.cs" Link="EnginesTeardown.cs" />
   </ItemGroup>
 
 </Project>

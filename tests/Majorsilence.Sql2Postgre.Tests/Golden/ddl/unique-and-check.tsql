@@ -7,3 +7,4 @@ CREATE TABLE dbo.t (
     CONSTRAINT ck_t_qty CHECK (qty > 0),
     CHECK (code <> '')
 );
+CREATE TABLE dbo.jobs (job_id int NOT NULL, min_lvl int NOT NULL CHECK (min_lvl >= 10), max_lvl int NOT NULL CHECK (max_lvl <= 250));

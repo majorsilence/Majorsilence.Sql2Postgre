@@ -20,10 +20,25 @@ What was done and measured, as it lands. The plan is in
 - WP 1.10 — data copier with range splitting, resume, identity/sequence continuation.
 - WP 1.11 — data verifier (count and checksum).
 - WP 1.12 — CLI; migrate of the shop fixture end to end through the CLI.
+- Default target PostgreSQL 18; CI container job on 18 only.
+- WP 1.13 — corpus download script, compile scan with positive control; Stage 1 (v0.1) exit criteria met on PostgreSQL 18 (also passed on 15, 16 and 17 before the default changed).
 
 ## Measured
 
-Nothing yet.
+Stage 1 compile scan (WP 1.13) on PostgreSQL 18, 2026-11-15. Objects by status; failures are
+of objects that are not Manual.
+
+| Database | Rows copied | Converted | With warnings | Manual | Skipped | Apply / copy / verify failures |
+|---|---|---|---|---|---|---|
+| AdventureWorks2022 | 760,837 | 415 | 2 | 9 | 62 | 0 / 0 / 0 |
+| AdventureWorksDW2022 | 1,060,820 | 114 | 0 | 0 | 8 | 0 / 0 / 0 |
+| WideWorldImporters | 4,713,833 | 294 | 5 | 30 | 50 | 0 / 0 / 0 |
+| WideWorldImportersDW | 923,643 | 129 | 1 | 8 | 31 | 0 / 0 / 0 |
+| Northwind | 3,308 | 73 | 0 | 0 | 23 | 0 / 0 / 0 |
+| pubs | 255 | 42 | 0 | 4 | 6 | 0 / 0 / 0 |
+
+Skipped objects are views, routines and triggers (Stage 2 and 3) and index kinds with no
+PostgreSQL equivalent. Positive control (an identity typed as `date`) is reported.
 
 ## Notes for later
 
@@ -55,3 +70,5 @@ Nothing yet.
 - decimal/numeric values beyond System.Decimal's 28–29 digits fail the table's copy (SqlDataReader.GetDecimal overflows) with S2P7003; reading SqlDecimal into a BigInteger-scaled numeric would fix it.
 - `--recreate` (drop and recreate the target) is on `apply` and `migrate`; it is never the default.
 - `migrate` exits 1 when the reader found something a person must handle (an encrypted module) even if everything else succeeded.
+- WideWorldImportersDW's restore once failed inside SQL Server recovery (internal error 0x82000007) right after WideWorldImporters was restored into the same container; it passed on the rerun and in four other runs. If it recurs, restore each corpus database into a fresh container or raise the container's memory.
+- The S2P3001 errors left in the corpus (WideWorldImporters 35, WideWorldImportersDW 8, AdventureWorks 6, pubs 4) are expressions WP 2.2 should cover first: NEXT VALUE FOR in defaults, LIKE with [ ] character classes, CONVERT with styles, user-defined functions in computed columns.

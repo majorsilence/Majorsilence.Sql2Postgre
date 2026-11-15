@@ -24,6 +24,15 @@ public sealed partial class SchemaTranslator
     private readonly TypeMapper _types;
     private readonly SchemaExpressionTranslator _expressions;
 
+    /// <summary>Columns left out of each table's CREATE TABLE (untranslatable computed columns), by mapped name.</summary>
+    private readonly Dictionary<ObjectName, HashSet<string>> _omitted = [];
+
+    /// <summary>Columns other tables' foreign keys reference (<c>schema.table.column</c>, case-insensitive).</summary>
+    private readonly HashSet<string> _referencedColumns = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How many generated constraint names of each kind a table has had, to number the next one as PostgreSQL does.</summary>
+    private readonly Dictionary<string, int> _generatedNames = new(StringComparer.OrdinalIgnoreCase);
+
     public SchemaTranslator(ConversionOptions options)
     {
         _options = options;
@@ -41,6 +50,10 @@ public sealed partial class SchemaTranslator
         var sequences = db.Sequences.Where(s => !Excluded(s.Name)).ToList();
         var userTypes = db.UserTypes.Where(u => !Excluded(u.Name)).ToList();
         var modules = db.Modules.Where(m => !Excluded(m.Name)).ToList();
+
+        foreach (var fk in tables.SelectMany(t => t.ForeignKeys))
+            foreach (string c in fk.ReferencedColumns)
+                _referencedColumns.Add($"{fk.Referenced}.{c}");
 
         // Names first, in a fixed order, so collisions resolve the same way every run.
         foreach (var t in tables)
@@ -185,11 +198,14 @@ public sealed partial class SchemaTranslator
         var columns = new List<PgColumnDef>();
         var dependsOn = new List<ObjectName>();
 
+        var omitted = _omitted[t.Name] = new HashSet<string>(StringComparer.Ordinal);
         foreach (var c in t.Columns)
         {
             var column = Column(t, c, diagnostics, extensions, comments);
             if (column is not null)
                 columns.Add(column);
+            else
+                omitted.Add(_names.Column(t.Name, c.Name));
             if (c.Type.UserTypeName is { } alias)
             {
                 int dot = alias.IndexOf('.');
@@ -260,10 +276,16 @@ public sealed partial class SchemaTranslator
                 comments.Add(new PgUntranslated(DiagnosticCodes.GeneratedNotImmutable, $"{c.Name} AS {computed.Expression}"));
                 return null;
             }
+            // PostgreSQL 18 cannot index a VIRTUAL generated column (nor key one, or reference it
+            // from a foreign key), so a column SQL Server indexes stays STORED.
+            bool keyed = IsKeyedOrIndexed(t, c.Name);
             if (!computed.IsPersisted && _options.TargetVersion < 18)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
                     $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server; before PostgreSQL 18 a generated column is always STORED."));
-            generated = new PgGenerated(result.Expression, computed.IsPersisted);
+            else if (!computed.IsPersisted && keyed)
+                diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
+                    $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it is indexed or part of a key, which PostgreSQL allows only for a STORED generated column."));
+            generated = new PgGenerated(result.Expression, computed.IsPersisted || keyed);
         }
 
         PgExpr? defaultValue = null;
@@ -296,6 +318,17 @@ public sealed partial class SchemaTranslator
             Identity: identity, Generated: generated, Collation: collation);
     }
 
+    /// <summary>Whether an index, the primary key, a unique constraint or a foreign key (either side) uses the column.</summary>
+    private bool IsKeyedOrIndexed(Table t, string column)
+    {
+        bool Is(string name) => string.Equals(name, column, StringComparison.OrdinalIgnoreCase);
+        return t.Indexes.Any(i => i.Keys.Any(k => Is(k.Name)) || i.Included.Any(Is))
+               || t.PrimaryKey?.Columns.Any(k => Is(k.Name)) == true
+               || t.Uniques.Any(u => u.Columns.Any(k => Is(k.Name)))
+               || t.ForeignKeys.Any(f => f.Columns.Any(Is))
+               || _referencedColumns.Contains($"{t.Name}.{column}");
+    }
+
     /// <summary>Values that change from one call to the next, which no generated column may use.</summary>
     private static bool IsVolatile(PgExpr e) => e switch
     {
@@ -310,6 +343,47 @@ public sealed partial class SchemaTranslator
         _ => false,
     };
 
+    /// <summary>
+    /// A name for a constraint SQL Server named itself, as PostgreSQL would name it: the base name
+    /// the first time, then with 1, 2, … appended (<c>jobs_check</c>, <c>jobs_check1</c>).
+    /// </summary>
+    private string GeneratedName(ObjectName table, string baseName)
+    {
+        string key = $"{table}:{baseName}";
+        int n = _generatedNames.GetValueOrDefault(key);
+        _generatedNames[key] = n + 1;
+        return n == 0 ? baseName : $"{baseName}{n}";
+    }
+
+    /// <summary>The columns of <paramref name="mapped"/> that the table was created without.</summary>
+    private IReadOnlyList<string> Missing(ObjectName table, IEnumerable<string> mapped) =>
+        _omitted.TryGetValue(table, out var omitted) ? mapped.Where(omitted.Contains).Distinct().ToList() : [];
+
+    private static IEnumerable<string> ColumnsIn(PgExpr? e) => e switch
+    {
+        null => [],
+        PgColumnRef c => [c.Name],
+        PgUnary u => ColumnsIn(u.Operand),
+        PgBinary b => ColumnsIn(b.Left).Concat(ColumnsIn(b.Right)),
+        PgIsNull n => ColumnsIn(n.Operand),
+        PgInList i => ColumnsIn(i.Operand).Concat(i.Values.SelectMany(ColumnsIn)),
+        PgBetween b => ColumnsIn(b.Operand).Concat(ColumnsIn(b.Low)).Concat(ColumnsIn(b.High)),
+        PgLike l => ColumnsIn(l.Operand).Concat(ColumnsIn(l.Pattern)),
+        PgCase c => ColumnsIn(c.Operand).Concat(c.Whens.SelectMany(w => ColumnsIn(w.Condition).Concat(ColumnsIn(w.Result)))).Concat(ColumnsIn(c.Else)),
+        PgCast c => ColumnsIn(c.Operand),
+        PgFunctionCall f => f.Arguments.SelectMany(ColumnsIn),
+        PgAtTimeZone a => ColumnsIn(a.Operand),
+        _ => [],
+    };
+
+    /// <summary>A stand-in for a key, index or constraint on a column the table does not have: the original kept as a comment.</summary>
+    private static TranslatedObject OnMissingColumns(ObjectName source, ObjectKind kind, string target, Phase phase, ObjectName table,
+        IReadOnlyList<string> missing, string original) =>
+        new(source, kind, target, phase, [new PgUntranslated(DiagnosticCodes.UsesUntranslatedColumn, original)],
+            [new Diagnostic(DiagnosticCodes.UsesUntranslatedColumn, Severity.Error, table,
+                $"{original} uses {string.Join(", ", missing)}, which {table} was created without (its definition could not be translated).")],
+            [table]);
+
     // ---- keys and checks ----
 
     private IEnumerable<TranslatedObject> Constraints(Table t)
@@ -319,20 +393,33 @@ public sealed partial class SchemaTranslator
 
         if (t.PrimaryKey is { } pk)
         {
-            string name = _names.Index(t.Name, pk.Name ?? $"{t.Name.Name}_pkey");
-            var diagnostics = new List<Diagnostic>();
-            if (pk.IsClustered)
-                diagnostics.Add(new Diagnostic(DiagnosticCodes.ClusteredIgnored, Severity.Info, t.Name,
-                    $"{t.Name} is clustered in SQL Server; PostgreSQL does not keep rows in index order (CLUSTER can reorder them once)."));
-            yield return new TranslatedObject(new ObjectName(t.Name.Schema, pk.Name ?? $"{t.Name.Name}_pkey"), ObjectKind.Constraint,
-                $"{table.Qualified}.{NameMapper.Quote(name)}", Phase.Constraints,
-                [new PgAddPrimaryKey(table, name, pk.Columns.Select(c => Col(c.Name)).ToList())], diagnostics, [t.Name]);
+            string name = _names.Index(t.Name, pk.Name ?? GeneratedName(t.Name, $"{t.Name.Name}_pkey"));
+            var pkColumns = pk.Columns.Select(c => Col(c.Name)).ToList();
+            if (Missing(t.Name, pkColumns) is { Count: > 0 } missingPk)
+                yield return OnMissingColumns(new ObjectName(t.Name.Schema, name), ObjectKind.Constraint, $"{table.Qualified}.{NameMapper.Quote(name)}",
+                    Phase.Constraints, t.Name, missingPk, $"PRIMARY KEY {name} ({string.Join(", ", pk.Columns.Select(c => c.Name))})");
+            else
+            {
+                var diagnostics = new List<Diagnostic>();
+                if (pk.IsClustered)
+                    diagnostics.Add(new Diagnostic(DiagnosticCodes.ClusteredIgnored, Severity.Info, t.Name,
+                        $"{t.Name} is clustered in SQL Server; PostgreSQL does not keep rows in index order (CLUSTER can reorder them once)."));
+                yield return new TranslatedObject(new ObjectName(t.Name.Schema, pk.Name ?? $"{t.Name.Name}_pkey"), ObjectKind.Constraint,
+                    $"{table.Qualified}.{NameMapper.Quote(name)}", Phase.Constraints,
+                    [new PgAddPrimaryKey(table, name, pkColumns)], diagnostics, [t.Name]);
+            }
         }
 
         foreach (var u in t.Uniques)
         {
-            string source = u.Name ?? $"{t.Name.Name}_{string.Join("_", u.Columns.Select(c => c.Name))}_key";
+            string source = u.Name ?? GeneratedName(t.Name, $"{t.Name.Name}_{string.Join("_", u.Columns.Select(c => c.Name))}_key");
             string name = _names.Index(t.Name, source);
+            if (Missing(t.Name, u.Columns.Select(c => Col(c.Name))) is { Count: > 0 } missingUnique)
+            {
+                yield return OnMissingColumns(new ObjectName(t.Name.Schema, source), ObjectKind.Constraint, $"{table.Qualified}.{NameMapper.Quote(name)}",
+                    Phase.Constraints, t.Name, missingUnique, $"UNIQUE {source} ({string.Join(", ", u.Columns.Select(c => c.Name))})");
+                continue;
+            }
             yield return new TranslatedObject(new ObjectName(t.Name.Schema, source), ObjectKind.Constraint,
                 $"{table.Qualified}.{NameMapper.Quote(name)}", Phase.Constraints,
                 [new PgAddUnique(table, name, u.Columns.Select(c => Col(c.Name)).ToList())], [], [t.Name]);
@@ -340,9 +427,15 @@ public sealed partial class SchemaTranslator
 
         foreach (var ck in t.Checks)
         {
-            string source = ck.Name ?? $"{t.Name.Name}_check";
+            string source = ck.Name ?? GeneratedName(t.Name, $"{t.Name.Name}_check");
             string name = _names.Constraint(t.Name, source);
             var result = _expressions.Translate(ck.Expression, t.Name, ColumnTypes(t), isPredicate: true);
+            if (Missing(t.Name, ColumnsIn(result.Expression)) is { Count: > 0 } missingCheck)
+            {
+                yield return OnMissingColumns(new ObjectName(t.Name.Schema, source), ObjectKind.Constraint, $"{table.Qualified}.{NameMapper.Quote(name)}",
+                    Phase.Constraints, t.Name, missingCheck, $"CHECK {source} ({ck.Expression.Trim()})");
+                continue;
+            }
             var diagnostics = result.Diagnostics.ToList();
             diagnostics.AddRange(NotValidNotes(t.Name, $"check {source}", ck.IsDisabled, ck.IsNotTrusted));
             PgStatement statement = result.Expression is null
@@ -374,9 +467,17 @@ public sealed partial class SchemaTranslator
         var table = _names.Relation(t.Name);
         foreach (var fk in t.ForeignKeys)
         {
-            string source = fk.Name ?? $"{t.Name.Name}_{string.Join("_", fk.Columns)}_fkey";
+            string source = fk.Name ?? GeneratedName(t.Name, $"{t.Name.Name}_{string.Join("_", fk.Columns)}_fkey");
             string name = _names.Constraint(t.Name, source);
             var referenced = _names.Relation(fk.Referenced);
+            var missingFk = Missing(t.Name, fk.Columns.Select(c => _names.Column(t.Name, c)))
+                .Concat(Missing(fk.Referenced, fk.ReferencedColumns.Select(c => _names.Column(fk.Referenced, c)))).ToList();
+            if (missingFk.Count > 0)
+            {
+                yield return OnMissingColumns(new ObjectName(t.Name.Schema, source), ObjectKind.Constraint, $"{table.Qualified}.{NameMapper.Quote(name)}",
+                    Phase.ForeignKeys, t.Name, missingFk, $"FOREIGN KEY {source} ({string.Join(", ", fk.Columns)}) REFERENCES {fk.Referenced}");
+                continue;
+            }
             yield return new TranslatedObject(new ObjectName(t.Name.Schema, source), ObjectKind.Constraint,
                 $"{table.Qualified}.{NameMapper.Quote(name)}", Phase.ForeignKeys,
                 [new PgAddForeignKey(table, name, fk.Columns.Select(c => _names.Column(t.Name, c)).ToList(), referenced,
@@ -419,6 +520,13 @@ public sealed partial class SchemaTranslator
             }
 
             string name = _names.Index(t.Name, ix.Name);
+            var indexColumns = ix.Keys.Select(k => _names.Column(t.Name, k.Name)).Concat(ix.Included.Select(c => _names.Column(t.Name, c)));
+            if (Missing(t.Name, indexColumns) is { Count: > 0 } missingIndex)
+            {
+                yield return OnMissingColumns(source, ObjectKind.Index, $"{NameMapper.Quote(table.Schema)}.{NameMapper.Quote(name)}", Phase.Indexes,
+                    t.Name, missingIndex, $"INDEX {ix.Name} ({string.Join(", ", ix.Keys.Select(k => k.Name))})");
+                continue;
+            }
             var diagnostics = new List<Diagnostic>();
             var extensions = new List<string>();
             if (method == "gist")

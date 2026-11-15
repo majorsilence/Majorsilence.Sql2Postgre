@@ -426,3 +426,6 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Public sample databases for the corpus tests (scripts/download-corpus.sh); never committed.
+tests/corpus/

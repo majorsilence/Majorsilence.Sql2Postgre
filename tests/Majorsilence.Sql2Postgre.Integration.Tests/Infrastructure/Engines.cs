@@ -7,14 +7,14 @@ namespace Majorsilence.Sql2Postgre.Integration.Tests.Infrastructure;
 /// <summary>
 /// One SQL Server and one PostgreSQL container for the whole test run, started on first use and
 /// stopped when the run ends. PostgreSQL's version comes from <c>SQL2PG_PG_VERSION</c> (default
-/// 17). Without a reachable Docker engine every test that needs them is ignored, not failed.
+/// 18). Without a reachable Docker engine every test that needs them is ignored, not failed.
 /// </summary>
 public static class Engines
 {
     public const string SqlServerImage = "mcr.microsoft.com/mssql/server:2022-latest";
 
     public static string PostgresVersion =>
-        Environment.GetEnvironmentVariable("SQL2PG_PG_VERSION") is { Length: > 0 } v ? v : "17";
+        Environment.GetEnvironmentVariable("SQL2PG_PG_VERSION") is { Length: > 0 } v ? v : "18";
 
     private static readonly Lazy<Task<State>> Started = new(StartAsync, LazyThreadSafetyMode.ExecutionAndPublication);
 
@@ -22,6 +22,9 @@ public static class Engines
 
     /// <summary>SQL Server connection string (database <c>master</c>); ignores the test without Docker.</summary>
     public static async Task<string> SqlServerAsync() => (await RequireAsync()).SqlServer!.GetConnectionString();
+
+    /// <summary>The SQL Server container itself (to copy backup files into it); ignores the test without Docker.</summary>
+    public static async Task<MsSqlContainer> SqlServerContainerAsync() => (await RequireAsync()).SqlServer!;
 
     /// <summary>PostgreSQL connection string; ignores the test without Docker.</summary>
     public static async Task<string> PostgresAsync() => (await RequireAsync()).Postgres!.GetConnectionString();
