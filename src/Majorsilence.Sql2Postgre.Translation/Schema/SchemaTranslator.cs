@@ -4,6 +4,7 @@ using Majorsilence.Sql2Postgre.Translation.Expressions;
 using Majorsilence.Sql2Postgre.Translation.Names;
 using Majorsilence.Sql2Postgre.Translation.PgAst;
 using Majorsilence.Sql2Postgre.Translation.Semantics;
+using Majorsilence.Sql2Postgre.Translation.Sql;
 using Majorsilence.Sql2Postgre.Translation.Types;
 
 namespace Majorsilence.Sql2Postgre.Translation.Schema;
@@ -44,11 +45,16 @@ public sealed partial class SchemaTranslator
     public NameMapper Names => _names;
 
     /// <summary>The mssql_compat helpers the translated schema calls (known after <see cref="Translate"/>).</summary>
-    public IReadOnlyCollection<string> UsedCompatFunctions => _expressions?.UsedCompatFunctions ?? [];
+    public IReadOnlyCollection<string> UsedCompatFunctions =>
+        [.. (_expressions?.UsedCompatFunctions ?? []).Union(_moduleCompat).Order(StringComparer.Ordinal)];
+
+    private readonly SortedSet<string> _moduleCompat = new(StringComparer.Ordinal);
 
     public IReadOnlyList<TranslatedObject> Translate(SourceDatabase db)
     {
-        _expressions = new SchemaExpressionTranslator(_options, _names, _types, SemanticModel.Build(db));
+        var model = SemanticModel.Build(db);
+        _expressions = new SchemaExpressionTranslator(_options, _names, _types, model);
+        var queries = new QueryTranslator(new ExpressionTranslator(_options, _names, _types, model));
         var objects = new List<TranslatedObject>();
         var tables = db.Tables.Where(t => !Excluded(t.Name)).ToList();
         var sequences = db.Sequences.Where(s => !Excluded(s.Name)).ToList();
@@ -81,11 +87,22 @@ public sealed partial class SchemaTranslator
             objects.AddRange(GuardMany(t.Name, () => ForeignKeys(t)));
         }
         foreach (var m in modules)
-            objects.Add(new TranslatedObject(m.Name, m.Kind, m.Name.ToString(),
-                m.Kind == ObjectKind.Trigger ? Phase.Triggers : Phase.Code, [],
-                [new Diagnostic(DiagnosticCodes.NotYetSupported, Severity.Info, m.Name,
-                    $"{m.Kind} {m.Name} is not converted yet (views in Stage 2, routines and triggers in Stage 3).")], [])
-            { Skipped = true });
+        {
+            if (m.Kind == ObjectKind.View && string.IsNullOrWhiteSpace(m.Definition))
+                objects.Add(Untranslated(m, _names.Relation(m.Name).Qualified, [], DiagnosticCodes.EncryptedModule,
+                    $"{m.Name} was created WITH ENCRYPTION, so SQL Server does not reveal its text; supply the original script."));
+            else if (m.Kind == ObjectKind.View)
+                objects.Add(Guard(m.Name, ObjectKind.View, Phase.Code, () => View(m, model, queries)));
+            else
+                objects.Add(new TranslatedObject(m.Name, m.Kind, m.Name.ToString(),
+                    m.Kind == ObjectKind.Trigger ? Phase.Triggers : Phase.Code, [],
+                    [new Diagnostic(DiagnosticCodes.NotYetSupported, Severity.Info, m.Name,
+                        $"{m.Kind} {m.Name} is not converted yet (routines and triggers come in Stage 3).")], [])
+                { Skipped = true });
+        }
+        objects = PropagateUnconverted(objects, model);
+        foreach (var o in objects)
+            _moduleCompat.UnionWith(o.CompatFunctions);
 
         if (_options.CaseInsensitive == CaseInsensitiveStrategy.IcuCollation
             && objects.Any(o => o.Statements.OfType<PgCreateTable>().Any(t => t.Columns.Any(c => c.Collation is not null))))

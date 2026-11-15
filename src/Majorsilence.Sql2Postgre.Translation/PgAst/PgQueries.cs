@@ -79,6 +79,9 @@ public sealed record PgQuantified(PgExpr Operand, string Operator, string Quanti
 
 // ---- statements ----
 
+/// <summary><c>CREATE [MATERIALIZED] VIEW name [(columns)] AS query [WITH CHECK OPTION]</c>.</summary>
+public sealed record PgCreateView(PgName Name, IReadOnlyList<string> Columns, PgQuery Query, bool Materialized = false, bool CheckOption = false) : PgStatement;
+
 /// <summary>A query run as a statement.</summary>
 public sealed record PgQueryStatement(PgQuery Query) : PgStatement;
 

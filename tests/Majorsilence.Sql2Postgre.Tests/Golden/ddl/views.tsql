@@ -1,0 +1,23 @@
+CREATE TABLE dbo.item (id int NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL, price money NOT NULL, active bit NOT NULL);
+GO
+CREATE VIEW dbo.v_active WITH SCHEMABINDING AS SELECT id, name FROM dbo.item WHERE active = 1 WITH CHECK OPTION;
+GO
+CREATE VIEW dbo.v_sorted AS SELECT TOP 100 PERCENT id, name FROM dbo.item ORDER BY name;
+GO
+CREATE VIEW dbo.v_top AS SELECT TOP 3 id FROM dbo.item ORDER BY price DESC;
+GO
+CREATE VIEW dbo.v_named (item_id, label) AS SELECT id, UPPER(name) FROM dbo.item;
+GO
+CREATE VIEW dbo.a_over_view AS SELECT label FROM dbo.v_named WHERE item_id > 1;
+GO
+CREATE VIEW dbo.v_indexed WITH SCHEMABINDING AS SELECT id, price FROM dbo.item;
+GO
+CREATE UNIQUE CLUSTERED INDEX ix_v_indexed ON dbo.v_indexed (id);
+GO
+CREATE FUNCTION dbo.fmt(@p money) RETURNS nvarchar(20) AS BEGIN RETURN CAST(@p AS nvarchar(20)); END;
+GO
+CREATE VIEW dbo.v_uses_function AS SELECT id, dbo.fmt(price) AS shown FROM dbo.item;
+GO
+CREATE VIEW dbo.v_over_blocked AS SELECT shown FROM dbo.v_uses_function;
+GO
+CREATE VIEW dbo.v_untranslatable AS SELECT id FROM dbo.item FOR XML RAW;

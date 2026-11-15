@@ -123,7 +123,7 @@ public static class SqlServerCatalogReader
             else if (definition is null)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.EncryptedModule, Severity.Error, name,
                     $"{name} was created WITH ENCRYPTION, so SQL Server does not reveal its text; supply the original script."));
-            return new Module(name, kind, definition ?? "", parent);
+            return new Module(name, kind, definition ?? "", parent, r.GetInt32(7) == 1);
         }, ct);
 
         var dependencies = await QueryAsync(conn, CatalogQueries.Dependencies, r => new ObjectDependency(

@@ -17,7 +17,10 @@ public static class SchemaConverter
         var objects = translated.Select(o => new ConvertedObject(o.Source, o.Kind, o.TargetName, o.Phase,
                 string.Concat(o.Statements.Select(s => PgWriter.Write(s, options.TargetVersion))),
                 o.Status, o.Diagnostics, o.DependsOn)
-            { Extensions = o.Extensions.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList() })
+            {
+                Extensions = o.Extensions.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+                CompatFunctions = o.CompatFunctions,
+            })
             .Concat(compat)
             .ToList();
         var (ordered, planDiagnostics) = ScriptPlanner.Order(objects);

@@ -47,6 +47,12 @@ then they are listed in the output as skipped, so the report shows everything th
 Objects in one phase depend on each other in a cycle, so no order satisfies all of them. They
 are emitted in name order; applying may need them run twice, or one rewritten to break the cycle.
 
+### S2P0203 DependsOnUnconverted (Error)
+
+The view uses something that is not converted: a function or procedure (routines are converted
+in Stage 3), or another view that needs a person. It cannot be created until that exists, so it
+is held back, and the views built on it with it.
+
 ### S2P0301 ExternalReference (Error)
 
 The code names an object in another database (`otherdb.dbo.t`) or on a linked server
@@ -211,6 +217,18 @@ A primary key, unique constraint, check, foreign key or index uses a column that
 the table because its definition could not be translated (usually a computed column calling a
 user-defined function or a `hierarchyid` method). It is kept as a comment. Once the column has
 been added by hand, create this object too.
+
+### S2P2015 MaterializedViewRefresh (Warning)
+
+An indexed view becomes a materialized view. SQL Server keeps an indexed view's rows current as
+the tables change; PostgreSQL stores a materialized view's rows when it is created and on
+`REFRESH MATERIALIZED VIEW`, so something must refresh it (after loads, or on a schedule).
+
+### S2P2016 ViewOptionDropped (Info)
+
+`WITH SCHEMABINDING` and `VIEW_METADATA` are dropped. PostgreSQL views always depend on what
+they read (a table a view uses cannot be dropped without `CASCADE`), which is what
+SCHEMABINDING asks for.
 
 ## S2P3xxx — expressions and built-in functions
 

@@ -143,6 +143,9 @@ public static partial class PgWriter
     private static string DmlOrQuery(PgStatement statement) => statement switch
     {
         PgQueryStatement q => Query(q.Query) + ";\n",
+        PgCreateView v => $"CREATE {(v.Materialized ? "MATERIALIZED " : "")}VIEW {v.Name.Qualified}"
+                          + (v.Columns.Count > 0 ? $" ({Columns(v.Columns)})" : "") + $" AS\n{Query(v.Query)}"
+                          + (v.CheckOption ? "\nWITH CHECK OPTION" : "") + ";\n",
         PgCreateTableAs c => $"CREATE {(c.Temporary ? "TEMP " : "")}TABLE {(c.Name.Schema.Length == 0 ? Q(c.Name.Name) : c.Name.Qualified)} AS\n{Query(c.Query)};\n",
         PgInsert i => Insert(i),
         PgUpdate u => Update(u),

@@ -81,7 +81,8 @@ public sealed record UserType(ObjectName Name, SqlServerType BaseType, bool IsNu
 /// <summary>A view, function, procedure or trigger, with its full <c>CREATE</c> text.</summary>
 /// <param name="Definition">The text from <c>sys.sql_modules</c>; empty for an encrypted module.</param>
 /// <param name="ParentTable">The table or view a trigger is on.</param>
-public sealed record Module(ObjectName Name, ObjectKind Kind, string Definition, ObjectName? ParentTable = null);
+/// <param name="IsIndexed">A view with a (unique clustered) index: SQL Server stores its rows.</param>
+public sealed record Module(ObjectName Name, ObjectKind Kind, string Definition, ObjectName? ParentTable = null, bool IsIndexed = false);
 
 /// <summary>
 /// <paramref name="From"/> references <paramref name="To"/>. A record rather than the plan's

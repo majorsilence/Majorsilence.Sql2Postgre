@@ -337,6 +337,12 @@ public static partial class SqlServerScriptReader
 
         private void AddIndex(CreateIndexStatement ix)
         {
+            // A clustered index on a view makes it an indexed view.
+            if (ix.Clustered == true && _modules.FindIndex(m => m.Kind == ObjectKind.View && m.Name == NameOf(ix.OnName)) is var view and >= 0)
+            {
+                _modules[view] = _modules[view] with { IsIndexed = true };
+                return;
+            }
             if (!_tables.TryGetValue(NameOf(ix.OnName), out var table))
                 return;
             table.Indexes.Add(new TableIndex(ix.Name.Value, ix.Columns.Select(IndexColumnOf).ToList(),

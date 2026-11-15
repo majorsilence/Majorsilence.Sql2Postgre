@@ -13,6 +13,9 @@ public sealed record TranslatedObject(ObjectName Source, ObjectKind Kind, string
 {
     public IReadOnlyList<string> Extensions { get; init; } = [];
 
+    /// <summary>The mssql_compat helpers the statements call.</summary>
+    public IReadOnlyList<string> CompatFunctions { get; init; } = [];
+
     /// <summary>Set for objects deliberately not converted (indexes with no equivalent, modules before Stage 2).</summary>
     public bool Skipped { get; init; }
 

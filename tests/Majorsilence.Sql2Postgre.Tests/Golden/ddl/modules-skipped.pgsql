@@ -9,7 +9,9 @@ CREATE TABLE public.t (
 SET check_function_bodies = off;
 
 -- sql2pg:object Procedure dbo.p status=Skipped
--- S2P0201: Procedure dbo.p is not converted yet (views in Stage 2, routines and triggers in Stage 3).
+-- S2P0201: Procedure dbo.p is not converted yet (routines and triggers come in Stage 3).
 
--- sql2pg:object View dbo.v status=Skipped
--- S2P0201: View dbo.v is not converted yet (views in Stage 2, routines and triggers in Stage 3).
+-- sql2pg:object View public.v status=Converted
+CREATE VIEW public.v AS
+SELECT id
+FROM public.t;

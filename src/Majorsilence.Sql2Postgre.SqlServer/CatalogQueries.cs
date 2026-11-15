@@ -154,7 +154,8 @@ internal static class CatalogQueries
     public const string Modules = """
         SELECT o.object_id, SCHEMA_NAME(o.schema_id) AS schema_name, o.name, o.type,
                m.definition,
-               SCHEMA_NAME(p.schema_id) AS parent_schema, p.name AS parent_name
+               SCHEMA_NAME(p.schema_id) AS parent_schema, p.name AS parent_name,
+               CASE WHEN o.type = 'V' AND EXISTS (SELECT 1 FROM sys.indexes i WHERE i.object_id = o.object_id AND i.type = 1) THEN 1 ELSE 0 END AS is_indexed
         FROM sys.objects o
         LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
         LEFT JOIN sys.objects p ON p.object_id = o.parent_object_id AND o.type IN ('TR', 'TA')

@@ -23,6 +23,9 @@ public static class DiagnosticCodes
     /// <summary>Views, functions, procedures and triggers are listed but not converted until Stage 2/3.</summary>
     public const string NotYetSupported = "S2P0201";
 
+    /// <summary>The object uses another that is not converted yet (a routine, before Stage 3) or needs a person.</summary>
+    public const string DependsOnUnconverted = "S2P0203";
+
     /// <summary>Objects depend on each other in a cycle; they are emitted in name order.</summary>
     public const string DependencyCycle = "S2P0202";
 
@@ -109,6 +112,12 @@ public static class DiagnosticCodes
 
     /// <summary>A key, index or constraint uses a column that was left out of the table (it could not be translated).</summary>
     public const string UsesUntranslatedColumn = "S2P2014";
+
+    /// <summary>An indexed view becomes a materialized view, which must be refreshed (SQL Server kept it current).</summary>
+    public const string MaterializedViewRefresh = "S2P2015";
+
+    /// <summary>WITH SCHEMABINDING (and VIEW_METADATA) have no PostgreSQL counterpart and are dropped.</summary>
+    public const string ViewOptionDropped = "S2P2016";
 
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Views convert to PostgreSQL: CREATE VIEW (with its column list and WITH CHECK OPTION),
+  indexed views as materialized views (`S2P2015`, they need refreshing), in dependency order.**
+  WITH SCHEMABINDING is dropped (`S2P2016`), as is TOP 100 PERCENT … ORDER BY (`S2P4012`); a
+  view that uses a routine or an unconverted view waits for Stage 3 (`S2P0203`). Every view that
+  converts in the six corpus databases (35 of 45) applies on PostgreSQL 18. (WP 2.4)
 - **SELECT, INSERT, UPDATE, DELETE and MERGE translate to PostgreSQL: TOP (WITH TIES, PERCENT),
   OFFSET/FETCH, APPLY as LATERAL joins, CTEs (recursive too), ROLLUP/CUBE/GROUPING SETS, set
   operations, EXISTS/IN/ANY/ALL subqueries, PIVOT and UNPIVOT, STRING_SPLIT, FOR XML PATH('')
