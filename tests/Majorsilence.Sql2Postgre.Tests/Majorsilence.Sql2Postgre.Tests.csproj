@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Cli\Majorsilence.Sql2Postgre.Cli.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.SqlServer\Majorsilence.Sql2Postgre.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Translation\Majorsilence.Sql2Postgre.Translation.csproj" />

@@ -9,6 +9,10 @@
     <ProjectReference Include="..\Majorsilence.Sql2Postgre.Compat\Majorsilence.Sql2Postgre.Compat.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>sql2pg</AssemblyName>

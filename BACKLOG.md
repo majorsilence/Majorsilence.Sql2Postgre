@@ -19,6 +19,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.9 — applier.
 - WP 1.10 — data copier with range splitting, resume, identity/sequence continuation.
 - WP 1.11 — data verifier (count and checksum).
+- WP 1.12 — CLI; migrate of the shop fixture end to end through the CLI.
 
 ## Measured
 
@@ -52,3 +53,5 @@ Nothing yet.
 - `Sequence.CurrentValue` is now `last_used_value` (null when the sequence was never used), so setval is only issued for sequences that handed out values.
 - PostGIS EWKB and pgvector binary writes are implemented and unit-tested at the byte level but not run against a server with those extensions (the test PostgreSQL has none). A CI job on the postgis/postgis image would close that.
 - decimal/numeric values beyond System.Decimal's 28–29 digits fail the table's copy (SqlDataReader.GetDecimal overflows) with S2P7003; reading SqlDecimal into a BigInteger-scaled numeric would fix it.
+- `--recreate` (drop and recreate the target) is on `apply` and `migrate`; it is never the default.
+- `migrate` exits 1 when the reader found something a person must handle (an encrypted module) even if everything else succeeded.

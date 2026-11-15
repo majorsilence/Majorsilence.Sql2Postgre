@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`sql2pg` has its verbs: `assess` (summary of objects by kind and status, the most frequent
+  diagnostics, `--json` report), `schema` (phase scripts to `--out`), `apply`, `data`
+  (`--tables`, `--parallel`, `--state`, `--verify count|checksum`) and `migrate` (tables,
+  data, then code, indexes, constraints, foreign keys and triggers, then verification).**
+  Connection strings come from options or `SQL2PG_SOURCE`/`SQL2PG_TARGET` and passwords are
+  masked in every message. Exit codes: 0 success, 1 completed with Manual objects, failures or
+  unverified tables, 2 usage error, 3 unexpected error. (WP 1.12)
 - **`DataVerifier` checks copied tables by row count, or by an order-independent checksum
   (each row's canonical values hashed with XxHash64 and summed modulo 2^64, with the source
   values first put through the copier's own transforms).** A changed value fails the checksum

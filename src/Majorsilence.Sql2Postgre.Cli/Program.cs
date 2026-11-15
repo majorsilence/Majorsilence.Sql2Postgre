@@ -1,2 +1,3 @@
-Console.WriteLine("sql2pg: not implemented yet.");
-return 0;
+using Majorsilence.Sql2Postgre.Cli;
+
+return await Sql2PgCli.RunAsync(args);
