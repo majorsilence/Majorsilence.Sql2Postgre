@@ -1,0 +1,43 @@
+<Project>
+
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Authors>Peter Gill</Authors>
+    <Company>Majorsilence</Company>
+    <PackageProjectUrl>https://github.com/majorsilence/Majorsilence.Sql2Postgre</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/majorsilence/Majorsilence.Sql2Postgre</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Default; the packable library/tool projects opt back in individually. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- Every project targets .NET 10 and .NET 11. A machine with only the .NET 10 SDK builds
+       net10.0 alone (that SDK cannot build net11.0); CI installs both and builds both. The SDK
+       version is read from the MSBuild directory because NETCoreSdkVersion is not defined
+       yet when Directory.Build.props is imported. -->
+  <PropertyGroup>
+    <_Sql2PgSdkVersion>$([System.IO.Path]::GetFileName('$(MSBuildBinPath)'))</_Sql2PgSdkVersion>
+    <_Sql2PgSdkMajor>$(_Sql2PgSdkVersion.Split('.')[0])</_Sql2PgSdkMajor>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(_Sql2PgSdkMajor)' != '' And $(_Sql2PgSdkMajor) &gt;= 11">net10.0;net11.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- A newly published advisory for a dependency must not break every build; it is still reported. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!-- On .NET 11 async methods compile to runtime async: the runtime suspends and resumes
+       them itself, with no compiler-built state machine. TargetFramework is a global
+       property in each multi-targeted inner build, so it is already known here. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <Features>$(Features);runtime-async=on</Features>
+  </PropertyGroup>
+
+</Project>

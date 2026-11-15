@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Majorsilence.Sql2Postgre.Cli/Majorsilence.Sql2Postgre.Cli.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.Compat/Majorsilence.Sql2Postgre.Compat.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.Data/Majorsilence.Sql2Postgre.Data.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.Model/Majorsilence.Sql2Postgre.Model.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.Postgres/Majorsilence.Sql2Postgre.Postgres.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.SqlServer/Majorsilence.Sql2Postgre.SqlServer.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.Translation/Majorsilence.Sql2Postgre.Translation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Majorsilence.Sql2Postgre.Corpus.Tests/Majorsilence.Sql2Postgre.Corpus.Tests.csproj" />
+    <Project Path="tests/Majorsilence.Sql2Postgre.Integration.Tests/Majorsilence.Sql2Postgre.Integration.Tests.csproj" />
+    <Project Path="tests/Majorsilence.Sql2Postgre.Tests/Majorsilence.Sql2Postgre.Tests.csproj" />
+  </Folder>
+</Solution>

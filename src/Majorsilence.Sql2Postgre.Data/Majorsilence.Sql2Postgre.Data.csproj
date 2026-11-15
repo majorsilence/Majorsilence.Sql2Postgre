@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Postgres\Majorsilence.Sql2Postgre.Postgres.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Description>Copies and verifies table data from SQL Server to PostgreSQL with binary COPY. Part of Majorsilence.Sql2Postgre.</Description>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.SqlServer\Majorsilence.Sql2Postgre.SqlServer.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Translation\Majorsilence.Sql2Postgre.Translation.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Postgres\Majorsilence.Sql2Postgre.Postgres.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Data\Majorsilence.Sql2Postgre.Data.csproj" />
+    <ProjectReference Include="..\Majorsilence.Sql2Postgre.Compat\Majorsilence.Sql2Postgre.Compat.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>sql2pg</AssemblyName>
+    <RootNamespace>Majorsilence.Sql2Postgre.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>sql2pg</ToolCommandName>
+    <PackageId>Majorsilence.Sql2Postgre.Cli</PackageId>
+    <Description>sql2pg: assess, convert and migrate a SQL Server database (schema, data and T-SQL code) to PostgreSQL.</Description>
+  </PropertyGroup>
+
+</Project>

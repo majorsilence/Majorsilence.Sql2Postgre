@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Description>Neutral model of a SQL Server database, conversion diagnostics and options. Part of Majorsilence.Sql2Postgre, a SQL Server to PostgreSQL converter.</Description>
+  </PropertyGroup>
+
+</Project>

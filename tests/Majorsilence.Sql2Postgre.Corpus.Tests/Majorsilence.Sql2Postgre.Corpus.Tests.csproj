@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit.Analyzers" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Testcontainers.MsSql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="NUnit.Framework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.SqlServer\Majorsilence.Sql2Postgre.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Translation\Majorsilence.Sql2Postgre.Translation.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Postgres\Majorsilence.Sql2Postgre.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Data\Majorsilence.Sql2Postgre.Data.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Compat\Majorsilence.Sql2Postgre.Compat.csproj" />
+  </ItemGroup>
+
+</Project>
