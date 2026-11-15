@@ -14,6 +14,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.4 — name mapper with embedded PostgreSQL 18 keyword list.
 - WP 1.5 — type mapper.
 - WP 1.6 — schema expression translator, PgAst expression nodes, expression writer; 60 golden cases, 36 both-engines cases.
+- WP 1.7 — PgAst DDL nodes and writer.
 
 ## Measured
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The PostgreSQL DDL the converter emits has a tree and a writer: schemas, extensions,
+  collations, domains, composite types, sequences, tables (identity, generated, defaults,
+  collations), primary keys, unique, check and foreign-key constraints (`NOT VALID`), indexes
+  (`INCLUDE`, `WHERE`, `USING`), and untranslated T-SQL kept as comments that cannot close
+  early.** Non-stored generated columns are `VIRTUAL` on PostgreSQL 18 and `STORED` before. (WP 1.7)
 - **Defaults, check constraints, computed columns and index filters translate to PostgreSQL:
   literals, the table's columns, operators (with `+` on strings as `||` and `bit` compared with
   `true`/`false`), `CASE`/`IIF`, `CAST`/`CONVERT` without a style, and `GETDATE`,
