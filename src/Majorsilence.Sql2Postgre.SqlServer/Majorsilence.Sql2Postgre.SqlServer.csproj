@@ -4,6 +4,11 @@
     <ProjectReference Include="..\Majorsilence.Sql2Postgre.Model\Majorsilence.Sql2Postgre.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+  </ItemGroup>
+
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <Description>Reads a SQL Server database's schema and code from its catalog or from T-SQL scripts. Part of Majorsilence.Sql2Postgre.</Description>

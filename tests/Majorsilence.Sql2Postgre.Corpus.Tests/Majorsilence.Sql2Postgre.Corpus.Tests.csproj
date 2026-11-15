@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Compat\Majorsilence.Sql2Postgre.Compat.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\fixtures\**\*.sql" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

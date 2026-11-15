@@ -11,6 +11,15 @@ namespace Majorsilence.Sql2Postgre.Model;
 /// </remarks>
 public static class DiagnosticCodes
 {
+    /// <summary>A T-SQL batch did not parse. The batch is skipped; the reader continues with the next.</summary>
+    public const string ParseError = "S2P0001";
+
+    /// <summary>The module was created <c>WITH ENCRYPTION</c>; SQL Server does not reveal its text.</summary>
+    public const string EncryptedModule = "S2P0101";
+
+    /// <summary>A CLR function, procedure, aggregate or trigger: .NET code, not T-SQL.</summary>
+    public const string ClrObject = "S2P0102";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

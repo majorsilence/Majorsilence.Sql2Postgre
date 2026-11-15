@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`SqlServerCatalogReader` reads a live SQL Server database into the model: tables, every
+  column type, identity, defaults, computed columns, keys, foreign keys, checks, indexes
+  (filtered, included, columnstore, full-text), sequences, alias and table types, modules with
+  their text, and dependencies.** Encrypted modules and CLR objects are listed with
+  `S2P0101`/`S2P0102`. Before this nothing could read a database. (WP 1.2)
 - **The shared types exist: the SQL Server model (`SourceDatabase` and its tables, columns,
   constraints, indexes, sequences, types and modules), diagnostics with stable codes,
   `ConversionOptions` (JSON round trip, validation, permitted-extension list) and the
