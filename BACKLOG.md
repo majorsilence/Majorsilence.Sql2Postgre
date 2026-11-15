@@ -18,6 +18,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.8 — schema translator, SchemaConverter, ScriptPlanner; 26 DDL golden cases; shop fixture applies from catalog and script.
 - WP 1.9 — applier.
 - WP 1.10 — data copier with range splitting, resume, identity/sequence continuation.
+- WP 1.11 — data verifier (count and checksum).
 
 ## Measured
 

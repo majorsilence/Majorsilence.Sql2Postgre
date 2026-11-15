@@ -122,6 +122,12 @@ public static class DiagnosticCodes
     /// <summary>A table's data (or a sequence's position) could not be copied.</summary>
     public const string TableCopyFailed = "S2P7003";
 
+    /// <summary>A table has a different number of rows in PostgreSQL than in SQL Server.</summary>
+    public const string RowCountMismatch = "S2P7101";
+
+    /// <summary>A table has the same number of rows on both sides but different values.</summary>
+    public const string ChecksumMismatch = "S2P7102";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

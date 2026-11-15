@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **`DataVerifier` checks copied tables by row count, or by an order-independent checksum
+  (each row's canonical values hashed with XxHash64 and summed modulo 2^64, with the source
+  values first put through the copier's own transforms).** A changed value fails the checksum
+  (`S2P7102`) and a missing row the count (`S2P7101`). (WP 1.11)
 - **`DataCopier` copies every converted table from SQL Server to PostgreSQL with binary `COPY`,
   several tables at once and big integer-keyed tables in key ranges, then continues identities
   and sequences where SQL Server left them and analyzes the tables.** Values cross over by

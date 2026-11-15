@@ -240,6 +240,18 @@ Copying a table, or setting a sequence's position, failed; the message has the e
 tables are still copied. Fix the cause and run the copy again: tables already finished (with
 `--state`) are skipped, and this one is cleared and copied afresh.
 
+### S2P7101 RowCountMismatch (Error)
+
+The table has a different number of rows in PostgreSQL than in SQL Server. Usually the copy
+failed part-way (see `S2P7003`) or rows changed in SQL Server after the copy; copy the table
+again.
+
+### S2P7102 ChecksumMismatch (Error)
+
+The table has the same number of rows on both sides, but some values differ after allowing for
+the documented transforms (rounding, UTC, NUL removal…). Compare the table's rows to find which;
+rows changed in SQL Server after the copy are the usual cause.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)
