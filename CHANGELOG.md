@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`TypeMapper` maps every SQL Server column type to a PostgreSQL type: core types, PostGIS
+  for spatial and pgvector for `vector` when enabled (`bytea` / `real[]` otherwise), domains
+  for alias types, per-column overrides, and a diagnostic wherever values or behaviour change**
+  (7th fractional digit, datetimeoffset offsets, rowversion, sql_variant, hierarchyid,
+  case-insensitive collations). Every mapped type of the fixture creates on PostgreSQL. (WP 1.5)
 - **`NameMapper` turns SQL Server names into PostgreSQL identifiers: lower case (or snake_case,
   or preserved), quoted only when PostgreSQL needs it (keywords taken from PostgreSQL 18's own
   `pg_get_keywords()`), shortened with a hash past 63 bytes (`S2P1001`), and given `_2`,

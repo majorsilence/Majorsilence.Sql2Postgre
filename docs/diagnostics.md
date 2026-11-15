@@ -54,6 +54,65 @@ Two different SQL Server names become the same PostgreSQL name (for example `Ord
 views, sequences, indexes and types in one namespace per schema). The later one gets `_2`, `_3`, …
 Check that code referring to it uses the new name.
 
+### S2P1101 FractionalSecondsReduced (Info)
+
+`datetime2(7)`, `time(7)` and `datetimeoffset(7)` keep 100-nanosecond precision; PostgreSQL
+keeps microseconds. The column becomes `(6)` and copied values are rounded to the microsecond.
+
+### S2P1102 OffsetNotPreserved (Warning)
+
+`datetimeoffset` stores each value's UTC offset as well as the instant. `timestamptz` stores
+the instant only (and shows it in the session's time zone). Code that reads the original offset
+(`DATEPART(tz, …)`, `SWITCHOFFSET`) needs another column to keep it.
+
+### S2P1103 RowversionSemantics (Warning)
+
+SQL Server sets a `rowversion` column on every insert and update. In PostgreSQL it is an
+ordinary `bytea` column holding the copied values and nothing updates it. Optimistic
+concurrency that compares it needs a trigger that sets a new value, or the system column `xmin`.
+
+### S2P1104 SqlVariantAsText (Warning)
+
+`sql_variant` holds values of different types in one column. It becomes `text` holding each
+value's string form; the type of each value is lost.
+
+### S2P1105 HierarchyIdAsText (Warning)
+
+`hierarchyid` becomes `text` holding its string form (`/1/3/`). Ordering by the text is not
+the same as ordering by the hierarchy, and its methods (`GetAncestor`, `IsDescendantOf`,
+`GetLevel`, …) must be rewritten.
+
+### S2P1106 SpatialAsWkb (Warning)
+
+The `postgis` extension is disabled in the options, so a `geography`/`geometry` column becomes
+`bytea` holding well-known binary. Enable `postgis` to keep it as a spatial type.
+
+### S2P1107 VectorAsArray (Warning)
+
+The `vector` (pgvector) extension is disabled, so a `vector(n)` column becomes `real[]`.
+Enable `vector` to keep it as a vector type with distance operators.
+
+### S2P1199 UnknownType (Error)
+
+There is no mapping for the column's type. The column is written as `text`; add a
+`typeOverrides` entry (`"schema.table.column": "<postgres type>"`) to choose a type.
+
+### S2P1301 CaseInsensitiveCollation (Info)
+
+The column's collation is case-insensitive (`…_CI_…`), so SQL Server compares `'a' = 'A'` as
+equal. PostgreSQL's default collations are case-sensitive. With
+`caseInsensitive: "icuCollation"` the column gets a nondeterministic ICU collation instead.
+
+### S2P1302 LikeOnNondeterministic (Warning)
+
+PostgreSQL before 18 does not allow `LIKE` on a column with a nondeterministic collation. Target
+PostgreSQL 18, or keep the default collation for columns searched with `LIKE`.
+
+### S2P1401 ExtensionRequired (Info)
+
+The object uses one of the permitted extensions (named in the message). The generated script
+creates it with `CREATE EXTENSION IF NOT EXISTS`; the target server must have it installed.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

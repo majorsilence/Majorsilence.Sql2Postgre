@@ -26,6 +26,39 @@ public static class DiagnosticCodes
     /// <summary>Two names map to the same PostgreSQL identifier; the later one gets a numeric suffix.</summary>
     public const string IdentifierCollision = "S2P1002";
 
+    /// <summary>SQL Server keeps 7 fractional-second digits here; PostgreSQL keeps 6, so values are rounded.</summary>
+    public const string FractionalSecondsReduced = "S2P1101";
+
+    /// <summary>datetimeoffset keeps each value's offset; timestamptz keeps only the instant.</summary>
+    public const string OffsetNotPreserved = "S2P1102";
+
+    /// <summary>rowversion becomes an ordinary bytea column; SQL Server no longer maintains it.</summary>
+    public const string RowversionSemantics = "S2P1103";
+
+    /// <summary>sql_variant values are kept as text; their original types are lost.</summary>
+    public const string SqlVariantAsText = "S2P1104";
+
+    /// <summary>hierarchyid values are kept as their string form; its methods need rewriting.</summary>
+    public const string HierarchyIdAsText = "S2P1105";
+
+    /// <summary>A spatial column is kept as WKB in bytea because postgis is disabled.</summary>
+    public const string SpatialAsWkb = "S2P1106";
+
+    /// <summary>A vector column is kept as real[] because the vector extension is disabled.</summary>
+    public const string VectorAsArray = "S2P1107";
+
+    /// <summary>No PostgreSQL type is known for the SQL Server type; it is written as text.</summary>
+    public const string UnknownType = "S2P1199";
+
+    /// <summary>A text column uses a case-insensitive collation; PostgreSQL will compare it case-sensitively.</summary>
+    public const string CaseInsensitiveCollation = "S2P1301";
+
+    /// <summary>LIKE is not supported on a nondeterministic collation before PostgreSQL 18.</summary>
+    public const string LikeOnNondeterministic = "S2P1302";
+
+    /// <summary>The object uses a permitted extension, which the target database must have available.</summary>
+    public const string ExtensionRequired = "S2P1401";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

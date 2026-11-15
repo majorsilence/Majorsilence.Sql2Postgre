@@ -12,6 +12,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.2 — catalog reader, `tests/fixtures/shop.sql` fixture, 37 reader tests.
 - WP 1.3 — script reader; catalog/script agreement test on the shop fixture.
 - WP 1.4 — name mapper with embedded PostgreSQL 18 keyword list.
+- WP 1.5 — type mapper.
 
 ## Measured
 
@@ -31,3 +32,4 @@ Nothing yet.
 - The script reader cannot know a computed column's type (SQL Server derives it); it records `SqlServerType("computed")`. WP 1.8 needs a type for a generated column: from the catalog it has one, from scripts it must come from WP 2.1's type inference — until then such columns need a `TypeOverrides` entry or are reported.
 - `NameMapper` adds `Type(ObjectName)` beside the plan's methods: SQL Server keeps types in their own namespace, PostgreSQL in the relations' one, so a type and a table of the same name collide.
 - Quoting covers reserved, type/function-name and column-name keywords (catcodes R, T, C): over-quoting a lower-case name is harmless (it is the same identifier).
+- `vector(n)` is modelled as `SqlServerType("vector", Length: n)`. The catalog reader does not read it yet (SQL Server 2025 adds `sys.columns.vector_dimensions`; the test container is 2022).
