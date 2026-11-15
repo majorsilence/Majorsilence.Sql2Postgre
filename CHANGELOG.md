@@ -8,3 +8,7 @@
 - **The solution builds and packs: seven packages (Model, SqlServer, Translation, Postgres,
   Data, Compat and the `sql2pg` tool) and three test projects.** Before this the repository held
   only the plan. (WP 0.1)
+- **Golden-file tests and both-engines tests have a harness: a T-SQL case and its expected
+  PostgreSQL output under `tests/*.Tests/Golden`, and one shared SQL Server and PostgreSQL
+  container that run a query each and compare canonical results.** Before this there was no way
+  to state a translation or an engine's behaviour as a test. (WP 0.3)

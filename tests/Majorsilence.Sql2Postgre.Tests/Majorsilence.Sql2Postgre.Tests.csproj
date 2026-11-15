@@ -17,6 +17,11 @@
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.SqlServer\Majorsilence.Sql2Postgre.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Translation\Majorsilence.Sql2Postgre.Translation.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Postgres\Majorsilence.Sql2Postgre.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Data\Majorsilence.Sql2Postgre.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Golden\**\*.tsql;Golden\**\*.pgsql;Golden\**\*.diag" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,64 @@
+using DotNet.Testcontainers.Builders;
+using Testcontainers.MsSql;
+using Testcontainers.PostgreSql;
+
+namespace Majorsilence.Sql2Postgre.Integration.Tests.Infrastructure;
+
+/// <summary>
+/// One SQL Server and one PostgreSQL container for the whole test run, started on first use and
+/// stopped when the run ends. PostgreSQL's version comes from <c>SQL2PG_PG_VERSION</c> (default
+/// 17). Without a reachable Docker engine every test that needs them is ignored, not failed.
+/// </summary>
+public static class Engines
+{
+    public const string SqlServerImage = "mcr.microsoft.com/mssql/server:2022-latest";
+
+    public static string PostgresVersion =>
+        Environment.GetEnvironmentVariable("SQL2PG_PG_VERSION") is { Length: > 0 } v ? v : "17";
+
+    private static readonly Lazy<Task<State>> Started = new(StartAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    private sealed record State(MsSqlContainer? SqlServer, PostgreSqlContainer? Postgres, string? Unavailable);
+
+    /// <summary>SQL Server connection string (database <c>master</c>); ignores the test without Docker.</summary>
+    public static async Task<string> SqlServerAsync() => (await RequireAsync()).SqlServer!.GetConnectionString();
+
+    /// <summary>PostgreSQL connection string; ignores the test without Docker.</summary>
+    public static async Task<string> PostgresAsync() => (await RequireAsync()).Postgres!.GetConnectionString();
+
+    private static async Task<State> RequireAsync()
+    {
+        var state = await Started.Value;
+        if (state.Unavailable is not null)
+            Assert.Ignore($"Docker is not available: {state.Unavailable}");
+        return state;
+    }
+
+    private static async Task<State> StartAsync()
+    {
+        MsSqlContainer? sql = null;
+        PostgreSqlContainer? pg = null;
+        try
+        {
+            sql = new MsSqlBuilder(SqlServerImage).Build();
+            pg = new PostgreSqlBuilder($"postgres:{PostgresVersion}").Build();
+            await Task.WhenAll(sql.StartAsync(), pg.StartAsync());
+            return new State(sql, pg, null);
+        }
+        catch (DockerUnavailableException ex)
+        {
+            return new State(null, null, ex.Message);
+        }
+    }
+
+    internal static async Task StopAsync()
+    {
+        if (!Started.IsValueCreated)
+            return;
+        var state = await Started.Value;
+        if (state.SqlServer is not null)
+            await state.SqlServer.DisposeAsync();
+        if (state.Postgres is not null)
+            await state.Postgres.DisposeAsync();
+    }
+}
