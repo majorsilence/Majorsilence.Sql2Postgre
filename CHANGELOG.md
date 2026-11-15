@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`SemanticModel` knows what every name is and what type every expression has: tables, views
+  (columns inferred from their SELECT, views over views included), table-valued function result
+  columns, scalar function return types, procedure parameters, alias types; query scopes with
+  aliases, derived tables, CTEs (recursive too), VALUES and APPLY, resolved inside out; expression
+  types by SQL Server's data type precedence; dependencies from each module's parsed body.**
+  References to another database or a linked server are reported as `S2P0301`. Every module of
+  every corpus database parses, and every view resolves. (WP 2.1)
 - **All six public sample databases (AdventureWorks, AdventureWorksDW, WideWorldImporters,
   WideWorldImportersDW, Northwind, pubs) migrate to PostgreSQL 18 with no apply, copy or
   checksum failures — about 7.5 million rows — and a deliberately wrong mapping is caught.**

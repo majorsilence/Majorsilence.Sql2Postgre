@@ -22,6 +22,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.12 — CLI; migrate of the shop fixture end to end through the CLI.
 - Default target PostgreSQL 18; CI container job on 18 only.
 - WP 1.13 — corpus download script, compile scan with positive control; Stage 1 (v0.1) exit criteria met on PostgreSQL 18 (also passed on 15, 16 and 17 before the default changed).
+- WP 2.1 — semantic model (scopes, typing, signatures, view columns, dependencies).
 
 ## Measured
 
@@ -72,3 +73,5 @@ PostgreSQL equivalent. Positive control (an identity typed as `date`) is reporte
 - `migrate` exits 1 when the reader found something a person must handle (an encrypted module) even if everything else succeeded.
 - WideWorldImportersDW's restore once failed inside SQL Server recovery (internal error 0x82000007) right after WideWorldImporters was restored into the same container; it passed on the rerun and in four other runs. If it recurs, restore each corpus database into a fresh container or raise the container's memory.
 - The S2P3001 errors left in the corpus (WideWorldImporters 35, WideWorldImportersDW 8, AdventureWorks 6, pubs 4) are expressions WP 2.2 should cover first: NEXT VALUE FOR in defaults, LIKE with [ ] character classes, CONVERT with styles, user-defined functions in computed columns.
+- Corpus view typing (WP 2.1): AdventureWorks 163/258 view columns typed (the rest are xml .value()/.query() results), AdventureWorksDW 59/59, Northwind 102/102, WideWorldImporters 32/32, pubs 6/6.
+- Unqualified names in a module resolve in the module's schema first, then dbo (a heuristic that matches the usual case; SQL Server's own rule depends on the owner's default schema).

@@ -47,6 +47,12 @@ then they are listed in the output as skipped, so the report shows everything th
 Objects in one phase depend on each other in a cycle, so no order satisfies all of them. They
 are emitted in name order; applying may need them run twice, or one rewritten to break the cycle.
 
+### S2P0301 ExternalReference (Error)
+
+The code names an object in another database (`otherdb.dbo.t`) or on a linked server
+(`srv.db.dbo.t`). A PostgreSQL database cannot query another one directly; bring that data into
+this database, or reach it with an extension the maintainer approves.
+
 ## S2P1xxx — types, names, collations
 
 ### S2P1001 IdentifierTruncated (Warning)
