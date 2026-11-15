@@ -1,0 +1,101 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - run: dotnet restore Majorsilence.Sql2Postgre.slnx
+      - run: dotnet build Majorsilence.Sql2Postgre.slnx -c Release --no-restore
+      - run: dotnet test tests/Majorsilence.Sql2Postgre.Tests -c Release --no-build --verbosity normal
+
+  # Tests that start SQL Server and PostgreSQL in Docker. Linux runners only: the GitHub
+  # Windows runners cannot run the Linux SQL Server and PostgreSQL images.
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [15, 16, 17, 18]
+    env:
+      SQL2PG_PG_VERSION: ${{ matrix.pg }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - run: dotnet restore Majorsilence.Sql2Postgre.slnx
+      - run: dotnet build Majorsilence.Sql2Postgre.slnx -c Release --no-restore
+      - run: dotnet test tests/Majorsilence.Sql2Postgre.Integration.Tests -c Release --no-build --verbosity normal
+
+  pack:
+    needs: [test, containers]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - name: Determine package version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "PACK_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          fi
+      - name: Pack
+        run: >
+          dotnet pack Majorsilence.Sql2Postgre.slnx -c Release -o artifacts
+          ${{ env.PACK_VERSION != '' && format('-p:Version={0}', env.PACK_VERSION) || '' }}
+      - name: Upload packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: nuget-packages
+          path: artifacts/*.*nupkg
+          retention-days: 14
+
+  # On a v* tag, hold the packages in a DRAFT GitHub release. Nothing here can reach
+  # nuget.org: publishing the draft is what triggers publish-nuget.yml, which pushes with
+  # Trusted Publishing (OIDC), so a human click is the gate and no API key is stored.
+  release:
+    needs: pack
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to create the release
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: nuget-packages
+          path: artifacts
+      - name: Create GitHub Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Majorsilence.Sql2Postgre ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: true
+          files: artifacts/*
