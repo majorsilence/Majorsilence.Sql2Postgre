@@ -59,6 +59,15 @@ public static class DiagnosticCodes
     /// <summary>The object uses a permitted extension, which the target database must have available.</summary>
     public const string ExtensionRequired = "S2P1401";
 
+    /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
+    public const string UnsupportedExpression = "S2P3001";
+
+    /// <summary>NEWSEQUENTIALID() becomes a random UUID (before PostgreSQL 18), so values are not ordered.</summary>
+    public const string NotSequential = "S2P3002";
+
+    /// <summary>ROUND on a float rounds the binary value in SQL Server and the decimal value in PostgreSQL.</summary>
+    public const string FloatRounding = "S2P3012";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

@@ -9,6 +9,10 @@
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/ScriptDomTypes.cs" Link="Shared/ScriptDomTypes.cs" />
+  </ItemGroup>
+
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <Description>Reads a SQL Server database's schema and code from its catalog or from T-SQL scripts. Part of Majorsilence.Sql2Postgre.</Description>

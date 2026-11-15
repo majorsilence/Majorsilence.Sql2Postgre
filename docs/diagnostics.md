@@ -113,6 +113,28 @@ PostgreSQL 18, or keep the default collation for columns searched with `LIKE`.
 The object uses one of the permitted extensions (named in the message). The generated script
 creates it with `CREATE EXTENSION IF NOT EXISTS`; the target server must have it installed.
 
+## S2P3xxx — expressions and built-in functions
+
+### S2P3001 UnsupportedExpression (Error)
+
+The expression uses T-SQL the translator does not handle yet (the message names the part). A
+default, check constraint, computed column or index filter containing it is left out of the
+PostgreSQL definition and kept beside it as a `/* sql2pg:untranslated … */` comment. Write the
+PostgreSQL equivalent by hand.
+
+### S2P3002 NotSequential (Info)
+
+`NEWSEQUENTIALID()` produces increasing GUIDs. Before PostgreSQL 18 it becomes
+`gen_random_uuid()`, whose values are random: inserts are no longer in key order. On PostgreSQL
+18 it becomes `uuidv7()`, which is time-ordered.
+
+### S2P3012 FloatRounding (Warning)
+
+`ROUND` on a `float` or `real` rounds the binary value in SQL Server: `2.55` is stored as
+`2.5499…`, so `ROUND(2.55E0, 1)` is `2.5`. PostgreSQL can round only `numeric`, and the value
+cast to `numeric` is the decimal `2.55`, which rounds to `2.6`. Values that end in 5 at the
+rounding digit can differ by one unit in the last place.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

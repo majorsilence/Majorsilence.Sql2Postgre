@@ -3,27 +3,27 @@ namespace Majorsilence.Sql2Postgre.Tests.Golden;
 /// <summary>
 /// One golden test: <c>&lt;case&gt;.tsql</c> is the input, <c>&lt;case&gt;.pgsql</c> the exact
 /// expected output and the optional <c>&lt;case&gt;.diag</c> the expected diagnostics, one per
-/// line as <c>S2P3001 Warning</c>. A first input line <c>-- options: {json}</c> sets options.
+/// line as <c>S2P3001 Warning</c>. Leading <c>-- name: value</c> lines are headers:
+/// <c>-- options: {json}</c> sets <c>ConversionOptions</c>; an area may define others.
 /// </summary>
 public sealed record GoldenCase(string Area, string Name, string InputPath)
 {
-    private const string OptionsPrefix = "-- options:";
-
     public string ExpectedPath => Path.ChangeExtension(InputPath, ".pgsql");
     public string DiagnosticsPath => Path.ChangeExtension(InputPath, ".diag");
 
     public override string ToString() => $"{Area}/{Name}";
 
-    /// <summary>The input without its options line, and the options JSON (or null).</summary>
-    public (string Sql, string? OptionsJson) ReadInput()
+    /// <summary>The input without its header lines, and the headers by (lower-case) name.</summary>
+    public (string Sql, IReadOnlyDictionary<string, string> Headers) ReadInput()
     {
-        string text = Normalize(File.ReadAllText(InputPath));
-        if (!text.StartsWith(OptionsPrefix, StringComparison.Ordinal))
-            return (text, null);
-        int end = text.IndexOf('\n');
-        string first = end < 0 ? text : text[..end];
-        string rest = end < 0 ? "" : text[(end + 1)..];
-        return (rest, first[OptionsPrefix.Length..].Trim());
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lines = Normalize(File.ReadAllText(InputPath)).Split('\n').ToList();
+        while (lines.Count > 0 && System.Text.RegularExpressions.Regex.Match(lines[0], @"^--\s*([A-Za-z-]+):\s*(.*)$") is { Success: true } m)
+        {
+            headers[m.Groups[1].Value] = m.Groups[2].Value.Trim();
+            lines.RemoveAt(0);
+        }
+        return (string.Join('\n', lines), headers);
     }
 
     public string? ReadExpected() => File.Exists(ExpectedPath) ? Normalize(File.ReadAllText(ExpectedPath)) : null;

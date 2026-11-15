@@ -16,8 +16,8 @@ public class GoldenTests
     [TestCaseSource(nameof(Cases))]
     public void Matches(GoldenCase golden)
     {
-        var (sql, optionsJson) = golden.ReadInput();
-        var result = GoldenTranslator.Translate(sql, optionsJson);
+        var (sql, headers) = golden.ReadInput();
+        var result = GoldenTranslator.Translate(golden.Area, sql, headers);
         string actual = GoldenCase.Normalize(result.Sql);
         var actualDiagnostics = result.Diagnostics.Select(d => $"{d.Code} {d.Severity}").Order(StringComparer.Ordinal).ToList();
 

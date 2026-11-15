@@ -1,0 +1,1 @@
+CASE WHEN qty > 0 THEN 1 ELSE 0 END

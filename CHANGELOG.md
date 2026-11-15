@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Defaults, check constraints, computed columns and index filters translate to PostgreSQL:
+  literals, the table's columns, operators (with `+` on strings as `||` and `bit` compared with
+  `true`/`false`), `CASE`/`IIF`, `CAST`/`CONVERT` without a style, and `GETDATE`,
+  `SYSDATETIME`, `GETUTCDATE`, `NEWID`, `NEWSEQUENTIALID`, `ISNULL`, `UPPER`/`LOWER`/`LTRIM`/`RTRIM`,
+  `ABS`, `ROUND`.** Casting a decimal or float to an integer type truncates as SQL Server does
+  (PostgreSQL rounds), established by running both engines. Anything else is `S2P3001`. (WP 1.6)
 - **`TypeMapper` maps every SQL Server column type to a PostgreSQL type: core types, PostGIS
   for spatial and pgvector for `vector` when enabled (`bytea` / `real[]` otherwise), domains
   for alias types, per-column overrides, and a diagnostic wherever values or behaviour change**

@@ -1,0 +1,1 @@
+CASE code WHEN 'A' THEN 1 ELSE 0 END

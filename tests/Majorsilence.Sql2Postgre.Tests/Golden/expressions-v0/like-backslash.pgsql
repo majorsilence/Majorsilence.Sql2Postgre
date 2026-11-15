@@ -1,0 +1,1 @@
+name LIKE 'C:\%' ESCAPE ''

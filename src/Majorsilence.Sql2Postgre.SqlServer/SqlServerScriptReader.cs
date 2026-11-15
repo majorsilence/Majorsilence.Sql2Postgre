@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Majorsilence.Sql2Postgre.Model;
+using Majorsilence.Sql2Postgre.Shared;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace Majorsilence.Sql2Postgre.SqlServer;
@@ -175,7 +176,7 @@ public static partial class SqlServerScriptReader
         private void AddAlias(CreateTypeUddtStatement u)
         {
             var name = Track(NameOf(u.Name));
-            var baseType = TypeOf(u.DataType);
+            var baseType = ScriptDomTypes.TypeOf(u.DataType);
             _userTypes[name] = new UserType(name, baseType, u.NullableConstraint?.Nullable ?? true, false, []);
         }
 
@@ -191,7 +192,7 @@ public static partial class SqlServerScriptReader
                 switch (option)
                 {
                     case DataTypeSequenceOption dt:
-                        type = TypeOf(dt.DataType);
+                        type = ScriptDomTypes.TypeOf(dt.DataType);
                         break;
                     case ScalarExpressionSequenceOption sv when !sv.NoValue:
                         long value = Integer(sv.OptionValue);
@@ -254,7 +255,7 @@ public static partial class SqlServerScriptReader
 
         private Column ReadColumn(ColumnDefinition c, int ordinal, bool inPrimaryKey)
         {
-            var type = c.DataType is null ? new SqlServerType("sql_variant") : TypeOf(c.DataType);
+            var type = c.DataType is null ? new SqlServerType("sql_variant") : ScriptDomTypes.TypeOf(c.DataType);
             if (c.Collation is not null)
                 type = type with { Collation = c.Collation.Value };
             var identity = c.IdentityOptions is null ? null : new IdentitySpec(
@@ -380,57 +381,6 @@ public static partial class SqlServerScriptReader
                 return column with { Type = new SqlServerType(name.Name.ToLowerInvariant()) };
             return column with { Type = userType.BaseType with { UserTypeName = alias, Collation = column.Type.Collation } };
         }
-    }
-
-    /// <summary>
-    /// A type as the catalog reports it. A user-named type becomes <c>alias</c> until the whole
-    /// script is read (the alias may be defined in a later file); the built-in names that parse as
-    /// user types — <c>sysname</c>, <c>hierarchyid</c>, <c>geography</c>, <c>geometry</c> — are
-    /// system types and resolve at once.
-    /// </summary>
-    internal static SqlServerType TypeOf(DataTypeReference type)
-    {
-        switch (type)
-        {
-            case XmlDataTypeReference:
-                return new SqlServerType("xml");
-            case SqlDataTypeReference sql:
-                return SqlType(sql);
-            case UserDataTypeReference user:
-                string baseName = user.Name.BaseIdentifier.Value.ToLowerInvariant();
-                if (user.Name.SchemaIdentifier is null && baseName is "sysname" or "hierarchyid" or "geography" or "geometry")
-                    return new SqlServerType(baseName);
-                var n = NameOf(user.Name);
-                return new SqlServerType("alias", UserTypeName: $"{n.Schema}.{n.Name}");
-            default:
-                return new SqlServerType(type.Name.BaseIdentifier.Value.ToLowerInvariant());
-        }
-    }
-
-    private static SqlServerType SqlType(SqlDataTypeReference sql)
-    {
-        var p = sql.Parameters;
-        int? First(int whenMissing) => p.Count == 0 ? whenMissing : p[0] is MaxLiteral ? -1 : int.Parse(p[0].Value, CultureInfo.InvariantCulture);
-        int? Second(int whenMissing) => p.Count < 2 ? whenMissing : int.Parse(p[1].Value, CultureInfo.InvariantCulture);
-        return sql.SqlDataTypeOption switch
-        {
-            SqlDataTypeOption.Char => new SqlServerType("char", First(1)),
-            SqlDataTypeOption.VarChar => new SqlServerType("varchar", First(1)),
-            SqlDataTypeOption.NChar => new SqlServerType("nchar", First(1)),
-            SqlDataTypeOption.NVarChar => new SqlServerType("nvarchar", First(1)),
-            SqlDataTypeOption.Binary => new SqlServerType("binary", First(1)),
-            SqlDataTypeOption.VarBinary => new SqlServerType("varbinary", First(1)),
-            SqlDataTypeOption.Decimal => new SqlServerType("decimal", Precision: First(18), Scale: Second(0)),
-            SqlDataTypeOption.Numeric => new SqlServerType("numeric", Precision: First(18), Scale: Second(0)),
-            SqlDataTypeOption.Float => First(53) <= 24 ? new SqlServerType("real", Precision: 24) : new SqlServerType("float", Precision: 53),
-            SqlDataTypeOption.Real => new SqlServerType("real", Precision: 24),
-            SqlDataTypeOption.DateTime2 => new SqlServerType("datetime2", Scale: First(7)),
-            SqlDataTypeOption.Time => new SqlServerType("time", Scale: First(7)),
-            SqlDataTypeOption.DateTimeOffset => new SqlServerType("datetimeoffset", Scale: First(7)),
-            SqlDataTypeOption.Rowversion or SqlDataTypeOption.Timestamp => new SqlServerType("timestamp"),
-            SqlDataTypeOption.Sql_Variant => new SqlServerType("sql_variant"),
-            _ => new SqlServerType(sql.SqlDataTypeOption.ToString().ToLowerInvariant()),
-        };
     }
 
     private static IndexColumn IndexColumnOf(ColumnWithSortOrder c) =>

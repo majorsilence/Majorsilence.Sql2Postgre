@@ -1,0 +1,2 @@
+-- columns: qty int, price decimal(10,2), ratio float, name nvarchar(50), code varchar(10), is_active bit, created datetime2(3)
+(CASE WHEN qty > 10 THEN 'big' WHEN qty > 0 THEN 'small' ELSE 'none' END)
