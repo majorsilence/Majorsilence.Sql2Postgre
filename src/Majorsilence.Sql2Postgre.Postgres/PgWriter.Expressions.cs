@@ -35,6 +35,10 @@ public static partial class PgWriter
         PgCast c => $"CAST({Expression(c.Operand)} AS {c.Type})",
         PgFunctionCall f => Function(f),
         PgTemplate t => Template(t),
+        PgSubquery q => $"({Query(q.Query, inline: true)})",
+        PgExists ex => $"{(ex.Negated ? "NOT " : "")}EXISTS ({Query(ex.Query, inline: true)})",
+        PgInSubquery i => $"{Child(i.Operand, Binding.BetweenInLike, strict: true)} {(i.Negated ? "NOT " : "")}IN ({Query(i.Query, inline: true)})",
+        PgQuantified q => $"{Child(q.Operand, Binding.Comparison, strict: true)} {q.Operator} {q.Quantifier} ({Query(q.Query, inline: true)})",
         PgAtTimeZone a => $"{Child(a.Operand, Binding.AtTimeZone, strict: true)} AT TIME ZONE {Child(a.Zone, Binding.AtTimeZone, strict: true)}",
         _ => throw new ArgumentException($"Cannot write {e.GetType().Name}.", nameof(e)),
     };
@@ -79,6 +83,8 @@ public static partial class PgWriter
         if (f.OrderBy.Count > 0)
             args += " ORDER BY " + SortKeys(f.OrderBy);
         string call = $"{f.Name}({args})";
+        if (f.Filter is not null)
+            call += $" FILTER (WHERE {Expression(f.Filter)})";
         return f.Over is null ? call : $"{call} OVER ({Window(f.Over)})";
     }
 
@@ -126,7 +132,9 @@ public static partial class PgWriter
         PgUnary { Operator: "NOT" } => Binding.Not,
         PgIsNull => Binding.Is,
         PgBinary { Operator: "=" or "<>" or "<" or ">" or "<=" or ">=" } => Binding.Comparison,
-        PgInList or PgBetween or PgLike => Binding.BetweenInLike,
+        PgInList or PgBetween or PgLike or PgInSubquery => Binding.BetweenInLike,
+        PgQuantified => Binding.Comparison,
+        PgExists { Negated: true } => Binding.Not,
         PgBinary { Operator: "+" or "-" } => Binding.Additive,
         PgBinary { Operator: "*" or "/" or "%" } => Binding.Multiplicative,
         PgBinary { Operator: "^" } => Binding.Exponent,

@@ -1,0 +1,5 @@
+SELECT name
+FROM shop.customer
+ORDER BY name NULLS FIRST
+OFFSET 1
+LIMIT 2;

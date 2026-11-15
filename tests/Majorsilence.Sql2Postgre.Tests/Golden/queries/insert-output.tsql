@@ -1,0 +1,1 @@
+INSERT INTO shop.product (product_id, name) OUTPUT inserted.product_id, inserted.name VALUES (12, N'Out');

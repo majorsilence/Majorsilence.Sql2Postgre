@@ -1,0 +1,1 @@
+UPDATE shop.customer SET is_active = 0, email = NULL WHERE name = N'Bob';

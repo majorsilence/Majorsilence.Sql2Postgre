@@ -25,8 +25,48 @@ public static class GoldenTranslator
         {
             "expressions-v0" => SchemaExpression(tsql, headers, options),
             "ddl" => Ddl(tsql, options),
+            "queries" => Queries(tsql, options),
             _ => new GoldenResult(tsql, []),
         };
+    }
+
+    private static readonly Lazy<SourceDatabase> Shop = new(() => SqlServerScriptReader.Read([("shop.sql",
+        File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, "fixtures", "shop.sql")))]).Database);
+
+    /// <summary>
+    /// T-SQL statements (SELECT, INSERT, UPDATE, DELETE, MERGE), translated against the shop
+    /// fixture's semantic model; each statement's PostgreSQL in turn, or an untranslated marker.
+    /// </summary>
+    private static GoldenResult Queries(string tsql, ConversionOptions options)
+    {
+        var names = new Majorsilence.Sql2Postgre.Translation.Names.NameMapper(options);
+        var model = Majorsilence.Sql2Postgre.Translation.Semantics.SemanticModel.Build(Shop.Value);
+        var expressions = new Majorsilence.Sql2Postgre.Translation.Sql.ExpressionTranslator(options, names, new TypeMapper(options, names), model);
+        var queries = new Majorsilence.Sql2Postgre.Translation.Sql.QueryTranslator(expressions);
+        var script = (Microsoft.SqlServer.TransactSql.ScriptDom.TSqlScript)new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true)
+            .Parse(new StringReader(tsql), out var errors);
+        if (errors.Count > 0)
+            return new GoldenResult($"-- parse error: {errors[0].Message}\n", []);
+        var sb = new System.Text.StringBuilder();
+        var diagnostics = new List<GoldenDiagnostic>();
+        // One scope for the whole script, as for a batch: a temp table made by one statement is known to the next.
+        var batch = new Majorsilence.Sql2Postgre.Translation.Semantics.Scope();
+        foreach (var statement in script.Batches.SelectMany(b => b.Statements))
+        {
+            var context = new Majorsilence.Sql2Postgre.Translation.Sql.ExpressionContext(batch, "dbo", new ObjectName("dbo", "query"));
+            try
+            {
+                sb.Append(PgWriter.Write(queries.Statement(statement, context), options.TargetVersion));
+            }
+            catch (Majorsilence.Sql2Postgre.Translation.Sql.UntranslatableException ex)
+            {
+                sb.Append("-- untranslated\n");
+                diagnostics.Add(new GoldenDiagnostic(ex.Code, "Error"));
+            }
+            diagnostics.AddRange(context.Diagnostics.Select(d => new GoldenDiagnostic(d.Code, d.Severity.ToString())));
+            sb.Append('\n');
+        }
+        return new GoldenResult(sb.ToString(), diagnostics);
     }
 
     /// <summary>

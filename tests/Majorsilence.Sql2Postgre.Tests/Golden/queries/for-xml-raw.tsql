@@ -1,0 +1,1 @@
+SELECT name FROM shop.customer FOR XML RAW;

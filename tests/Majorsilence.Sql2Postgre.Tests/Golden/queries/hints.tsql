@@ -1,0 +1,1 @@
+SELECT name FROM shop.customer WITH (NOLOCK) OPTION (RECOMPILE);

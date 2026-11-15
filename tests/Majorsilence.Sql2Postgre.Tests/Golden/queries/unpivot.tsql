@@ -1,0 +1,1 @@
+SELECT sale_id, k, v FROM (SELECT sale_id, amount AS a, CAST(sale_id AS decimal(12,2)) AS b FROM shop.sales_fact) s UNPIVOT (v FOR k IN (a, b)) u;

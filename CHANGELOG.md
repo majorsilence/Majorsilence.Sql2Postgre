@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **SELECT, INSERT, UPDATE, DELETE and MERGE translate to PostgreSQL: TOP (WITH TIES, PERCENT),
+  OFFSET/FETCH, APPLY as LATERAL joins, CTEs (recursive too), ROLLUP/CUBE/GROUPING SETS, set
+  operations, EXISTS/IN/ANY/ALL subqueries, PIVOT and UNPIVOT, STRING_SPLIT, FOR XML PATH('')
+  concatenation as string_agg (XML-escaped unless TYPE), FOR JSON PATH as json_agg, SELECT INTO
+  (temp tables known to later statements), UPDATE/DELETE … FROM with joins rearranged as
+  PostgreSQL wants them, and OUTPUT as RETURNING with PostgreSQL 18's old/new.** Hints are
+  dropped with `S2P4002`. 58 queries and DML statements give the same rows on both engines
+  against a copy of the shop fixture migrated by sql2pg. (WP 2.3)
 - **T-SQL expressions translate through one translator that knows names and types: string,
   date, number, JSON, hashing, aggregate and window functions, CONVERT styles and FORMAT
   patterns, implicit conversions SQL Server makes and PostgreSQL does not, `bit` as `boolean`,

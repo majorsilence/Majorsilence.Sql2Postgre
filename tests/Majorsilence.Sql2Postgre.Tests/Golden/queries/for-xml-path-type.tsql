@@ -1,0 +1,1 @@
+SELECT STUFF((SELECT ', ' + name FROM shop.customer ORDER BY name FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 2, '') AS names;

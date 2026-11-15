@@ -1,0 +1,4 @@
+WITH RECURSIVE tree (id, depth) AS (SELECT product_id, 0 FROM shop.product WHERE parent_id IS NULL UNION ALL SELECT p.product_id, t.depth + 1 FROM shop.product AS p JOIN tree AS t ON p.parent_id = t.id)
+SELECT id, depth
+FROM tree
+ORDER BY id NULLS FIRST;

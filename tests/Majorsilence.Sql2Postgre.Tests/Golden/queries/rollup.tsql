@@ -1,0 +1,1 @@
+SELECT customer_id, YEAR(order_date) AS y, COUNT(*) AS n FROM shop.[order] GROUP BY ROLLUP (customer_id, YEAR(order_date));

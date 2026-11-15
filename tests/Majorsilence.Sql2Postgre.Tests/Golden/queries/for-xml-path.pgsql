@@ -1,0 +1,2 @@
+SELECT c.name, overlay(NULLIF((SELECT replace(replace(replace((SELECT string_agg(concatenated_value, '' ORDER BY sort_key_1 NULLS FIRST) FROM (SELECT COALESCE(CAST(',' || CAST(o.order_id AS varchar(10)) AS text), '') AS concatenated_value, o.order_id AS sort_key_1 FROM shop."order" AS o WHERE o.customer_id = c.customer_id) AS for_xml_rows), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')), '') placing '' from 1 for 1) AS orders
+FROM shop.customer AS c;

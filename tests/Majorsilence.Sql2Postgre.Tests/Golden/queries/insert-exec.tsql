@@ -1,0 +1,1 @@
+INSERT INTO shop.product (product_id, name) EXEC shop.add_order 1, NULL;

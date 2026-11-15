@@ -1,0 +1,1 @@
+INSERT INTO shop.sales_fact DEFAULT VALUES;

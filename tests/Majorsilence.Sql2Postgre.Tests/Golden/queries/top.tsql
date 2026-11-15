@@ -1,0 +1,1 @@
+SELECT TOP 2 name FROM shop.customer ORDER BY name DESC;

@@ -1,0 +1,1 @@
+SELECT customer_id, order_date, GROUPING(customer_id) AS g FROM shop.[order] GROUP BY CUBE (customer_id, order_date);

@@ -1,0 +1,1 @@
+SELECT c.name, STUFF((SELECT ',' + CAST(o.order_id AS varchar(10)) FROM shop.[order] o WHERE o.customer_id = c.customer_id ORDER BY o.order_id FOR XML PATH('')), 1, 1, '') AS orders FROM shop.customer c;

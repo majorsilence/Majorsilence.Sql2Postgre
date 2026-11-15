@@ -17,11 +17,18 @@ public sealed record QueryResult(IReadOnlyList<string> Columns, IReadOnlyList<IR
 /// </summary>
 public static class BothEngines
 {
+    /// <param name="sqlServerConnection">A database to run in instead of the container's master.</param>
+    /// <param name="json">Compare each value as JSON (parsed and rewritten compactly): the engines space JSON text differently.</param>
     public static async Task AssertSameResultAsync(string tsql, string pgsql,
-        string? tsqlSetup = null, string? pgSetup = null)
+        string? tsqlSetup = null, string? pgSetup = null, string? sqlServerConnection = null, string? postgresConnection = null, bool json = false)
     {
-        var sqlServer = await RunSqlServerAsync(tsql, tsqlSetup);
-        var postgres = await RunPostgresAsync(pgsql, pgSetup);
+        var sqlServer = await RunSqlServerAsync(tsql, tsqlSetup, sqlServerConnection);
+        var postgres = await RunPostgresAsync(pgsql, pgSetup, postgresConnection);
+        if (json)
+        {
+            sqlServer = sqlServer with { Rows = sqlServer.Rows.Select(r => (IReadOnlyList<string>)r.Select(CompactJson).ToList()).ToList() };
+            postgres = postgres with { Rows = postgres.Rows.Select(r => (IReadOnlyList<string>)r.Select(CompactJson).ToList()).ToList() };
+        }
         bool ordered = HasTopLevelOrderBy(tsql);
 
         Assert.Multiple(() =>
@@ -33,9 +40,28 @@ public static class BothEngines
         });
     }
 
-    public static async Task<QueryResult> RunSqlServerAsync(string sql, string? setup = null)
+    private static string CompactJson(string value)
     {
-        await using var conn = new SqlConnection(await Engines.SqlServerAsync());
+        if (value == CanonicalValue.Null)
+            return value;
+        // As written, or (WITHOUT_ARRAY_WRAPPER's comma-joined objects) as an array.
+        foreach (string candidate in new[] { value, $"[{value}]" })
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(candidate);
+                return System.Text.Json.JsonSerializer.Serialize(doc.RootElement);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+        }
+        return value;
+    }
+
+    public static async Task<QueryResult> RunSqlServerAsync(string sql, string? setup = null, string? connectionString = null)
+    {
+        await using var conn = new SqlConnection(connectionString ?? await Engines.SqlServerAsync());
         await conn.OpenAsync();
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
         var result = await RunAsync(conn, tx, sql, setup, (text, c, t) => new SqlCommand(text, (SqlConnection)c, (SqlTransaction)t));
@@ -43,9 +69,9 @@ public static class BothEngines
         return result;
     }
 
-    public static async Task<QueryResult> RunPostgresAsync(string sql, string? setup = null)
+    public static async Task<QueryResult> RunPostgresAsync(string sql, string? setup = null, string? connectionString = null)
     {
-        await using var conn = new NpgsqlConnection(await Engines.PostgresAsync());
+        await using var conn = new NpgsqlConnection(connectionString ?? await Engines.PostgresAsync());
         await conn.OpenAsync();
         await using var tx = await conn.BeginTransactionAsync();
         var result = await RunAsync(conn, tx, sql, setup, (text, c, t) => new NpgsqlCommand(text, (NpgsqlConnection)c, (NpgsqlTransaction)t));

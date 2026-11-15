@@ -1,0 +1,1 @@
+SELECT v.a, v.b FROM (VALUES (1, N'x'), (2, N'y')) AS v (a, b);

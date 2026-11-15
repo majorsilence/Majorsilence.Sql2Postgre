@@ -92,6 +92,9 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         _ => throw Untranslatable(e, "this predicate"),
     };
 
+    /// <summary>Translates <c>(… FOR XML PATH(''), TYPE).value('.', …)</c>; set by the query translator.</summary>
+    public Func<QueryExpression, ExpressionContext, PgExpr>? XmlValueSubquery { get; set; }
+
     /// <summary>Translates EXISTS / IN (subquery) / ANY / ALL; set by the query translator. Returns null for anything else.</summary>
     public Func<BooleanExpression, ExpressionContext, PgExpr?>? SubqueryPredicates { get; set; }
 
@@ -106,8 +109,12 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             throw Untranslatable(col, col.ColumnType == ColumnType.Wildcard ? "* outside COUNT(*)" : "this pseudo-column");
         var parts = col.MultiPartIdentifier.Identifiers.Select(i => i.Value).ToList();
         if (c.Scope.ResolveColumn(parts) is { } resolved)
-            return new PgColumnRef(TargetColumn(resolved.Binding, resolved.Column.Name),
-                c.QualifyColumns && parts.Count >= 2 ? AliasFor(resolved.Binding) : null);
+        {
+            string? qualifier = c.QualifyColumns && parts.Count >= 2 ? AliasFor(resolved.Binding) : null;
+            if (c.ReturningPseudoTables && resolved.Binding.Alias is { } pseudo)
+                qualifier = pseudo.ToLowerInvariant() switch { "inserted" => "new", "deleted" => "old", _ => qualifier };
+            return new PgColumnRef(TargetColumn(resolved.Binding, resolved.Column.Name), qualifier);
+        }
         c.Report(DiagnosticCodes.UnresolvedColumn, Severity.Warning,
             $"Column {string.Join('.', parts)} could not be resolved; it is written as {names.Alias(parts[^1])} without knowing its type.");
         return new PgColumnRef(names.Alias(parts[^1]), c.QualifyColumns && parts.Count >= 2 ? names.Alias(parts[^2]) : null);
@@ -130,7 +137,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
     private PgExpr Variable(VariableReference v, ExpressionContext c) =>
         VariableWriter is { } write && c.Scope.TryVariable(v.Name, out _)
             ? write(v.Name.TrimStart('@'))
-            : throw Untranslatable(v, "a variable outside procedural code");
+            : throw Untranslatable(v, "a variable outside procedural code", DiagnosticCodes.ProceduralGlobal);
 
     /// <summary>How a variable is written (set by the procedural translator, Stage 3).</summary>
     public Func<string, PgExpr>? VariableWriter { get; set; }

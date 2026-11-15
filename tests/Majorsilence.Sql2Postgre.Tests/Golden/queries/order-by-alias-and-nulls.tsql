@@ -1,0 +1,1 @@
+SELECT email AS e, name FROM shop.customer ORDER BY e, name DESC;

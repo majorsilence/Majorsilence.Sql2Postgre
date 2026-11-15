@@ -1,0 +1,1 @@
+SELECT c.name, o.order_id, l.qty FROM shop.customer c LEFT JOIN shop.[order] o ON o.customer_id = c.customer_id JOIN shop.order_line l ON l.order_id = o.order_id;

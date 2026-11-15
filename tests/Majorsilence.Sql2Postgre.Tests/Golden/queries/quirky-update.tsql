@@ -1,0 +1,1 @@
+DECLARE @n money = 0; UPDATE shop.[order] SET @n = total = @n + 1;

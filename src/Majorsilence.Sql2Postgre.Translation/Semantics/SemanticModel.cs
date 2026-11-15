@@ -317,9 +317,45 @@ public sealed partial class SemanticModel
                 break;
             case SchemaObjectFunctionTableReference f:
                 var routine = ResolveRoutine(f.SchemaObject, contextSchema) is { } rn ? Routine(rn) : null;
+                var tvfColumns = routine?.ResultColumns ?? [];
+                if (f.Columns.Count > 0)
+                    tvfColumns = f.Columns.Select((col, i) => new ColumnInfo(col.Value, i < tvfColumns.Count ? tvfColumns[i].Type : null)).ToList();
                 scope.Bind(new Binding(f.Alias?.Value ?? f.SchemaObject.BaseIdentifier.Value,
-                    new RelationInfo(routine?.Name, ObjectKind.Function, routine?.ResultColumns ?? [])));
+                    new RelationInfo(routine?.Name, ObjectKind.Function, tvfColumns)));
                 break;
+            case GlobalFunctionTableReference g:
+                // STRING_SPLIT and GENERATE_SERIES return one column, value.
+                SqlServerType? valueType = g.Name.Value.Equals("STRING_SPLIT", StringComparison.OrdinalIgnoreCase)
+                    ? new SqlServerType("nvarchar", -1)
+                    : g.Parameters.Count > 0 ? TypeOf(g.Parameters[0], scope, contextSchema) : null;
+                scope.Bind(new Binding(g.Alias?.Value ?? g.Name.Value, new RelationInfo(null, ObjectKind.Function, [new ColumnInfo("value", valueType)])));
+                break;
+            case PivotedTableReference p:
+            {
+                var inner = scope.Child();
+                BindTableReference(p.TableReference, inner, contextSchema);
+                var source = inner.Bindings.LastOrDefault()?.Relation.Columns ?? [];
+                string pivot = p.PivotColumn.MultiPartIdentifier.Identifiers[^1].Value;
+                var values = p.ValueColumns.Select(v => v.MultiPartIdentifier.Identifiers[^1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var valueColumnType = source.FirstOrDefault(col => values.Contains(col.Name))?.Type;
+                bool count = p.AggregateFunctionIdentifier.Identifiers[^1].Value.Equals("COUNT", StringComparison.OrdinalIgnoreCase);
+                var pivotColumns = source.Where(col => !string.Equals(col.Name, pivot, StringComparison.OrdinalIgnoreCase) && !values.Contains(col.Name))
+                    .Concat(p.InColumns.Select(i => new ColumnInfo(i.Value, count ? new SqlServerType("int") : valueColumnType))).ToList();
+                scope.Bind(new Binding(p.Alias?.Value ?? "", new RelationInfo(null, ObjectKind.Table, pivotColumns)));
+                break;
+            }
+            case UnpivotedTableReference u:
+            {
+                var inner = scope.Child();
+                BindTableReference(u.TableReference, inner, contextSchema);
+                var source = inner.Bindings.LastOrDefault()?.Relation.Columns ?? [];
+                var inNames = u.InColumns.Select(i => i.MultiPartIdentifier.Identifiers[^1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var unpivotColumns = source.Where(col => !inNames.Contains(col.Name))
+                    .Append(new ColumnInfo(u.PivotColumn.Value, new SqlServerType("nvarchar", 128)))
+                    .Append(new ColumnInfo(u.ValueColumn.Value, source.FirstOrDefault(col => inNames.Contains(col.Name))?.Type)).ToList();
+                scope.Bind(new Binding(u.Alias?.Value ?? "", new RelationInfo(null, ObjectKind.Table, unpivotColumns)));
+                break;
+            }
         }
     }
 

@@ -173,6 +173,39 @@ public static class DiagnosticCodes
     /// <summary>A spatial method (STDistance, …), which needs the PostGIS mapping of Stage 4.</summary>
     public const string SpatialMethod = "S2P3030";
 
+    /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
+    public const string TopPercent = "S2P4001";
+
+    /// <summary>A table, join or query hint is dropped (PostgreSQL's planner has no hints).</summary>
+    public const string HintDropped = "S2P4002";
+
+    /// <summary>INSERT … EXEC needs the procedure translated (Stage 3).</summary>
+    public const string InsertExec = "S2P4003";
+
+    /// <summary>SET IDENTITY_INSERT is dropped (identities accept explicit values); the sequence is moved past them.</summary>
+    public const string IdentityInsert = "S2P4004";
+
+    /// <summary>UPDATE … SET @v = col = expr (a variable assigned row by row).</summary>
+    public const string QuirkyUpdate = "S2P4005";
+
+    /// <summary>UPDATE or DELETE whose target is inside an outer join of its FROM clause.</summary>
+    public const string UpdateFromOuterJoin = "S2P4008";
+
+    /// <summary>UPDATE or DELETE with TOP.</summary>
+    public const string DmlTop = "S2P4009";
+
+    /// <summary>FOR XML other than PATH('') concatenation.</summary>
+    public const string ForXmlUnsupported = "S2P4010";
+
+    /// <summary>FOR JSON beyond PATH (or AUTO over one table) with named columns.</summary>
+    public const string ForJsonUnsupported = "S2P4011";
+
+    /// <summary>TOP 100 PERCENT … ORDER BY in a view is dropped (SQL Server ignores that order too).</summary>
+    public const string ViewOrderIgnored = "S2P4012";
+
+    /// <summary>OUTPUT … INTO a table needs procedural code (Stage 3).</summary>
+    public const string OutputInto = "S2P4013";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 }

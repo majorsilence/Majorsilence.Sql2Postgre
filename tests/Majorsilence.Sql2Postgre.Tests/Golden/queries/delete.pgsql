@@ -1,0 +1,2 @@
+DELETE FROM shop.sales_fact
+WHERE sale_id = 1;

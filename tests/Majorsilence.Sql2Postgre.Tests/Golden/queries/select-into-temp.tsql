@@ -1,0 +1,1 @@
+SELECT customer_id, name INTO #c FROM shop.customer; SELECT name FROM #c;

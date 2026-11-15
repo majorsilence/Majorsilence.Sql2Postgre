@@ -1,0 +1,1 @@
+INSERT INTO shop.customer (CustomerCode, name, is_active) VALUES ('C8', N'Yan', 0);

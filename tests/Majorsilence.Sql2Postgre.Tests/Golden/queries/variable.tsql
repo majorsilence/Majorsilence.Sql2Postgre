@@ -1,0 +1,1 @@
+SELECT name FROM shop.customer WHERE customer_id = @id;

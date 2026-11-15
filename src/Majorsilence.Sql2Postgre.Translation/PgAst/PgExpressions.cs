@@ -60,6 +60,9 @@ public sealed record PgFunctionCall(string Name, IReadOnlyList<PgExpr> Arguments
     /// <summary>An ordered aggregate's ORDER BY, inside the parentheses: <c>string_agg(x, ',' ORDER BY y)</c>.</summary>
     public IReadOnlyList<PgSortKey> OrderBy { get; init; } = [];
 
+    /// <summary>An aggregate's FILTER (WHERE …) clause.</summary>
+    public PgExpr? Filter { get; init; }
+
     /// <summary>A window function's OVER clause.</summary>
     public PgWindow? Over { get; init; }
 }

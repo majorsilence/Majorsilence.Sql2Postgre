@@ -1,0 +1,1 @@
+INSERT INTO shop.product (product_id, name, parent_id) VALUES (10, N'New', 1), (11, N'Other', NULL);

@@ -1,0 +1,1 @@
+SELECT c.name, (SELECT COUNT(*) FROM shop.[order] o WHERE o.customer_id = c.customer_id) AS orders FROM shop.customer c;

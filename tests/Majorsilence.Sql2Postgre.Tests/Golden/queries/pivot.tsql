@@ -1,0 +1,1 @@
+SELECT * FROM (SELECT customer_id, YEAR(order_date) AS y FROM shop.[order]) s PIVOT (COUNT(y) FOR y IN ([2023], [2024])) p;

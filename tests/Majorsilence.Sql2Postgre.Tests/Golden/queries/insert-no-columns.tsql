@@ -1,0 +1,1 @@
+INSERT INTO shop.customer VALUES ('C9', N'Zed', NULL, SYSDATETIME(), 1, NEWID(), NULL);

@@ -1,0 +1,1 @@
+SELECT c.name, x.n FROM shop.customer c OUTER APPLY (SELECT COUNT(*) AS n FROM shop.[order] o WHERE o.customer_id = c.customer_id) x;

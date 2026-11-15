@@ -1,0 +1,4 @@
+INSERT INTO shop.product (product_id, name)
+SELECT customer_id + 1000, name
+FROM shop.customer
+WHERE is_active = true;

@@ -16,6 +16,9 @@ public sealed partial class ExpressionTranslator
         if (f.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers.Count: 1 } schemaTarget
             && c.Scope.ResolveColumn([schemaTarget.MultiPartIdentifier.Identifiers[0].Value]) is null)
             return UserFunction(f, schemaTarget.MultiPartIdentifier.Identifiers[0].Value, c);
+        if (f.CallTarget is ExpressionCallTarget { Expression: ScalarSubquery sq } && f.FunctionName.Value.Equals("value", StringComparison.OrdinalIgnoreCase)
+            && XmlValueSubquery is not null)
+            return XmlValueSubquery(sq.QueryExpression, c);
         if (f.CallTarget is not null)
             throw MethodCall(f);
 
@@ -119,6 +122,10 @@ public sealed partial class ExpressionTranslator
             case "SPACE":
                 Arity(1);
                 return Call("repeat", PgLiteral.String(" "), Arg(0));
+            case "STUFF" when a.Count == 4 && a[1] is IntegerLiteral { Value: "1" } && a[2] is IntegerLiteral:
+                // STUFF(s, 1, n, r), the usual way to drop a leading separator: only an empty s is out
+                // of range at start 1, and NULLIF turns it into the NULL STUFF gives.
+                return new PgTemplate("overlay({0} placing {1} from 1 for {2})", [Call("NULLIF", TextArg(0), PgLiteral.String("")), TextArg(3), Arg(2)]);
             case "STUFF":
                 Arity(4);
                 // STUFF gives NULL for a start outside the string or a negative length; overlay would not.

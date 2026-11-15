@@ -24,6 +24,7 @@ What was done and measured, as it lands. The plan is in
 - WP 1.13 — corpus download script, compile scan with positive control; Stage 1 (v0.1) exit criteria met on PostgreSQL 18 (also passed on 15, 16 and 17 before the default changed).
 - WP 2.1 — semantic model (scopes, typing, signatures, view columns, dependencies).
 - WP 2.2 — expression translator and function map; WP 2.6 — mssql_compat helpers (pulled forward: WP 2.2's tests need them).
+- WP 2.3 — query and DML translator; 57 golden cases, 58 both-engines cases.
 
 ## Measured
 
@@ -93,3 +94,4 @@ Built-ins checked on both engines (WP 2.2): 180 cases over a value grid, all agr
 - The Compat phase now comes before Tables (file 03-compat.sql; tables are 05-tables.sql): a default or computed column may call a helper, and PostgreSQL checks it exists at CREATE TABLE.
 - Differences no translation fixes, found by the both-engines grid: string comparison, REPLACE and CHARINDEX follow the column's collation (SQL Server's defaults are case-insensitive; PostgreSQL's are not), and ORDER BY on text follows each server's collation (PostgreSQL's linguistic collations ignore leading spaces). Decimal division keeps more digits in PostgreSQL than SQL Server's result-scale rules give. CONCAT and implicit date-to-string conversions format datetimes differently.
 - In generated columns, CONCAT of strings and numbers becomes coalesce(x, '') || …; concat(), to_char() and the TRY_CAST helpers are not immutable, so columns using them are held back (S2P2009).
+- Not translated yet (diagnostics say so): UPDATE/DELETE with the target inside an outer join, DML with TOP, FOR XML other than PATH('') concatenation, FOR JSON AUTO over joins, OUTPUT INTO, variables (Stage 3).

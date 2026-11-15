@@ -1,0 +1,1 @@
+SELECT order_id, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date) AS rn FROM shop.[order];

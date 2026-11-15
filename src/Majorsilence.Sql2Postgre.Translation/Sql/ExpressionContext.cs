@@ -46,8 +46,29 @@ public sealed class ExpressionContext
     /// <summary>The expression must be immutable (a generated column): prefer immutable spellings (|| over concat()).</summary>
     public bool RequireImmutable { get; init; }
 
+    /// <summary>Inside a FOR JSON query: a nested FOR JSON subquery is JSON, not a string.</summary>
+    public bool InsideJson { get; init; }
+
+    /// <summary>In an OUTPUT clause: <c>inserted</c> and <c>deleted</c> are written as RETURNING's <c>new</c> and <c>old</c>.</summary>
+    public bool ReturningPseudoTables { get; init; }
+
     public ExpressionContext With(Scope scope) =>
-        new(scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions) { QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable };
+        new(scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions)
+        {
+            QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable, InsideJson = InsideJson, ReturningPseudoTables = ReturningPseudoTables,
+        };
+
+    public ExpressionContext WithInsideJson() =>
+        new(Scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions)
+        {
+            QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable, InsideJson = true, ReturningPseudoTables = ReturningPseudoTables,
+        };
+
+    public ExpressionContext WithReturning(Scope scope) =>
+        new(scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions)
+        {
+            QualifyColumns = true, RequireImmutable = RequireImmutable, InsideJson = InsideJson, ReturningPseudoTables = true,
+        };
 
     public void Report(string code, Severity severity, string message) =>
         Diagnostics.Add(new Diagnostic(code, severity, Owner, message));

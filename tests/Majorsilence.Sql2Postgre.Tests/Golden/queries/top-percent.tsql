@@ -1,0 +1,1 @@
+SELECT TOP 50 PERCENT order_id FROM shop.[order] ORDER BY order_id;

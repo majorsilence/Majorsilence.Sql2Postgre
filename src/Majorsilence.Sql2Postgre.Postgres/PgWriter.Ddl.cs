@@ -31,7 +31,7 @@ public static partial class PgWriter
         PgCreateIndex i => Index(i),
         PgUntranslated u => Untranslated(u),
         PgLineComment c => string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
-        _ => throw new ArgumentException($"Cannot write {statement.GetType().Name}.", nameof(statement)),
+        _ => DmlOrQuery(statement),
     };
 
     private static string Q(string identifier) => NameMapper.Quote(identifier);

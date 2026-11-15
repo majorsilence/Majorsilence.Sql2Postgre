@@ -1,0 +1,1 @@
+SELECT c.name, x.order_date FROM shop.customer c CROSS APPLY shop.customer_orders(c.customer_id) x;

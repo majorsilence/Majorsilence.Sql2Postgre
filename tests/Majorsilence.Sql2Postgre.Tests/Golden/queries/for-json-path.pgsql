@@ -1,0 +1,2 @@
+SELECT CAST(json_build_object('customers', json_agg(json_strip_nulls(json_build_object('id', json_value_1, 'info', json_build_object('name', json_value_2, 'email', json_value_3))) ORDER BY sort_key_1 NULLS FIRST)) AS text) AS "JSON_F52E2B61-18A1-11d1-B105-00805F49916B"
+FROM (SELECT customer_id AS json_value_1, name AS json_value_2, email AS json_value_3, customer_id AS sort_key_1 FROM shop.customer) AS for_json_rows;

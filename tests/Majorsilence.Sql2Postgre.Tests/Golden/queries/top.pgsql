@@ -1,0 +1,4 @@
+SELECT name
+FROM shop.customer
+ORDER BY name DESC NULLS LAST
+LIMIT 2;

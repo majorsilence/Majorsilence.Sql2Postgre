@@ -1,0 +1,1 @@
+DELETE l FROM shop.order_line l JOIN shop.[order] o ON o.order_id = l.order_id WHERE o.customer_id = 100;

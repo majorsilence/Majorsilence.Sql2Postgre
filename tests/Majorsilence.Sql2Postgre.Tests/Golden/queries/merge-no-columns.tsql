@@ -1,0 +1,1 @@
+MERGE INTO shop.sales_fact t USING shop.product s ON t.sale_id = s.product_id WHEN NOT MATCHED BY TARGET THEN INSERT VALUES (s.product_id, 0);

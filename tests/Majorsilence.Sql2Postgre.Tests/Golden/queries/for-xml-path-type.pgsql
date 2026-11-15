@@ -1,0 +1,1 @@
+SELECT overlay(NULLIF((SELECT (SELECT string_agg(concatenated_value, '' ORDER BY sort_key_1 NULLS FIRST) FROM (SELECT COALESCE(CAST(', ' || name AS text), '') AS concatenated_value, name AS sort_key_1 FROM shop.customer) AS for_xml_rows)), '') placing '' from 1 for 2) AS names;
