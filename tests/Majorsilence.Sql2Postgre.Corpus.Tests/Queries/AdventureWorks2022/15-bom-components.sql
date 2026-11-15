@@ -1,0 +1,1 @@
+WITH bom (ComponentID, lvl) AS (SELECT ComponentID, 1 FROM Production.BillOfMaterials WHERE ProductAssemblyID = 800 AND EndDate IS NULL UNION ALL SELECT b.ComponentID, bom.lvl + 1 FROM Production.BillOfMaterials b JOIN bom ON b.ProductAssemblyID = bom.ComponentID WHERE b.EndDate IS NULL) SELECT lvl, COUNT(*) AS n FROM bom GROUP BY lvl

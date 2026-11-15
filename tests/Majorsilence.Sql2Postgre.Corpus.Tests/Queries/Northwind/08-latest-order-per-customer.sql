@@ -1,0 +1,1 @@
+SELECT c.CustomerID, x.OrderID, x.OrderDate FROM dbo.Customers c CROSS APPLY (SELECT TOP 1 o.OrderID, o.OrderDate FROM dbo.Orders o WHERE o.CustomerID = c.CustomerID ORDER BY o.OrderDate DESC, o.OrderID DESC) x

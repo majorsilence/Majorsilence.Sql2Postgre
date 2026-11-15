@@ -1,0 +1,1 @@
+SELECT t.title_id, a.au_lname FROM dbo.titles t CROSS APPLY (SELECT TOP 1 au.au_lname FROM dbo.titleauthor x JOIN dbo.authors au ON au.au_id = x.au_id WHERE x.title_id = t.title_id ORDER BY x.au_ord) a

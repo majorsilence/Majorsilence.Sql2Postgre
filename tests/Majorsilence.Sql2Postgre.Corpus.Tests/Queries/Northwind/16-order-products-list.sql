@@ -1,0 +1,1 @@
+SELECT o.OrderID, STRING_AGG(CAST(od.ProductID AS varchar(10)), ',') WITHIN GROUP (ORDER BY od.ProductID) AS products FROM dbo.Orders o JOIN dbo.[Order Details] od ON od.OrderID = o.OrderID WHERE o.OrderID < 10300 GROUP BY o.OrderID

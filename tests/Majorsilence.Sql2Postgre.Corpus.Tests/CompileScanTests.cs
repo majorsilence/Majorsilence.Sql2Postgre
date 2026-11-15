@@ -26,15 +26,13 @@ public sealed record ScanResult(string Database, int PostgresVersion,
 [Category("Corpus")]
 public class CompileScanTests
 {
-    private static readonly ConversionOptions Options = new() { Extensions = new HashSet<string>() };
-
     public static IEnumerable<TestCaseData> Databases() =>
         CorpusEntry.All.Select(e => new TestCaseData(e).SetName($"CompileScan({e.Database})"));
 
     [TestCaseSource(nameof(Databases))]
     public async Task MigratesWithoutFailures(CorpusEntry entry)
     {
-        var result = await ScanAsync(entry, Options);
+        var result = await ScanAsync(entry);
         Record(result);
         Assert.Multiple(() =>
         {
@@ -52,24 +50,25 @@ public class CompileScanTests
     public async Task PositiveControlIsCaught()
     {
         var entry = CorpusEntry.All.Single(e => e.Database == "Northwind");
-        var broken = Options with { TypeOverrides = new Dictionary<string, string> { ["dbo.Orders.OrderID"] = "date" } };
+        var broken = CorpusMigration.DefaultOptions with { TypeOverrides = new Dictionary<string, string> { ["dbo.Orders.OrderID"] = "date" } };
         var result = await ScanAsync(entry, broken);
         Assert.That(result.Clean, Is.False);
         Assert.That(result.ApplyFailures.Concat(result.CopyFailures), Has.Some.Contains("orders"));
     }
 
+    /// <summary>Scans the shared default-options migration.</summary>
+    public static async Task<ScanResult> ScanAsync(CorpusEntry entry) => Summarize(await CorpusMigration.DefaultAsync(entry));
+
+    /// <summary>Scans a migration of its own with these options.</summary>
     public static async Task<ScanResult> ScanAsync(CorpusEntry entry, ConversionOptions options)
     {
-        string source = await CorpusSource.ConnectionStringAsync(entry);
-        var read = await SqlServerCatalogReader.ReadAsync(source);
-        var conversion = SchemaConverter.Convert(read.Database, options);
-
         await using var target = await PostgresDatabase.CreateAsync(entry.Database.ToLowerInvariant());
-        var before = await PgApplier.ApplyAsync(conversion.Objects.Where(o => o.Phase <= Phase.Tables), target.ConnectionString);
-        var copy = await DataCopier.CopyAsync(read.Database, options, source, target.ConnectionString);
-        var after = await PgApplier.ApplyAsync(conversion.Objects.Where(o => o.Phase > Phase.Tables), target.ConnectionString);
-        var verify = await DataVerifier.VerifyAsync(read.Database, options, source, target.ConnectionString, VerifyMode.Checksum);
+        return Summarize(await CorpusMigration.MigrateAsync(entry, options, target.ConnectionString));
+    }
 
+    private static ScanResult Summarize(MigratedDatabase m)
+    {
+        var (entry, read, conversion, before, after, copy, verify) = (m.Entry, m.Read, m.Conversion, m.Before, m.After, m.Copy, m.Verify);
         var manual = conversion.Objects.Where(o => o.Status == ObjectStatus.Manual).Select(o => o.TargetName).ToHashSet();
         var applyFailures = before.Outcomes.Concat(after.Outcomes)
             .Where(o => o.Status == ApplyStatus.Failed && !manual.Contains(o.TargetName))

@@ -81,6 +81,19 @@ public static class TypeRules
     /// Return types of the built-in functions whose result does not depend on their arguments, or
     /// depends on them simply. Null when the function is unknown or the type depends on more.
     /// </summary>
+    /// <summary>
+    /// SUM and AVG's result type: int for the smaller integers, bigint for bigint, decimal(38, s)
+    /// for a decimal (AVG's scale is at least 6), money for either money type, float for float and real.
+    /// </summary>
+    public static SqlServerType? SumOrAverage(SqlServerType? t, bool average) => t?.Name switch
+    {
+        "tinyint" or "smallint" or "int" => new SqlServerType("int"),
+        "decimal" or "numeric" => new SqlServerType("decimal", Precision: 38, Scale: average ? Math.Max(t.Scale ?? 0, 6) : t.Scale ?? 0),
+        "money" or "smallmoney" => new SqlServerType("money"),
+        "real" or "float" => new SqlServerType("float", Precision: 53),
+        _ => t,
+    };
+
     public static SqlServerType? BuiltinReturnType(string upperName, IReadOnlyList<SqlServerType?> args)
     {
         SqlServerType? First() => args.Count > 0 ? args[0] : null;
@@ -106,8 +119,8 @@ public static class TypeRules
             "COALESCE" => args.Aggregate((SqlServerType?)null, (acc, t) => acc is null ? t : Combine(acc, t)),
             "NULLIF" => First(),
             "ABS" or "ROUND" or "CEILING" or "FLOOR" or "MIN" or "MAX" => First(),
-            "SUM" => First() is { } s && IsInteger(s) && s.Name != "bigint" ? new SqlServerType("int") : First(),
-            "AVG" => First(),
+            "SUM" => SumOrAverage(First(), average: false),
+            "AVG" => SumOrAverage(First(), average: true),
             "POWER" or "SQUARE" or "SQRT" or "EXP" or "LOG" or "LOG10" or "PI" or "RAND" or "SIN" or "COS" or "TAN" or "ATAN" => new SqlServerType("float", Precision: 53),
             "EOMONTH" or "DATEFROMPARTS" => new SqlServerType("date"),
             "DATEADD" => args.Count > 2 ? args[2] : null,

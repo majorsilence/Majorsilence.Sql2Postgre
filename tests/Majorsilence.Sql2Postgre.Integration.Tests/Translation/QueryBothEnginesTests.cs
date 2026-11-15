@@ -140,6 +140,22 @@ public class QueryBothEnginesTests
     [TestCase("MERGE shop.product AS t USING (VALUES (2, N'child a2'), (20, N'fresh')) AS s (id, name) ON t.product_id = s.id WHEN MATCHED THEN UPDATE SET name = s.name WHEN NOT MATCHED THEN INSERT (product_id, name) VALUES (s.id, s.name) WHEN NOT MATCHED BY SOURCE AND t.product_id = 5 THEN DELETE;", "SELECT * FROM shop.product")]
     public Task Dml(string dml, string select) => SameAfter(dml, select);
 
+    private const string Numbers = "(VALUES (1, CAST(0.0001 AS money), CAST(0.0002 AS decimal(18,4)), CAST(0.1 AS real), CAST(1 AS smallint)), "
+        + "(2, CAST(0.0001 AS money), CAST(0.0000 AS decimal(18,4)), CAST(0.25 AS real), CAST(2 AS smallint)), "
+        + "(3, CAST(0.0000 AS money), CAST(0.0000 AS decimal(18,4)), CAST(0.1 AS real), CAST(2 AS smallint))) AS t (id, m, d, r, i)";
+
+    /// <summary>Aggregate result types (AVG of money is money, of decimal(18,4) is decimal(38,6)) and real against exact numbers.</summary>
+    [TestCase("SELECT AVG(m) AS m, AVG(d) AS d, AVG(i) AS i, SUM(m) AS sm, SUM(d) AS sd FROM {0}")]
+    [TestCase("SELECT AVG(-m) AS m, AVG(-d) AS d FROM {0}")]
+    [TestCase("SELECT AVG(r) AS r, SUM(r) AS s FROM {0}")]
+    [TestCase("SELECT id FROM {0} WHERE r > 0.1")]
+    [TestCase("SELECT id FROM {0} WHERE r = 0.1")]
+    [TestCase("SELECT id FROM {0} WHERE r BETWEEN 0.1 AND 0.2")]
+    [TestCase("SELECT id, r * 1.5 AS x, r + i AS s FROM {0}")]
+    [TestCase("SELECT id, CAST(r * 14411.37 AS money) AS m, CONVERT(decimal(18,6), r / 3) AS d FROM {0}")]
+    [TestCase("SELECT id, AVG(m) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS a, AVG(i) OVER () AS ai FROM {0}")]
+    public Task Numeric(string select) => Same(string.Format(select, Numbers));
+
     [TestCase("INSERT INTO shop.product (product_id, name) OUTPUT inserted.product_id, inserted.name VALUES (12, N'out')")]
     [TestCase("UPDATE shop.[order] SET total = total + 1 OUTPUT deleted.total AS before, inserted.total AS after WHERE order_id = 1")]
     [TestCase("DELETE FROM shop.sales_fact OUTPUT deleted.sale_id, deleted.amount WHERE amount > 15")]

@@ -1,0 +1,1 @@
+SELECT OrderID FROM dbo.Orders WHERE OrderDate BETWEEN '1997-01-01' AND '1997-01-31'

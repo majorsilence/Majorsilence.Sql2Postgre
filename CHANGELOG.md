@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Result agreement on the public corpus: 180 T-SQL queries written for this repo (30 per
+  corpus database: joins, aggregates, dates, strings, TOP, APPLY, CTEs, windows, ROLLUP/CUBE,
+  PIVOT, views) are translated with `ScriptTranslator` and run on the SQL Server corpus database
+  and on its PostgreSQL 18 migration; each scores matching rows / rows × 100.**
+  `tests/…Corpus.Tests/Queries/Baselines.json` holds each query's expected score: any drop fails,
+  and so does a rise of more than 5 until the baseline is updated (`SQL2PG_UPDATE_BASELINES=1`).
+  179 of 180 agree exactly; the one that does not is a LIKE that SQL Server's case-insensitive
+  collation matches more widely (92.9). The compile scan and the harness share one migration per database, and CI's
+  container job now downloads the corpus (cached) and runs both. (WP 2.7)
+- **Fixed, found by the harness: AVG of money is money and AVG of decimal(p, s) is
+  decimal(38, max(s, 6)), both truncated as SQL Server truncates; SUM of real adds in float; an
+  exact number compared with or combined with a `real` is converted to real, as SQL Server does
+  (PostgreSQL compared in double precision, where real's 0.1 is greater than 0.1); a real cast
+  to decimal or money goes through double precision (PostgreSQL's real-to-numeric cast keeps 6
+  significant digits); a windowed AVG of money or decimal translates.**
+  `ScriptTranslation` now has `Prelude` (the helpers) and `Body` beside `Sql`.
 - **`sql2pg translate <file-or-folder> [--out dir] [--source conn|dir]` converts ad-hoc T-SQL
   scripts — application queries, reports, maintenance scripts — to PostgreSQL, writing a
   `.pgsql` and a `.diag.json` per `.sql`.** Queries and DML translate against the source's schema

@@ -1,0 +1,1 @@
+SELECT f.ProductKey, f.OrderDateKey, SUM(f.OrderQuantity) OVER (PARTITION BY f.ProductKey ORDER BY f.OrderDateKey, f.SalesOrderNumber, f.SalesOrderLineNumber) AS running FROM dbo.FactInternetSales f WHERE f.ProductKey = 310

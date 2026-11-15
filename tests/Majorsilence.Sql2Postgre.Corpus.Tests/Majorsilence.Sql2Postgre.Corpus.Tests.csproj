@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <None Include="..\fixtures\**\*.sql" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Queries\**\*.sql;Queries\Baselines.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The container fixtures are shared with the integration tests, as linked source. -->

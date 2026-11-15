@@ -1,0 +1,1 @@
+WITH org (EmployeeKey, lvl) AS (SELECT EmployeeKey, 0 FROM dbo.DimEmployee WHERE ParentEmployeeKey IS NULL UNION ALL SELECT e.EmployeeKey, o.lvl + 1 FROM dbo.DimEmployee e JOIN org o ON e.ParentEmployeeKey = o.EmployeeKey) SELECT lvl, COUNT(*) AS n FROM org GROUP BY lvl

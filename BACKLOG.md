@@ -27,6 +27,7 @@ What was done and measured, as it lands. The plan is in
 - WP 2.3 — query and DML translator; 57 golden cases, 58 both-engines cases.
 - WP 2.4 — views; corpus views 35 converted and applied, 10 Manual with specific codes.
 - WP 2.5 — translate verb (ScriptTranslator).
+- WP 2.7 — result-agreement harness; 180 corpus queries, 179 at 100. Stage 2 (v0.2) complete.
 
 ## Measured
 
@@ -58,6 +59,22 @@ After WP 2.2 (full expression translator in schema expressions), same scan, 2026
 | pubs | 46 | 0 | 0 | 6 | 0 |
 
 Built-ins checked on both engines (WP 2.2): 180 cases over a value grid, all agreeing.
+
+Result agreement (WP 2.7) on PostgreSQL 18, 2026-11-15: 30 queries per corpus database,
+translated by `ScriptTranslator` and run on both engines; score = matching rows / rows × 100.
+Baselines are in `tests/Majorsilence.Sql2Postgre.Corpus.Tests/Queries/Baselines.json`.
+
+| Database | Queries | At 100 | Below 100 |
+|---|---|---|---|
+| AdventureWorks2022 | 30 | 30 | — |
+| AdventureWorksDW2022 | 30 | 30 | — |
+| WideWorldImporters | 30 | 30 | — |
+| WideWorldImportersDW | 30 | 30 | — |
+| Northwind | 30 | 30 | — |
+| pubs | 30 | 29 | `29-like-range` 92.9: `LIKE '[A-M]%'` matches `del Castillo` under SQL Server's case-insensitive collation |
+
+Found and fixed on the way (first run: 79 of 82 at 100): AVG of money/decimal result types and
+truncation, real against exact numbers, real-to-numeric casts, windowed AVG of decimal.
 
 ## Notes for later
 
@@ -97,4 +114,6 @@ Built-ins checked on both engines (WP 2.2): 180 cases over a value grid, all agr
 - Differences no translation fixes, found by the both-engines grid: string comparison, REPLACE and CHARINDEX follow the column's collation (SQL Server's defaults are case-insensitive; PostgreSQL's are not), and ORDER BY on text follows each server's collation (PostgreSQL's linguistic collations ignore leading spaces). Decimal division keeps more digits in PostgreSQL than SQL Server's result-scale rules give. CONCAT and implicit date-to-string conversions format datetimes differently.
 - In generated columns, CONCAT of strings and numbers becomes coalesce(x, '') || …; concat(), to_char() and the TRY_CAST helpers are not immutable, so columns using them are held back (S2P2009).
 - Not translated yet (diagnostics say so): UPDATE/DELETE with the target inside an outer join, DML with TOP, FOR XML other than PATH('') concatenation, FOR JSON AUTO over joins, OUTPUT INTO, variables (Stage 3).
+- The compile scan and the agreement harness share one migration per corpus database per test run (`CorpusMigration.DefaultAsync`); its PostgreSQL database is dropped with the container.
+- An INSERT that leaves out a `rowversion` column fails on PostgreSQL (the column is a NOT NULL bytea with no default, S2P1103). Stage 3's trigger work should give it a default or a trigger.
 - `Module` has `IsIndexed` (an indexed view), read from sys.indexes by the catalog reader and from CREATE CLUSTERED INDEX by the script reader.

@@ -1,0 +1,1 @@
+SELECT c.EnglishProductCategoryName, SUM(f.SalesAmount) AS s FROM dbo.FactInternetSales f JOIN dbo.DimProduct p ON p.ProductKey = f.ProductKey JOIN dbo.DimProductSubcategory sc ON sc.ProductSubcategoryKey = p.ProductSubcategoryKey JOIN dbo.DimProductCategory c ON c.ProductCategoryKey = sc.ProductCategoryKey GROUP BY c.EnglishProductCategoryName

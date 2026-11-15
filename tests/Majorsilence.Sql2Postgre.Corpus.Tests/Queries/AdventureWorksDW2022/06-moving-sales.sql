@@ -1,0 +1,1 @@
+WITH d AS (SELECT OrderDateKey, SUM(SalesAmount) AS s FROM dbo.FactInternetSales GROUP BY OrderDateKey) SELECT OrderDateKey, SUM(s) OVER (ORDER BY OrderDateKey ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS moving FROM d

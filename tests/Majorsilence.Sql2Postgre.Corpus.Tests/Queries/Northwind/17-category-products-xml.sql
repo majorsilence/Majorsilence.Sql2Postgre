@@ -1,0 +1,1 @@
+SELECT c.CategoryID, STUFF((SELECT ',' + CAST(p.ProductID AS varchar(10)) FROM dbo.Products p WHERE p.CategoryID = c.CategoryID ORDER BY p.ProductID FOR XML PATH('')), 1, 1, '') AS ids FROM dbo.Categories c

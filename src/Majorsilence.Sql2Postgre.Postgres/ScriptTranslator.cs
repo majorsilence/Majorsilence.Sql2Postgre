@@ -9,8 +9,13 @@ using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace Majorsilence.Sql2Postgre.Postgres;
 
-/// <param name="Sql">The PostgreSQL script; untranslated statements are kept in it as comments.</param>
-public sealed record ScriptTranslation(string Sql, IReadOnlyList<Diagnostic> Diagnostics);
+/// <param name="Prelude">The mssql_compat helpers the statements need (empty when they need none).</param>
+/// <param name="Body">The translated statements; untranslated ones are kept in it as comments.</param>
+public sealed record ScriptTranslation(string Prelude, string Body, IReadOnlyList<Diagnostic> Diagnostics)
+{
+    /// <summary>The whole PostgreSQL script: the prelude, then the statements.</summary>
+    public string Sql => Prelude + Body;
+}
 
 /// <summary>
 /// Translates an ad-hoc T-SQL script (application queries, reports, maintenance scripts) to
@@ -28,7 +33,7 @@ public static class ScriptTranslator
         var owner = new ObjectName("", source);
         var fragment = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(tsql), out var errors);
         if (errors.Count > 0)
-            return new ScriptTranslation($"/* sql2pg:untranslated {DiagnosticCodes.ParseError}\n{tsql.Replace("*/", "* /")}\n*/\n",
+            return new ScriptTranslation("", $"/* sql2pg:untranslated {DiagnosticCodes.ParseError}\n{tsql.Replace("*/", "* /")}\n*/\n",
                 errors.Select(e => new Diagnostic(DiagnosticCodes.ParseError, Severity.Error, owner, $"{source}({e.Line},{e.Column}): {e.Message}",
                     new SourceSpan(e.Line, e.Column, 0))).ToList());
 
@@ -51,11 +56,10 @@ public static class ScriptTranslator
             }
         }
 
-        var sb = new StringBuilder();
+        var prelude = new StringBuilder();
         foreach (var helper in SchemaConverter.CompatObjects(compat, options))
-            sb.Append(helper.Sql).Append('\n');
-        sb.Append(body);
-        return new ScriptTranslation(sb.ToString(), diagnostics);
+            prelude.Append(helper.Sql).Append('\n');
+        return new ScriptTranslation(prelude.ToString(), body.ToString(), diagnostics);
     }
 
     private static string Statement(TSqlStatement statement, ExpressionContext c, QueryTranslator queries, NameMapper names,

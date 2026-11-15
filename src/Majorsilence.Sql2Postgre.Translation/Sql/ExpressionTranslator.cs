@@ -209,8 +209,18 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             BinaryExpressionType.BitwiseXor => "#",
             _ => throw Untranslatable(b, "this operator"),
         };
-        return new PgBinary(op, Scalar(b.FirstExpression, c), Scalar(b.SecondExpression, c));
+        return new PgBinary(op, AsRealIfOtherIs(Scalar(b.FirstExpression, c), lt, rt), AsRealIfOtherIs(Scalar(b.SecondExpression, c), rt, lt));
     }
+
+    /// <summary>
+    /// An exact number (a decimal literal, an int or money column) against a real: SQL Server
+    /// converts it to real and compares or calculates in real; PostgreSQL would convert both
+    /// sides to double precision, where real's 0.1 is no longer equal to 0.1.
+    /// </summary>
+    private static PgExpr AsRealIfOtherIs(PgExpr translated, SqlServerType? ownType, SqlServerType? otherType) =>
+        otherType?.Name == "real" && TypeRules.IsExactNumeric(ownType) && ownType!.Name != "bit"
+            ? new PgCast(translated, "real")
+            : translated;
 
     private static PgExpr DatePlusDays(PgExpr date, PgExpr days, SqlServerType type) =>
         new PgBinary("+", date, new PgBinary("*", days, new PgLiteral("interval '1 day'")));
@@ -251,7 +261,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             && (TypeRules.IsNumeric(otherType) || TypeRules.IsDateTime(otherType) || otherType.Name == "uniqueidentifier")
             && TypeRules.Rank(otherType.Name) < TypeRules.Rank(ownType!.Name))
             return new PgCast(translated, types.Map(otherType).PgType);
-        return translated;
+        return AsRealIfOtherIs(translated, ownType, otherType);
     }
 
     /// <summary>
@@ -388,6 +398,10 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         // PostgreSQL rounds (13, -13). money is the exception: SQL Server rounds it too.
         if (target is "smallint" or "integer" or "bigint" && TypeOf(operand, c)?.Name is "decimal" or "numeric" or "float" or "real")
             inner = new PgFunctionCall("trunc", [inner]);
+        // PostgreSQL converts a real to numeric through its 6-significant-digit text form
+        // (1441.3699 -> 1441.37); SQL Server converts the binary value. double precision keeps it.
+        else if (target.StartsWith("numeric", StringComparison.Ordinal) && TypeOf(operand, c)?.Name == "real")
+            inner = new PgCast(inner, "double precision");
         // A bit cast to a number or string goes through integer: PostgreSQL casts boolean only to
         // integer, and to text as 'true'/'false' where SQL Server writes 1/0.
         if (TypeOf(operand, c)?.Name == "bit" && target is not ("boolean" or "integer"))

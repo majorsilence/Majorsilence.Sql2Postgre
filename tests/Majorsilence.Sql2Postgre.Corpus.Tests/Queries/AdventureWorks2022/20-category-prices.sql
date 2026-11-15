@@ -1,0 +1,1 @@
+SELECT pc.Name, COUNT(*) AS n, AVG(p.ListPrice) AS avg_price FROM Production.Product p JOIN Production.ProductSubcategory s ON s.ProductSubcategoryID = p.ProductSubcategoryID JOIN Production.ProductCategory pc ON pc.ProductCategoryID = s.ProductCategoryID GROUP BY pc.Name

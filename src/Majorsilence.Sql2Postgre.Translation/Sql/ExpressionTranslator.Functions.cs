@@ -322,10 +322,19 @@ public sealed partial class ExpressionTranslator
         return name switch
         {
             "COUNT" or "COUNT_BIG" => Agg("count", args),
+            // SUM of real adds in float in SQL Server; PostgreSQL would add in real.
+            "SUM" when TypeOf(f.Parameters[0], c)?.Name == "real" =>
+                Agg("sum", [new PgCast(args[0], "double precision")]),
             "SUM" or "MIN" or "MAX" => Agg(name.ToLowerInvariant(), args),
             // AVG of integers is an integer in SQL Server (the average truncated); PostgreSQL returns numeric.
             "AVG" when TypeRules.IsInteger(TypeOf(f.Parameters[0], c)) =>
                 new PgCast(new PgFunctionCall("trunc", [Agg("avg", args)]), types.Map(TypeOf(f.Parameters[0], c)!).PgType),
+            // AVG of money is money (4 decimals) and of decimal(p, s) is decimal(38, max(s, 6)), the
+            // average truncated toward zero; PostgreSQL's numeric average carries 16 digits or more.
+            "AVG" when TypeOf(f.Parameters[0], c) is { Name: "money" or "smallmoney" or "decimal" or "numeric" } t
+                && TypeRules.SumOrAverage(t, average: true) is { } result =>
+                new PgCast(new PgFunctionCall("trunc", [Agg("avg", args), new PgLiteral((result.Scale ?? 4).ToString(System.Globalization.CultureInfo.InvariantCulture))]),
+                    types.Map(result).PgType),
             "AVG" => Agg("avg", args),
             "STDEV" => Agg("stddev_samp", args),
             "STDEVP" => Agg("stddev_pop", args),
@@ -348,9 +357,9 @@ public sealed partial class ExpressionTranslator
             return Aggregate(f, name, c) switch
             {
                 PgFunctionCall call => call with { Over = over },
-                PgCast { Operand: PgFunctionCall { Name: "trunc", Arguments: [PgFunctionCall avg] } } cast =>
-                    cast with { Operand = new PgFunctionCall("trunc", [avg with { Over = over }]) },
-                _ => throw Untranslatable(f, "this windowed aggregate"),
+                // AVG with its result truncated: trunc(avg(x)) or trunc(avg(x), scale), the window on avg.
+                PgCast { Operand: PgFunctionCall { Name: "trunc", Arguments: [PgFunctionCall avg, ..] } trunc } cast =>
+                    cast with { Operand = trunc with { Arguments = [avg with { Over = over }, .. trunc.Arguments.Skip(1)] } },                _ => throw Untranslatable(f, "this windowed aggregate"),
             };
         string? pg = name switch
         {

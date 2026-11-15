@@ -1,0 +1,1 @@
+SELECT p.ProductID, sc.Name AS subcat, c.Name AS cat FROM Production.Product p LEFT JOIN Production.ProductSubcategory sc ON sc.ProductSubcategoryID = p.ProductSubcategoryID LEFT JOIN Production.ProductCategory c ON c.ProductCategoryID = sc.ProductCategoryID

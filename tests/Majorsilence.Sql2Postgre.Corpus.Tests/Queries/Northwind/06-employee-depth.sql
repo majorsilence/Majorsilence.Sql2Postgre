@@ -1,0 +1,1 @@
+WITH chain (EmployeeID, depth) AS (SELECT EmployeeID, 0 FROM dbo.Employees WHERE ReportsTo IS NULL UNION ALL SELECT e.EmployeeID, c.depth + 1 FROM dbo.Employees e JOIN chain c ON e.ReportsTo = c.EmployeeID) SELECT EmployeeID, depth FROM chain

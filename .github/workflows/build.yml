@@ -52,6 +52,20 @@ jobs:
       - run: dotnet restore Majorsilence.Sql2Postgre.slnx
       - run: dotnet build Majorsilence.Sql2Postgre.slnx -c Release --no-restore
       - run: dotnet test tests/Majorsilence.Sql2Postgre.Integration.Tests -c Release --no-build --verbosity normal
+      # The public sample databases (about 1 GB), cached by the download script's hashes.
+      - uses: actions/cache@v5
+        with:
+          path: tests/corpus/*.*
+          key: corpus-${{ hashFiles('scripts/download-corpus.sh') }}
+      - run: bash scripts/download-corpus.sh
+      # Compile scan (Stage 1) and result agreement against Queries/Baselines.json (Stage 2).
+      - run: dotnet test tests/Majorsilence.Sql2Postgre.Corpus.Tests -c Release --no-build --verbosity normal
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: corpus-results-pg${{ matrix.pg }}
+          path: tests/corpus/results/
+          if-no-files-found: ignore
 
   pack:
     needs: [test, containers]

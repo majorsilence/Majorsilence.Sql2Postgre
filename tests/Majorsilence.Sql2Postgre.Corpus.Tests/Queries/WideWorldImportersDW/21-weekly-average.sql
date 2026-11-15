@@ -1,0 +1,1 @@
+WITH m AS (SELECT [Invoice Date Key] AS d, SUM([Total Including Tax]) AS t FROM Fact.Sale GROUP BY [Invoice Date Key]) SELECT d, AVG(t) OVER (ORDER BY d ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS weekly FROM m
