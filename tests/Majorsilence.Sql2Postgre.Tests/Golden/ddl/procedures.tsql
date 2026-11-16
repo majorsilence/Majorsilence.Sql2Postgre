@@ -1,0 +1,59 @@
+CREATE TABLE dbo.item (id int IDENTITY NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL, price decimal(10, 2) NOT NULL);
+GO
+CREATE TABLE dbo.audit (id int IDENTITY NOT NULL PRIMARY KEY, note nvarchar(100) NOT NULL);
+GO
+CREATE PROCEDURE dbo.add_item @name nvarchar(50), @price decimal(10, 2) = 0, @id int OUTPUT AS
+BEGIN
+    SET NOCOUNT ON;
+    IF @price < 0
+        RETURN 1;
+    INSERT INTO dbo.item (name, price) VALUES (@name, @price);
+    SET @id = SCOPE_IDENTITY();
+    RETURN 0;
+END;
+GO
+CREATE PROCEDURE dbo.items_under @max decimal(10, 2) AS
+    SELECT id, name, price, price * 2 AS doubled, N'x' FROM dbo.item WHERE price <= @max ORDER BY price DESC;
+GO
+CREATE PROCEDURE dbo.item_report @min decimal(10, 2) AS
+BEGIN
+    SELECT COUNT(*) AS items FROM dbo.item WHERE price >= @min;
+    SELECT id, name FROM dbo.item WHERE price >= @min ORDER BY id;
+END;
+GO
+CREATE PROCEDURE dbo.top_items AS
+SET ROWCOUNT 2
+SELECT name, price FROM dbo.item ORDER BY price DESC
+GO
+CREATE PROCEDURE dbo.restock @name nvarchar(50) AS
+BEGIN
+    DECLARE @id int, @rc int;
+    BEGIN TRAN;
+    EXEC @rc = dbo.add_item @name, 5, @id OUTPUT;
+    IF @rc <> 0
+    BEGIN
+        ROLLBACK;
+        RETURN;
+    END;
+    EXEC dbo.add_item @name = @name, @id = @id;
+    INSERT INTO dbo.audit (note) VALUES (N'restocked ' + @name);
+    COMMIT TRAN;
+    EXEC dbo.item_report 0;
+END;
+GO
+CREATE PROCEDURE dbo.item_names @max decimal(10, 2) AS SELECT name FROM dbo.item WHERE price <= @max;
+GO
+CREATE PROCEDURE dbo.cheap_names @max decimal(10, 2) AS
+BEGIN
+    INSERT INTO dbo.audit (note) EXEC dbo.item_names @max;
+    EXEC dbo.items_under @max = 1;
+END;
+GO
+CREATE PROCEDURE dbo.unsupported AS
+BEGIN
+    SAVE TRANSACTION before_change;
+    IF @@TRANCOUNT > 1 PRINT 'nested';
+    EXEC sp_rename 'dbo.item', 'items';
+    EXEC dbo.missing_procedure 1;
+END;
+GO

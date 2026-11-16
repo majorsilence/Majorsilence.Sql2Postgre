@@ -66,7 +66,7 @@ public sealed partial class SchemaTranslator
             [.. earlier ?? [], new Diagnostic(code, Severity.Error, m.Name, message)], dependsOn);
 
     /// <summary>
-    /// A view or function that uses a view or routine that is Manual or skipped cannot work; it
+    /// A view or routine that uses a view or routine that is Manual or skipped cannot work; it
     /// becomes Manual too, and so on down the chain.
     /// </summary>
     private static List<TranslatedObject> PropagateUnconverted(List<TranslatedObject> objects, SemanticModel model)
@@ -79,7 +79,7 @@ public sealed partial class SchemaTranslator
             for (int i = 0; i < objects.Count; i++)
             {
                 var o = objects[i];
-                if (o.Kind is not (ObjectKind.View or ObjectKind.Function) || o.Status is ObjectStatus.Manual or ObjectStatus.Skipped)
+                if (o.Kind is not (ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure) || o.Status is ObjectStatus.Manual or ObjectStatus.Skipped)
                     continue;
                 var blocker = o.DependsOn.FirstOrDefault(d =>
                     bySource.TryGetValue(d, out var deps)

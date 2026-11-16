@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **Stored procedures are converted.**
+  - A procedure becomes `CREATE PROCEDURE`. OUTPUT parameters are `INOUT … DEFAULT NULL`, and
+    T-SQL defaults are kept.
+  - A procedure whose one result set is its only output becomes `FUNCTION … RETURNS TABLE`,
+    with `RETURN QUERY` and each column cast to its declared type. "Only output" means no
+    OUTPUT parameters, no status code and no COMMIT or ROLLBACK, and the option
+    `ResultSetStyle` must be `Function`.
+  - Other procedures return their result sets through INOUT refcursor parameters (`result_set`,
+    or `result_set_1`, `result_set_2`, …) opened with `OPEN … FOR`. This reports S2P5021, since
+    callers change.
+  - `RETURN n` sets an INOUT `return_code` parameter, which starts at 0 (S2P5022).
+  - `EXEC p …` inside converted code becomes `CALL p(name => value, …)`:
+    - `@v OUTPUT` is passed as is and gets the new value back. Any other value for an OUTPUT
+      parameter goes through a helper variable, as SQL Server does not copy it back.
+    - `EXEC @rc = p` reads the status code.
+    - A call to a procedure that returns cursors passes the caller's own cursors on.
+    - A procedure converted to a function is read as `SELECT * FROM f(…)`, and that is how
+      `INSERT … EXEC` is converted.
+    - Calls to system procedures (`sp_*`, `xp_*`) report S2P5023, and calls to unknown
+      procedures report S2P5027.
+  - Transactions inside a procedure:
+    - `BEGIN TRAN` is dropped (S2P5026).
+    - `COMMIT` and `ROLLBACK` are kept.
+    - `SAVE TRAN` and `ROLLBACK` to a savepoint report S2P5024, and `@@TRANCOUNT` reports
+      S2P5025.
+  - `SET ROWCOUNT n` before the result sets of a procedure becomes `LIMIT n`.
+  - A procedure that calls a procedure that is not converted is Manual (S2P0203), as views and
+    functions already were.
+  - `sql2pg translate`:
+    - An `EXEC` with constant arguments is a top-level `CALL` or `SELECT * FROM f(…)`.
+    - `BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `SAVE TRAN` and `ROLLBACK` to a savepoint become
+      `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`.
+  - Procedures of every shape are created by sql2pg and run on both engines with the same
+    result sets, OUTPUT values, status codes and committed data. (WP 3.4)
 - **User-defined functions are converted.**
   - A scalar function whose body is one `RETURN` becomes a `LANGUAGE sql` function with a
     SQL-standard `RETURN` body; any other scalar function is PL/pgSQL.

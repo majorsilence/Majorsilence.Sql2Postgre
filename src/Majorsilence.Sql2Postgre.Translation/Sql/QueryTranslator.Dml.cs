@@ -138,7 +138,8 @@ public sealed partial class QueryTranslator
             ValuesInsertSource v => new PgValues(v.RowValues.Select(row => (IReadOnlyList<PgExpr>)row.ColumnValues
                 .Select((value, i) => Assigned(value, i < types.Count ? types[i] : null, c)).ToList()).ToList()),
             SelectInsertSource s => InsertSelect(s.Select, types, c),
-            ExecuteInsertSource e => throw ExpressionTranslator.Untranslatable(e, "INSERT … EXEC", DiagnosticCodes.InsertExec),
+            ExecuteInsertSource e => ExecuteSource?.Invoke(e, c)
+                                     ?? throw ExpressionTranslator.Untranslatable(e, "INSERT … EXEC", DiagnosticCodes.InsertExec),
             var other => throw ExpressionTranslator.Untranslatable(other, "this INSERT source"),
         };
         return new PgInsert(target.Name, source is null ? [] : columns.Select(col => Column(target, col)).ToList(), source)

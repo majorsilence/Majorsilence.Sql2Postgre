@@ -8,7 +8,7 @@ BEGIN
     /* sql2pg:untranslated S2P5009
     SELECT name FROM shop.product;
     */
-    /* sql2pg:untranslated S2P0206
+    /* sql2pg:untranslated S2P5027
     EXEC shop.do_something;
     */
     /* sql2pg:untranslated S2P5005

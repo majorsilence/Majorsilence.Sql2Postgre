@@ -47,14 +47,38 @@ public class ScriptTranslatorTests
     [Test]
     public void BatchWithVariablesIsADoBlockAndKeepsWhatItCannotTranslate()
     {
-        var r = T("CREATE TABLE dbo.x (id int);\nDECLARE @n int = 1;\nEXEC shop.add_order 1, NULL;");
+        var r = T("CREATE TABLE dbo.x (id int);\nDECLARE @n int = 1;\nEXEC shop.add_order 1, NULL;\nEXEC shop.missing 1;");
         Assert.Multiple(() =>
         {
-            Assert.That(r.Sql, Does.StartWith("DO $$\n#variable_conflict use_column\nDECLARE\n    v_n integer;\nBEGIN\n"));
+            Assert.That(r.Sql, Does.StartWith("DO $$\n#variable_conflict use_column\nDECLARE\n    v_n integer;\n    sql2pg_arg1 bigint;\nBEGIN\n"));
             Assert.That(r.Sql, Does.Contain("    /* sql2pg:untranslated S2P0205\n    CREATE TABLE dbo.x (id int);"));
             Assert.That(r.Sql, Does.Contain("    v_n := 1;\n"));
-            Assert.That(r.Sql, Does.Contain("    /* sql2pg:untranslated S2P0206\n    EXEC shop.add_order 1, NULL;"));
-            Assert.That(r.Diagnostics.Select(d => d.Code), Is.EqualTo(new[] { DiagnosticCodes.DdlInScript, DiagnosticCodes.ProceduralStatement }));
+            // NULL for the OUTPUT parameter, not taken back: PL/pgSQL still needs a variable for it.
+            Assert.That(r.Sql, Does.Contain("    sql2pg_arg1 := NULL;\n    CALL shop.add_order(customer_id => 1, order_id => sql2pg_arg1);\n"));
+            Assert.That(r.Sql, Does.Contain("    /* sql2pg:untranslated S2P5027\n    EXEC shop.missing 1;"));
+            Assert.That(r.Diagnostics.Select(d => d.Code), Is.EqualTo(new[] { DiagnosticCodes.DdlInScript, DiagnosticCodes.UnknownProcedure }));
+        });
+    }
+
+    [Test]
+    public void InsertExecOfAProcedureThatIsNotAFunctionStaysAComment()
+    {
+        var r = T("INSERT INTO shop.customer (name) EXEC shop.add_order 1;");
+        Assert.Multiple(() =>
+        {
+            Assert.That(r.Sql, Does.StartWith("/* sql2pg:untranslated S2P4003\n"));
+            Assert.That(r.Diagnostics.Single().Message, Does.Contain("not a set-returning function"));
+        });
+    }
+
+    [Test]
+    public void PlainExecAndTransactionsAreTopLevelStatements()
+    {
+        var r = T("BEGIN TRAN t1;\nEXEC shop.add_order @customer_id = 7;\nSAVE TRAN s1;\nROLLBACK TRAN s1;\nCOMMIT TRAN t1;");
+        Assert.Multiple(() =>
+        {
+            Assert.That(r.Sql, Is.EqualTo("BEGIN;\n\nCALL shop.add_order(customer_id => 7);\n\nSAVEPOINT s1;\n\nROLLBACK TO SAVEPOINT s1;\n\nCOMMIT;\n\n"));
+            Assert.That(r.Diagnostics, Is.Empty);
         });
     }
 

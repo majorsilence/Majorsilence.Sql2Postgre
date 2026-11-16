@@ -302,6 +302,12 @@ public sealed partial class QueryTranslator
     /// </summary>
     public Func<string, string?>? TableVariable { get; set; }
 
+    /// <summary>
+    /// The rows of <c>INSERT … EXEC procedure</c> as a query, or null when the procedure's rows
+    /// cannot be read as one (set by the procedural translator).
+    /// </summary>
+    public Func<ExecuteInsertSource, ExpressionContext, PgQuery?>? ExecuteSource { get; set; }
+
     /// <summary>STRING_SPLIT is string_to_table; GENERATE_SERIES is generate_series. Both return a column named value.</summary>
     private PgFromItem BuiltinTableFunction(GlobalFunctionTableReference g, ExpressionContext c)
     {

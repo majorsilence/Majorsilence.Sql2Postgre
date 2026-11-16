@@ -93,6 +93,62 @@ public sealed partial class SchemaTranslator
         }
     }
 
+    /// <summary>
+    /// A procedure as CREATE PROCEDURE, its result sets returned through INOUT refcursor parameters
+    /// and its status code through INOUT return_code; or, when it returns one result set and nothing
+    /// else (and the options ask for it), as a set-returning function.
+    /// </summary>
+    private TranslatedObject Procedure(Module m, SemanticModel model, ProceduralTranslator procedural)
+    {
+        var name = _names.Routine(m.Name);
+        var dependsOn = model.Dependencies.Where(d => ObjectNameComparer.Instance.Equals(d.From, m.Name)).Select(d => d.To).ToList();
+        if (model.ModuleTree(m.Name) is not ProcedureStatementBody p)
+            return Untranslated(m, name.Qualified, dependsOn, DiagnosticCodes.ParseError, $"The definition of {m.Name} could not be parsed.");
+        if (p.MethodSpecifier is not null)
+            return Untranslated(m, name.Qualified, dependsOn, DiagnosticCodes.ClrObject, $"{m.Name} is a CLR procedure: .NET code, not T-SQL.");
+        var shape = procedural.Shape(m.Name)
+                    ?? throw new InvalidOperationException($"{m.Name} has no procedure shape.");
+
+        var context = new ExpressionContext(new Scope(), m.Name.Schema, m.Name);
+        try
+        {
+            var reserved = shape.Columns.Select(col => _names.Alias(col.Name)).ToHashSet(StringComparer.Ordinal);
+            var (parameters, bodyParameters) = Parameters(p.Parameters, model, procedural, context, reserved);
+            if (shape.ReturnCode is { } returnCode)
+            {
+                parameters.Add(new PgParameter(returnCode, "integer", "INOUT", PgLiteral.Null));
+                context.Report(DiagnosticCodes.ReturnCodeParameter, Severity.Info,
+                    $"{m.Name} returns a status code: it comes back in the INOUT parameter {returnCode} (0 when RETURN gives none).");
+            }
+            foreach (string cursor in shape.Cursors)
+                parameters.Add(new PgParameter(cursor, "refcursor", "INOUT", PgLiteral.Null));
+            if (shape.Cursors.Count > 0)
+                context.Report(DiagnosticCodes.ResultSetCursor, Severity.Warning,
+                    $"{m.Name} returns {(shape.Cursors.Count == 1 ? "a result set" : $"{shape.Cursors.Count} result sets")} through INOUT refcursor "
+                    + $"parameter{(shape.Cursors.Count == 1 ? "" : "s")} {string.Join(", ", shape.Cursors)}: a caller CALLs it and FETCHes the rows "
+                    + "from the cursors in the same transaction.");
+
+            var signature = new BodySignature(BodyKind.Procedure, name.Name, bodyParameters) { Shape = shape };
+            var body = procedural.Body(p.StatementList?.Statements ?? [], signature, context);
+            var routine = new PgCreateRoutine(name, !shape.IsFunction, parameters, body);
+            if (shape.IsFunction)
+                routine = routine with
+                {
+                    ReturnsTable = shape.Columns.Select(col => new PgField(_names.Alias(col.Name), MapType(col.Type!, context))).ToList(),
+                    Volatility = Volatility(m.Name, model, context.CompatFunctions),
+                };
+            return new TranslatedObject(m.Name, ObjectKind.Procedure, name.Qualified, Phase.Code, [routine], context.Diagnostics, dependsOn)
+            {
+                Extensions = context.Extensions.ToList(),
+                CompatFunctions = context.CompatFunctions.ToList(),
+            };
+        }
+        catch (UntranslatableException ex)
+        {
+            return Untranslated(m, name.Qualified, dependsOn, ex.Code, ex.Message, context.Diagnostics);
+        }
+    }
+
     /// <summary>The value of a body that is one <c>RETURN expression</c> (inside any BEGIN … END), else null.</summary>
     private static ScalarExpression? SingleReturn(IList<TSqlStatement> statements)
     {
@@ -112,7 +168,7 @@ public sealed partial class SchemaTranslator
     }
 
     /// <summary>
-    /// Parameters keep their names (without <c>@</c>). OUTPUT parameters are INOUT. PostgreSQL
+    /// Parameters keep their names (without <c>@</c>). OUTPUT parameters are INOUT, DEFAULT NULL. PostgreSQL
     /// needs every parameter after a defaulted one to have a default too; where SQL Server's order
     /// breaks that, the later ones get DEFAULT NULL.
     /// </summary>
@@ -136,7 +192,9 @@ public sealed partial class SchemaTranslator
             }
             var type = model.TypeOf(p.DataType, c.Schema);
             PgExpr? value = p.Value is null ? null : procedural.Constant(p.Value, c);
-            if (value is null && defaulted)
+            if (value is null && p.Modifier == ParameterModifier.Output)
+                value = PgLiteral.Null; // a caller need not pass an INOUT parameter whose value it does not want
+            else if (value is null && defaulted)
             {
                 value = PgLiteral.Null;
                 c.Report(DiagnosticCodes.ParameterDefaultAdded, Severity.Info,

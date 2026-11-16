@@ -31,6 +31,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.1 — PL/pgSQL AST and writer; every node compiled and run on PostgreSQL 18.
 - WP 3.2 — statements and control flow; script batches with variables become DO blocks; 6 both-engines message cases, 7 golden cases.
 - WP 3.3 — functions (scalar, inline TVF, multi-statement TVF); corpus compile scan 0 apply failures on all six databases with functions converted.
+- WP 3.4 — procedures (CREATE PROCEDURE or set-returning function, refcursor result sets, INOUT OUTPUT parameters and return_code, EXEC → CALL, INSERT … EXEC, transactions); 11 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: Northwind 7/0, pubs 4/0, WideWorldImportersDW 14/10, WideWorldImporters 10/32, AdventureWorks 2/8. Manual is mostly S2P0206, from TRY/CATCH, cursors, temp tables and dynamic SQL (WP 3.5–3.8).
 
 ## Measured
 
@@ -122,3 +123,26 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - `Module` has `IsIndexed` (an indexed view), read from sys.indexes by the catalog reader and from CREATE CLUSTERED INDEX by the script reader.
 - WP 3.2 departs from the plan in two places. `SELECT @v = … FROM …` that may return several rows is a FOR loop over the rows rather than `LIMIT 1`: the loop keeps SQL Server's last-row and no-rows behaviour exactly, and S2P5002 now warns only when there is no ORDER BY. The @@ROWCOUNT and identity helpers are `sql2pg_rowcount` and `sql2pg_identity`, not `v_rowcount` and `v_scope_identity`, which a T-SQL variable `@rowcount` would collide with.
 - Established on SQL Server: PRINT and RAISERROR send an empty message (`PRINT ''`, `PRINT NULL`) as a single space; PRINT, RAISERROR and SET options reset @@ROWCOUNT to 0; SET @v = … sets it to 1.
+- WP 3.4 departs from the plan in these places:
+  - The refcursor parameters are `result_set`, or `result_set_1`, `result_set_2`, … when there
+    are several. The plan wrote `<name>_rs`.
+  - A single result set can sit anywhere in a procedure that becomes a function, not only at
+    the end: `RETURN QUERY` adds the rows and carries on, as SQL Server does. Three more things
+    keep it a procedure: a status code (a function with `RETURNS TABLE` cannot have INOUT
+    parameters), `COMMIT`/`ROLLBACK`, and a result set inside a loop.
+  - OUTPUT parameters get `DEFAULT NULL`, so a caller need not pass them.
+  - Two codes are added: S2P5026 (BEGIN TRAN dropped, Info) and S2P5027 (EXEC of an unknown
+    procedure, Error).
+  - In `sql2pg translate`, transaction statements outside a DO block become `BEGIN`, `COMMIT`,
+    `ROLLBACK`, `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`.
+- Established on PostgreSQL 18:
+  - `RETURN QUERY` needs each column's type to match `RETURNS TABLE` exactly. The type
+    modifiers are dropped from both, so each column is cast to the bare type (`varchar`,
+    `numeric`, and `bpchar` for char).
+  - `OPEN result_set FOR …` works on an INOUT refcursor parameter, and a CALL from PL/pgSQL
+    can pass it on to another procedure.
+  - A function may CALL a procedure that does not commit.
+- Not translated yet in procedures: rows returned by DML with `OUTPUT` (S2P0206); a result set
+  inside a loop; any statement other than a result set under `SET ROWCOUNT n`; `SET ROWCOUNT`
+  inside IF/WHILE or with a variable; `INSERT … EXEC` of a procedure that returns cursors
+  (S2P4003).

@@ -67,10 +67,12 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-A procedural statement that is not translated yet: `EXEC`, `TRY … CATCH`, cursors, temporary
-tables and table variables, transaction control and the other statements Stage 3 is still
-adding. Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR` and `THROW` are translated. The
-statement is kept as a comment.
+A procedural statement that is not translated yet: `TRY … CATCH`, cursors, temporary tables,
+dynamic SQL (`EXEC (string)`, `sp_executesql`) and the other statements Stage 3 is still adding.
+Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a procedure, result
+sets and transaction control are translated. In a procedure, a result set inside a loop,
+rows returned by DML with `OUTPUT`, and any statement other than a result set under
+`SET ROWCOUNT n` also get this code. The statement is kept as a comment.
 
 ### S2P0301 ExternalReference (Error)
 
@@ -357,8 +359,10 @@ counterpart; readers never block writers there anyway.
 
 ### S2P4003 InsertExec (Error)
 
-`INSERT … EXEC procedure` needs the procedure translated (Stage 3), as a function the INSERT can
-select from.
+`INSERT … EXEC procedure` works when the procedure is converted to a set-returning function
+(one result set, no OUTPUT parameters, status code or transaction control): it becomes
+`INSERT … SELECT * FROM f(…)`. When the procedure returns its rows through refcursors, the
+statement is kept as a comment.
 
 ### S2P4004 IdentityInsert (Info)
 
@@ -486,6 +490,57 @@ new name.
 In PostgreSQL every parameter after one with a default must have a default too; SQL Server has
 no such rule. The later parameters get `DEFAULT NULL`, which changes nothing for callers that
 pass every argument.
+
+### S2P5021 ResultSetCursor (Warning)
+
+The procedure returns rows and could not become a set-returning function. It has OUTPUT
+parameters, a status code, `COMMIT`/`ROLLBACK`, or more than one result set; or the options ask
+for `Refcursor`. Each result set comes back through an `INOUT … refcursor` parameter
+(`result_set`, or `result_set_1`, `result_set_2`, … when there are several), opened with
+`OPEN … FOR <select>`. Callers change: call the procedure and `FETCH ALL FROM` each cursor in the
+same transaction. Passing your own names makes that easier:
+`CALL p(…, result_set_1 => 'c1'); FETCH ALL FROM c1;`. A call from another converted procedure
+passes the caller's own cursors on.
+
+### S2P5022 ReturnCodeParameter (Info)
+
+The procedure ends with `RETURN <value>`. PostgreSQL procedures return no value, so the status
+code comes back in an extra `INOUT return_code integer DEFAULT NULL` parameter. It is set to 0
+at the start, as SQL Server returns 0 when `RETURN` gives none. `EXEC @rc = p` in converted code
+reads it.
+
+### S2P5023 SystemProcedure (Error)
+
+`EXEC sp_…` or `EXEC xp_…` calls a SQL Server system procedure, which PostgreSQL does not have.
+The call is kept as a comment: rewrite it with the PostgreSQL feature that does the same job
+(`ALTER … RENAME` for `sp_rename`, the catalogs for `sp_help`, and so on). `sp_executesql` is
+dynamic SQL (S2P0206 until it is translated).
+
+### S2P5024 Savepoint (Error)
+
+`SAVE TRANSACTION`, or `ROLLBACK TRANSACTION` to a savepoint name, inside a routine. PL/pgSQL has
+no savepoint statements. The nearest equivalent is a `BEGIN … EXCEPTION … END` block, which rolls
+back what its body did when an error is caught. In an ad-hoc script outside a `DO` block, the
+statements become `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`.
+
+### S2P5025 TranCount (Error)
+
+`@@TRANCOUNT` counts nested `BEGIN TRANSACTION`s. PostgreSQL has one transaction and no count, and
+`BEGIN TRANSACTION` in a routine is dropped (S2P5026), so the test has no translation. The
+statement using it is kept as a comment.
+
+### S2P5026 BeginTransactionDropped (Info)
+
+`BEGIN TRANSACTION` inside a procedure or a `DO` block is dropped: the code already runs inside
+its caller's transaction. `COMMIT` and `ROLLBACK` become PL/pgSQL's `COMMIT` and `ROLLBACK`, which
+end that whole transaction. They work when the procedure is called with `CALL` outside an
+explicit transaction block, and fail ("invalid transaction termination") inside one. A procedure
+that commits is never converted to a function.
+
+### S2P5027 UnknownProcedure (Error)
+
+`EXEC` names a procedure that is not in the source database (it lives in another database, was
+excluded, or does not exist). The call is kept as a comment.
 
 ## S2P7xxx — data copy and verification
 

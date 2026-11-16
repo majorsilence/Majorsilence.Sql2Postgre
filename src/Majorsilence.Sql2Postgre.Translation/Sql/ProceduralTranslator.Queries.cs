@@ -8,18 +8,13 @@ namespace Majorsilence.Sql2Postgre.Translation.Sql;
 /// <summary>DML, result sets and SELECT assigning variables inside a body.</summary>
 public sealed partial class ProceduralTranslator
 {
-    private IEnumerable<PgPlStatement> ResultSet(TSqlStatement s, BodyState st) => st.Signature.Kind switch
-    {
-        BodyKind.AnonymousBlock => [Untranslated(s, DiagnosticCodes.ResultSetInBlock,
-            "This statement returns rows, and a DO block cannot: turn the batch into a function, or keep the rows in a temporary table and query it after the block.", st)],
-        _ => [Untranslated(s, DiagnosticCodes.ProceduralStatement, "A result set returned by a routine is not translated yet.", st)],
-    };
-
     private IEnumerable<PgPlStatement> Dml(TSqlStatement s, BodyState st)
     {
         var translated = _queries.Statement(s, st.C);
         if (translated is PgInsert { Returning.Count: > 0 } or PgUpdate { Returning.Count: > 0 } or PgDelete { Returning.Count: > 0 } or PgMerge { Returning.Count: > 0 })
-            return ResultSet(s, st);
+            return st.Signature.Kind == BodyKind.AnonymousBlock
+                ? ResultSet(s, () => throw new InvalidOperationException("A DO block returns no rows."), st)
+                : [Untranslated(s, DiagnosticCodes.ProceduralStatement, "Rows returned by DML with OUTPUT are not translated yet.", st)];
 
         var result = new List<PgPlStatement>();
         bool rowCountKnown = false;

@@ -89,18 +89,20 @@ public sealed partial class SchemaTranslator
         var procedural = new ProceduralTranslator(queries);
         foreach (var m in modules)
         {
-            if (m.Kind is ObjectKind.View or ObjectKind.Function && string.IsNullOrWhiteSpace(m.Definition))
-                objects.Add(Untranslated(m, _names.Relation(m.Name).Qualified, [], DiagnosticCodes.EncryptedModule,
+            if (m.Kind is ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure && string.IsNullOrWhiteSpace(m.Definition))
+                objects.Add(Untranslated(m, (m.Kind == ObjectKind.View ? _names.Relation(m.Name) : _names.Routine(m.Name)).Qualified, [], DiagnosticCodes.EncryptedModule,
                     $"{m.Name} was created WITH ENCRYPTION, so SQL Server does not reveal its text; supply the original script."));
             else if (m.Kind == ObjectKind.View)
                 objects.Add(Guard(m.Name, ObjectKind.View, Phase.Code, () => View(m, model, queries)));
             else if (m.Kind == ObjectKind.Function)
                 objects.Add(Guard(m.Name, ObjectKind.Function, Phase.Code, () => Function(m, model, procedural)));
+            else if (m.Kind == ObjectKind.Procedure)
+                objects.Add(Guard(m.Name, ObjectKind.Procedure, Phase.Code, () => Procedure(m, model, procedural)));
             else
                 objects.Add(new TranslatedObject(m.Name, m.Kind, m.Name.ToString(),
                     m.Kind == ObjectKind.Trigger ? Phase.Triggers : Phase.Code, [],
                     [new Diagnostic(DiagnosticCodes.NotYetSupported, Severity.Info, m.Name,
-                        $"{m.Kind} {m.Name} is not converted yet (procedures and triggers come later in Stage 3).")], [])
+                        $"{m.Kind} {m.Name} is not converted yet (triggers come later in Stage 3).")], [])
                 { Skipped = true });
         }
         objects = PropagateUnconverted(objects, model);

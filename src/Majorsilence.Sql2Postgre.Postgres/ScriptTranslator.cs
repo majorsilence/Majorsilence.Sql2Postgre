@@ -46,6 +46,7 @@ public static class ScriptTranslator
         // to the next, across GO too.
         var scope = new Scope();
         var procedural = new ProceduralTranslator(queries);
+        var transactionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var batch in ((TSqlScript)fragment).Batches)
         {
             if (batch.Statements.Any(ProceduralTranslator.IsProcedural))
@@ -62,7 +63,7 @@ public static class ScriptTranslator
             foreach (var statement in batch.Statements)
             {
                 var context = new ExpressionContext(scope, SemanticModel.DefaultSchema, owner);
-                body.Append(Statement(statement, context, queries, names, model, options));
+                body.Append(Statement(statement, context, queries, procedural, names, model, options, transactionNames));
                 diagnostics.AddRange(context.Diagnostics);
                 compat.UnionWith(context.CompatFunctions);
             }
@@ -74,8 +75,8 @@ public static class ScriptTranslator
         return new ScriptTranslation(prelude.ToString(), body.ToString(), diagnostics);
     }
 
-    private static string Statement(TSqlStatement statement, ExpressionContext c, QueryTranslator queries, NameMapper names,
-        SemanticModel model, ConversionOptions options)
+    private static string Statement(TSqlStatement statement, ExpressionContext c, QueryTranslator queries, ProceduralTranslator procedural,
+        NameMapper names, SemanticModel model, ConversionOptions options, HashSet<string> transactionNames)
     {
         string original = ExpressionTranslator.Text(statement);
         switch (statement)
@@ -88,6 +89,32 @@ public static class ScriptTranslator
                 return "";
             case SetIdentityInsertStatement ins:
                 return IdentityInsert(ins, c, names, model);
+            case BeginTransactionStatement { Distributed: false } begin:
+                if (begin.Name?.Value is { } transaction)
+                    transactionNames.Add(transaction);
+                return "BEGIN;\n\n";
+            case CommitTransactionStatement:
+                return "COMMIT;\n\n";
+            case RollbackTransactionStatement rollback when rollback.Name?.Value is not { } rolledBack || transactionNames.Contains(rolledBack):
+                return "ROLLBACK;\n\n";
+            case RollbackTransactionStatement { Name.Value: { } savepoint }:
+                return $"ROLLBACK TO SAVEPOINT {NameMapper.Quote(names.Alias(savepoint))};\n\n";
+            case SaveTransactionStatement { Name.Value: { } savepoint }:
+                return $"SAVEPOINT {NameMapper.Quote(names.Alias(savepoint))};\n\n";
+            case ExecuteStatement execute:
+                try
+                {
+                    return procedural.ScriptCall(execute, c) switch
+                    {
+                        PgPlStatement call => PgWriter.PlStatement(call, 0) + "\n",
+                        var query => PgWriter.Write((PgStatement)query, options.TargetVersion) + "\n",
+                    };
+                }
+                catch (UntranslatableException ex)
+                {
+                    c.Report(ex.Code, Severity.Error, ex.Message);
+                    return PgWriter.Write(new PgUntranslated(ex.Code, original), options.TargetVersion) + "\n";
+                }
             case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement:
                 try
                 {

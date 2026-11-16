@@ -33,6 +33,9 @@ public sealed record BodySignature(BodyKind Kind, string? RoutineName, IReadOnly
 
     /// <summary>A multi-statement TVF's <c>RETURNS @t TABLE (…)</c>.</summary>
     public DeclareTableVariableBody? ReturnTable { get; init; }
+
+    /// <summary>A procedure's shape: where its result sets and status code go.</summary>
+    public ProcedureShape? Shape { get; init; }
 }
 
 /// <summary>
@@ -59,6 +62,8 @@ public sealed partial class ProceduralTranslator
         _x = queries.Expressions;
         _model = _x.Model;
         _names = _x.Names;
+        // INSERT … EXEC needs no body: scripts get it too.
+        _queries.ExecuteSource = ExecuteSource;
     }
 
     /// <summary>A variable of the body.</summary>
@@ -89,6 +94,18 @@ public sealed partial class ProceduralTranslator
 
         /// <summary>A table function's return table.</summary>
         public string? ReturnTable { get; set; }
+
+        /// <summary>The SET ROWCOUNT in force (null when none).</summary>
+        public int? RowLimit { get; set; }
+
+        /// <summary>How deep in IF/WHILE the current statement is.</summary>
+        public int Nesting { get; set; }
+
+        /// <summary>Names given in BEGIN TRANSACTION name (a ROLLBACK to one of them is a plain ROLLBACK).</summary>
+        public HashSet<string> TransactionNames { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Helper variables passed for INOUT parameters, by type.</summary>
+        public Dictionary<string, List<string>> ArgumentHelpers { get; } = new(StringComparer.Ordinal);
     }
 
     /// <summary>Translates a body's statements to one outer block with every declaration hoisted to it.</summary>
@@ -112,6 +129,8 @@ public sealed partial class ProceduralTranslator
                 st.ReturnTable = "_ret_" + signature.RoutineName;
                 body.AddRange(TableVariable(table.VariableName.Value, st.ReturnTable, table.Definition, st, onCommit: "DROP"));
             }
+            if (signature.Shape?.ReturnCode is { } returnCode)
+                body.Add(new PgAssign(new PgColumnRef(returnCode, signature.RoutineName), new PgLiteral("0")));
             body.AddRange(List(statements, st, topLevel: true));
             if (st.StatementAfterDml && !st.XactAbortOn && !st.HasTry)
                 context.Report(DiagnosticCodes.ErrorStopsExecution, Severity.Info,
@@ -218,6 +237,8 @@ public sealed partial class ProceduralTranslator
         InsertStatement or UpdateStatement or DeleteStatement or MergeStatement => false,
         UseStatement or PredicateSetStatement or SetCommandStatement or SetRowCountStatement
             or SetTransactionIsolationLevelStatement or SetIdentityInsertStatement => false,
+        TransactionStatement => false,
+        ExecuteStatement e => !IsPlainCall(e),
         CreateTableStatement or AlterTableStatement or CreateIndexStatement or CreateViewStatement or CreateTypeStatement
             or CreateSequenceStatement or CreateSchemaStatement or DropObjectsStatement => false,
         _ => true,
@@ -277,6 +298,9 @@ public sealed partial class ProceduralTranslator
     private IEnumerable<PgPlStatement> Translate(TSqlStatement s, TSqlStatement? next, BodyState st)
     {
         var c = st.C;
+        if (st.RowLimit is not null && (s is InsertStatement or UpdateStatement or DeleteStatement or MergeStatement
+                || s is SelectStatement rowsRead && !IsResultSet(rowsRead)))
+            throw ExpressionTranslator.Untranslatable(s, "This statement under SET ROWCOUNT", DiagnosticCodes.ProceduralStatement);
         switch (s)
         {
             case DeclareVariableStatement d:
@@ -286,7 +310,11 @@ public sealed partial class ProceduralTranslator
             case SelectStatement select when select.QueryExpression is QuerySpecification spec && spec.SelectElements.OfType<SelectSetVariable>().Any():
                 return SelectAssign(select, spec, st);
             case SelectStatement { Into: null } select:
-                return ResultSet(select, st);
+                return ResultSet(select, () => ((PgQueryStatement)_queries.Statement(select, c)).Query, st);
+            case ExecuteStatement e:
+                return Execute(e, st);
+            case TransactionStatement t:
+                return Transaction(t, st);
             case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement:
                 return Dml(s, st);
             case BeginEndBlockStatement block:
@@ -331,6 +359,11 @@ public sealed partial class ProceduralTranslator
                 c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"'{ExpressionTranslator.Text(s).Trim()}' sets a SQL Server session option and is dropped.");
                 return [];
             case SetRowCountStatement { NumberRows: IntegerLiteral { Value: "0" } }:
+                st.RowLimit = null;
+                return [];
+            case SetRowCountStatement { NumberRows: IntegerLiteral { Value: var rows } } when st.Nesting == 0:
+                // Limits the rows of the result sets after it (other statements under it are not translated).
+                st.RowLimit = int.Parse(rows, System.Globalization.CultureInfo.InvariantCulture);
                 return [];
             case UseStatement use:
                 c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"USE {use.DatabaseName.Value} is dropped: a PostgreSQL connection stays in its database.");
@@ -353,8 +386,18 @@ public sealed partial class ProceduralTranslator
         s is CreateTableStatement create && create.SchemaObjectName.BaseIdentifier.Value.StartsWith('#');
 
     /// <summary>A nested statement (IF/WHILE body): a BEGIN … END is flattened into its statements.</summary>
-    private List<PgPlStatement> Nested(TSqlStatement s, BodyState st) =>
-        s is BeginEndBlockStatement block ? List(block.StatementList.Statements, st) : List([s], st);
+    private List<PgPlStatement> Nested(TSqlStatement s, BodyState st)
+    {
+        st.Nesting++;
+        try
+        {
+            return s is BeginEndBlockStatement block ? List(block.StatementList.Statements, st) : List([s], st);
+        }
+        finally
+        {
+            st.Nesting--;
+        }
+    }
 
     // ---- variables ----
 
@@ -531,7 +574,16 @@ public sealed partial class ProceduralTranslator
                 ? throw ExpressionTranslator.Untranslatable(r, "RETURN without a value in a scalar function")
                 : [new PgReturn(Assigned(r.Expression, sig.ReturnType, sig.ReturnDataType, st.C))];
         if (r.Expression is not null)
-            throw ExpressionTranslator.Untranslatable(r, "RETURN with a status code", DiagnosticCodes.ProceduralStatement);
+        {
+            if (sig.Shape?.ReturnCode is not { } returnCode)
+                throw ExpressionTranslator.Untranslatable(r, "RETURN with a status code here", DiagnosticCodes.ProceduralStatement);
+            var intType = new SqlDataTypeReference { SqlDataTypeOption = SqlDataTypeOption.Int };
+            return
+            [
+                new PgAssign(new PgColumnRef(returnCode, sig.RoutineName), Assigned(r.Expression, IntType, intType, st.C)),
+                new PgReturn(),
+            ];
+        }
         return [new PgReturn()];
     }
 
@@ -692,6 +744,9 @@ public sealed partial class ProceduralTranslator
                 return new PgLiteral("0");
             case "@@IDENTITY":
                 return Helper(IdentityVariable, "numeric(38,0)", st);
+            case "@@TRANCOUNT":
+                throw new UntranslatableException(DiagnosticCodes.TranCount,
+                    "@@TRANCOUNT has no PostgreSQL equivalent: there is one transaction, not a nesting count.");
             default:
                 return null;
         }

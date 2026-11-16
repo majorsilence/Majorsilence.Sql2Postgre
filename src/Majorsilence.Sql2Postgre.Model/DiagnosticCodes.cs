@@ -262,6 +262,27 @@ public static class DiagnosticCodes
     /// <summary>A parameter after one with a default gets DEFAULT NULL (PostgreSQL requires it).</summary>
     public const string ParameterDefaultAdded = "S2P5020";
 
+    /// <summary>A procedure's result sets are returned through INOUT refcursor parameters: its callers change.</summary>
+    public const string ResultSetCursor = "S2P5021";
+
+    /// <summary>A procedure returning a status code gets an INOUT return_code parameter.</summary>
+    public const string ReturnCodeParameter = "S2P5022";
+
+    /// <summary>A call to a SQL Server system procedure (sp_*, xp_*), which PostgreSQL does not have.</summary>
+    public const string SystemProcedure = "S2P5023";
+
+    /// <summary>SAVE TRANSACTION or ROLLBACK to a savepoint inside a routine: PL/pgSQL has no savepoints.</summary>
+    public const string Savepoint = "S2P5024";
+
+    /// <summary>@@TRANCOUNT: PostgreSQL has no transaction nesting count.</summary>
+    public const string TranCount = "S2P5025";
+
+    /// <summary>BEGIN TRANSACTION inside a routine is dropped: the routine runs in its caller's transaction.</summary>
+    public const string BeginTransactionDropped = "S2P5026";
+
+    /// <summary>EXEC of a procedure that is not in the source database.</summary>
+    public const string UnknownProcedure = "S2P5027";
+
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";
 
