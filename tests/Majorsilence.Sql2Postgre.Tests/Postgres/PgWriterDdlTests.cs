@@ -118,7 +118,7 @@ public class PgWriterDdlTests
     [Test]
     public void UntranslatedCannotCloseItsCommentEarly() =>
         Assert.That(W(new PgUntranslated("S2P3001", "SELECT 1 /* inner */ AS x")),
-            Is.EqualTo("/* sql2pg:untranslated S2P3001\nSELECT 1 /* inner * / AS x\n*/\n"));
+            Is.EqualTo("/* sql2pg:untranslated S2P3001\nSELECT 1 / * inner * / AS x\n*/\n"));
 
     [Test]
     public void LineComment() => Assert.That(W(new PgLineComment("first\nsecond")), Is.EqualTo("-- first\n-- second\n"));

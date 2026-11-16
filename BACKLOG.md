@@ -28,6 +28,7 @@ What was done and measured, as it lands. The plan is in
 - WP 2.4 — views; corpus views 35 converted and applied, 10 Manual with specific codes.
 - WP 2.5 — translate verb (ScriptTranslator).
 - WP 2.7 — result-agreement harness; 180 corpus queries, 179 at 100. Stage 2 (v0.2) complete.
+- WP 3.1 — PL/pgSQL AST and writer; every node compiled and run on PostgreSQL 18.
 
 ## Measured
 

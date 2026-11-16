@@ -30,7 +30,8 @@ public static partial class PgWriter
         PgAddForeignKey fk => ForeignKey(fk),
         PgCreateIndex i => Index(i),
         PgUntranslated u => Untranslated(u),
-        PgLineComment c => string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
+        PgCreateRoutine r => Routine(r, targetVersion),
+        PgLineComment c =>string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
         _ => DmlOrQuery(statement),
     };
 
@@ -104,7 +105,10 @@ public static partial class PgWriter
         return sb.Append(";\n").ToString();
     }
 
-    /// <summary>The original T-SQL in a block comment; a <c>*/</c> inside it is written <c>* /</c> so the comment cannot end early.</summary>
+    /// <summary>
+    /// The original T-SQL in a block comment. PostgreSQL nests block comments, so a <c>/*</c> inside
+    /// it is written <c>/ *</c> and a <c>*/</c> is written <c>* /</c>: the comment ends only where it should.
+    /// </summary>
     private static string Untranslated(PgUntranslated u) =>
-        $"/* sql2pg:untranslated {u.Code}\n{u.OriginalTsql.Replace("\r\n", "\n").Replace("*/", "* /").TrimEnd('\n')}\n*/\n";
+        $"/* sql2pg:untranslated {u.Code}\n{u.OriginalTsql.Replace("\r\n", "\n").Replace("/*", "/ *").Replace("*/", "* /").TrimEnd('\n')}\n*/\n";
 }

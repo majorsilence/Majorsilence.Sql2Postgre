@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **PL/pgSQL syntax tree and writer, the base for translating procedures, functions and
+  triggers.** Nodes for blocks (label, declarations, cursors, exception handlers), assignment,
+  IF/ELSIF/ELSE, WHILE, LOOP, FOR over a range, a query or a dynamic query, EXIT/CONTINUE,
+  RETURN/RETURN QUERY/RETURN NEXT, RAISE (the writer checks placeholders against arguments),
+  ASSERT, PERFORM, EXECUTE … INTO … USING, GET [STACKED] DIAGNOSTICS, OPEN/FETCH/MOVE/CLOSE,
+  COMMIT/ROLLBACK, CALL with named arguments, and SQL statements with INTO; plus
+  `PgCreateRoutine` for functions and procedures with PL/pgSQL, dollar-quoted SQL or
+  SQL-standard `RETURN` bodies. Bodies are dollar-quoted with `$$`, or `$body$`, `$body1$`…
+  when the body contains the tag. Nested statements are indented without changing multi-line
+  string literals. Routines built from every node are created and run on PostgreSQL 18 in the
+  integration tests. (WP 3.1)
+- **Fixed: an untranslated original that contains `/*` is written `/ *` inside its comment.**
+  PostgreSQL nests block comments, so the comment never ended.
+
 - **Result agreement on the public corpus: 180 T-SQL queries written for this repo (30 per
   corpus database: joins, aggregates, dates, strings, TOP, APPLY, CTEs, windows, ROLLUP/CUBE,
   PIVOT, views) are translated with `ScriptTranslator` and run on the SQL Server corpus database

@@ -25,13 +25,16 @@ public static partial class PgWriter
             "WITH " + (recursive ? "RECURSIVE " : "") + string.Join(", ", ctes.Select(c =>
                 Q(c.Name) + (c.Columns.Count > 0 ? $" ({Columns(c.Columns)})" : "") + $" AS ({Query(c.Query, inline: true)})")) + nl;
 
-    private static string Select(PgSelect s, string nl)
+    /// <param name="into">PL/pgSQL's <c>INTO targets</c>, written after the select list.</param>
+    private static string Select(PgSelect s, string nl, string? into = null)
     {
         var sb = new StringBuilder(With(s.With, s.Recursive, nl));
         sb.Append("SELECT ");
         if (s.Distinct)
             sb.Append("DISTINCT ");
         sb.Append(string.Join(", ", s.Targets.Select(Target)));
+        if (into is not null)
+            sb.Append(nl).Append(into);
         if (s.From.Count > 0)
             sb.Append(nl).Append("FROM ").Append(string.Join(", ", s.From.Select(FromItem)));
         if (s.Where is not null)
