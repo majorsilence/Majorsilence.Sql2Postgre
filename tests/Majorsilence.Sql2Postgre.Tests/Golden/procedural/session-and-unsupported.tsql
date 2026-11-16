@@ -1,0 +1,10 @@
+SET NOCOUNT ON;
+SET ANSI_WARNINGS ON;
+SET XACT_ABORT ON;
+DECLARE @wait varchar(12) = '00:00:00.250';
+WAITFOR DELAY '00:00:01.5';
+WAITFOR DELAY @wait;
+SELECT name FROM shop.product;
+EXEC shop.do_something;
+retry:
+GOTO retry;

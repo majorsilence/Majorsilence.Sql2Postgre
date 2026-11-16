@@ -1,0 +1,19 @@
+DECLARE @i int = 0, @odd int = 0;
+WHILE @i < 10
+BEGIN
+    SET @i = @i + 1;
+    IF @i % 2 = 0
+        CONTINUE;
+    SET @odd = @odd + 1;
+    IF @odd >= 4
+        BREAK;
+END
+IF @odd = 4
+    PRINT 'four';
+ELSE IF @odd > 4
+BEGIN
+    PRINT 'more';
+    RETURN;
+END
+ELSE
+    PRINT 'fewer';

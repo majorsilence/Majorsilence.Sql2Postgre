@@ -132,3 +132,9 @@ public sealed record PgMerge(PgName Table, string? Alias, PgFromItem Source, PgE
     public IReadOnlyList<PgCte> With { get; init; } = [];
     public IReadOnlyList<PgTarget> Returning { get; init; } = [];
 }
+
+/// <summary>
+/// An INSERT, UPDATE, DELETE or MERGE with RETURNING used as a query: only as a CTE
+/// (<c>WITH ins AS (INSERT … RETURNING id) SELECT …</c>).
+/// </summary>
+public sealed record PgModifyingQuery(PgStatement Statement) : PgQuery;

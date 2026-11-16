@@ -31,6 +31,7 @@ public static partial class PgWriter
         PgCreateIndex i => Index(i),
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
+        PgDoBlock d => DoBlock(d, targetVersion),
         PgLineComment c =>string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
         _ => DmlOrQuery(statement),
     };

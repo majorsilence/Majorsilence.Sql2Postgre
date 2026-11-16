@@ -21,8 +21,8 @@ public sealed record ScriptTranslation(string Prelude, string Body, IReadOnlyLis
 /// Translates an ad-hoc T-SQL script (application queries, reports, maintenance scripts) to
 /// PostgreSQL, statement by statement, against a database's semantic model when one is given
 /// (without it, column types are unknown and the conversions that depend on them are not made).
-/// GO, USE and session SET options are dropped; DDL belongs to <c>sql2pg schema</c> and procedural
-/// statements to Stage 3, so both stay as comments. mssql_compat helpers the script needs are
+/// GO, USE and session SET options are dropped; DDL belongs to <c>sql2pg schema</c>, so it stays
+/// as a comment. A batch with variables or control flow becomes a <c>DO</c> block. mssql_compat helpers the script needs are
 /// created at its top, so the output runs on its own.
 /// </summary>
 public static class ScriptTranslator
@@ -45,8 +45,20 @@ public static class ScriptTranslator
         // One scope for the script, as for a session: a temp table one statement creates is known
         // to the next, across GO too.
         var scope = new Scope();
+        var procedural = new ProceduralTranslator(queries);
         foreach (var batch in ((TSqlScript)fragment).Batches)
         {
+            if (batch.Statements.Any(ProceduralTranslator.IsProcedural))
+            {
+                // Variables and control flow: the batch runs as one DO block (its variables live as
+                // long as the batch, as in T-SQL).
+                var context = new ExpressionContext(scope.Child(), SemanticModel.DefaultSchema, owner);
+                var block = procedural.Body(batch.Statements, BodySignature.AnonymousBlock, context);
+                body.Append(PgWriter.Write(new PgDoBlock(block), options.TargetVersion)).Append('\n');
+                diagnostics.AddRange(context.Diagnostics);
+                compat.UnionWith(context.CompatFunctions);
+                continue;
+            }
             foreach (var statement in batch.Statements)
             {
                 var context = new ExpressionContext(scope, SemanticModel.DefaultSchema, owner);

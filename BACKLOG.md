@@ -29,6 +29,7 @@ What was done and measured, as it lands. The plan is in
 - WP 2.5 — translate verb (ScriptTranslator).
 - WP 2.7 — result-agreement harness; 180 corpus queries, 179 at 100. Stage 2 (v0.2) complete.
 - WP 3.1 — PL/pgSQL AST and writer; every node compiled and run on PostgreSQL 18.
+- WP 3.2 — statements and control flow; script batches with variables become DO blocks; 6 both-engines message cases, 7 golden cases.
 
 ## Measured
 
@@ -118,3 +119,5 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - The compile scan and the agreement harness share one migration per corpus database per test run (`CorpusMigration.DefaultAsync`); its PostgreSQL database is dropped with the container.
 - An INSERT that leaves out a `rowversion` column fails on PostgreSQL (the column is a NOT NULL bytea with no default, S2P1103). Stage 3's trigger work should give it a default or a trigger.
 - `Module` has `IsIndexed` (an indexed view), read from sys.indexes by the catalog reader and from CREATE CLUSTERED INDEX by the script reader.
+- WP 3.2 departs from the plan in two places. `SELECT @v = … FROM …` that may return several rows is a FOR loop over the rows rather than `LIMIT 1`: the loop keeps SQL Server's last-row and no-rows behaviour exactly, and S2P5002 now warns only when there is no ORDER BY. The @@ROWCOUNT and identity helpers are `sql2pg_rowcount` and `sql2pg_identity`, not `v_rowcount` and `v_scope_identity`, which a T-SQL variable `@rowcount` would collide with.
+- Established on SQL Server: PRINT and RAISERROR send an empty message (`PRINT ''`, `PRINT NULL`) as a single space; PRINT, RAISERROR and SET options reset @@ROWCOUNT to 0; SET @v = … sets it to 1.

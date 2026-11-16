@@ -1,0 +1,10 @@
+DECLARE @name nvarchar(100), @email nvarchar(200), @count int, @total money, @list nvarchar(max) = N'';
+SELECT @count = 1, @total = 0;
+SELECT @count = COUNT(*), @total = SUM(total) FROM shop.[order] WHERE customer_id = 100;
+SELECT @email = email FROM shop.customer WHERE customer_id = 105;
+SELECT @name = name FROM shop.customer WHERE customer_id = 110;
+SELECT @name = name, @email = email FROM shop.customer WHERE is_active = 1 ORDER BY created_at;
+SELECT TOP (1) @total = total FROM shop.[order] ORDER BY order_date DESC;
+SELECT @email = email FROM shop.customer WHERE name LIKE N'A%';
+SELECT @list = @list + name + N', ' FROM shop.product WHERE parent_id IS NULL ORDER BY product_id;
+SELECT @count = @count + 1 WHERE @total > 0;

@@ -15,6 +15,7 @@ public static partial class PgWriter
         {
             PgSelect s => Select(s, nl),
             PgSetOperation o => SetOperation(o, nl),
+            PgModifyingQuery m => DmlOrQuery(m.Statement).TrimEnd('\n').TrimEnd(';'),
             PgValues v => "VALUES " + string.Join(", ", v.Rows.Select(r => $"({string.Join(", ", r.Select(Expression))})")),
             _ => throw new ArgumentException($"Cannot write {q.GetType().Name}.", nameof(q)),
         };

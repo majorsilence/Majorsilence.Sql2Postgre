@@ -45,15 +45,24 @@ public class ScriptTranslatorTests
     }
 
     [Test]
-    public void DdlAndProceduralCodeStayAsComments()
+    public void BatchWithVariablesIsADoBlockAndKeepsWhatItCannotTranslate()
     {
         var r = T("CREATE TABLE dbo.x (id int);\nDECLARE @n int = 1;\nEXEC shop.add_order 1, NULL;");
         Assert.Multiple(() =>
         {
-            Assert.That(r.Sql, Does.Contain("/* sql2pg:untranslated S2P0205\nCREATE TABLE dbo.x (id int);"));
-            Assert.That(r.Sql, Does.Contain("/* sql2pg:untranslated S2P0206\nDECLARE @n int = 1;"));
-            Assert.That(r.Diagnostics.Select(d => d.Code), Is.EqualTo(new[] { DiagnosticCodes.DdlInScript, DiagnosticCodes.ProceduralStatement, DiagnosticCodes.ProceduralStatement }));
+            Assert.That(r.Sql, Does.StartWith("DO $$\n#variable_conflict use_column\nDECLARE\n    v_n integer;\nBEGIN\n"));
+            Assert.That(r.Sql, Does.Contain("    /* sql2pg:untranslated S2P0205\n    CREATE TABLE dbo.x (id int);"));
+            Assert.That(r.Sql, Does.Contain("    v_n := 1;\n"));
+            Assert.That(r.Sql, Does.Contain("    /* sql2pg:untranslated S2P0206\n    EXEC shop.add_order 1, NULL;"));
+            Assert.That(r.Diagnostics.Select(d => d.Code), Is.EqualTo(new[] { DiagnosticCodes.DdlInScript, DiagnosticCodes.ProceduralStatement }));
         });
+    }
+
+    [Test]
+    public void DdlStaysAsAComment()
+    {
+        var r = T("CREATE TABLE dbo.x (id int);");
+        Assert.That(r.Sql, Does.StartWith("/* sql2pg:untranslated S2P0205\nCREATE TABLE dbo.x (id int);"));
     }
 
     [Test]

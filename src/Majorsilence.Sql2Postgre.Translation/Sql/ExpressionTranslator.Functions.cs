@@ -242,6 +242,8 @@ public sealed partial class ExpressionTranslator
                 return Call("current_setting", PgLiteral.String("application_name"));
             case "SCOPE_IDENTITY" or "IDENT_CURRENT" or "ERROR_MESSAGE" or "ERROR_NUMBER" or "ERROR_LINE"
                 or "ERROR_PROCEDURE" or "ERROR_SEVERITY" or "ERROR_STATE" or "XACT_STATE":
+                if (ProceduralFunction?.Invoke(name, f, c) is { } procedural)
+                    return procedural;
                 throw Untranslatable(f, $"{name}() in a plain query", DiagnosticCodes.ProceduralGlobal);
 
             // ---- JSON ----
@@ -310,7 +312,8 @@ public sealed partial class ExpressionTranslator
 
     // ---- aggregates and windows ----
 
-    private static bool IsAggregate(string name) => name is "COUNT" or "COUNT_BIG" or "SUM" or "AVG" or "MIN" or "MAX"
+    /// <summary>Whether a built-in function name (upper case) is an aggregate.</summary>
+    public static bool IsAggregate(string name) => name is "COUNT" or "COUNT_BIG" or "SUM" or "AVG" or "MIN" or "MAX"
         or "STDEV" or "STDEVP" or "VAR" or "VARP" or "STRING_AGG" or "GROUPING" or "CHECKSUM_AGG" or "APPROX_COUNT_DISTINCT";
 
     private PgExpr Aggregate(FunctionCall f, string name, ExpressionContext c)

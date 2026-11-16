@@ -1,0 +1,10 @@
+DECLARE @flag bit = 1, @n int = 7, @when date = '2024-02-29';
+PRINT @flag;
+PRINT @n;
+PRINT 'n is ' + CAST(@n AS varchar(10));
+PRINT NULL;
+RAISERROR('progress %d of %s', 10, 1, @n, N'ten') WITH NOWAIT;
+RAISERROR('padded %5d, 100%% done', 16, 1, @n);
+PRINT 'after';
+RAISERROR(50001, 16, 1);
+THROW 50002, N'custom failure', 1;

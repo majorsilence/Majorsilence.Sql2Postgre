@@ -26,8 +26,17 @@ public static class GoldenTranslator
             "expressions-v0" => SchemaExpression(tsql, headers, options),
             "ddl" => Ddl(tsql, options),
             "queries" => Queries(tsql, options),
+            "procedural" => Procedural(tsql, options),
             _ => new GoldenResult(tsql, []),
         };
+    }
+
+    /// <summary>A script translated by <see cref="ScriptTranslator"/> against the shop fixture: batches with variables become DO blocks.</summary>
+    private static GoldenResult Procedural(string tsql, ConversionOptions options)
+    {
+        var model = Majorsilence.Sql2Postgre.Translation.Semantics.SemanticModel.Build(Shop.Value);
+        var translation = ScriptTranslator.Translate(tsql, model, options, "case");
+        return new GoldenResult(translation.Body, translation.Diagnostics.Select(d => new GoldenDiagnostic(d.Code, d.Severity.ToString())).ToList());
     }
 
     private static readonly Lazy<SourceDatabase> Shop = new(() => SqlServerScriptReader.Read([("shop.sql",

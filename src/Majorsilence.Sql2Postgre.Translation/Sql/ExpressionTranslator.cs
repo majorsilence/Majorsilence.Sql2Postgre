@@ -142,8 +142,21 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
     /// <summary>How a variable is written (set by the procedural translator, Stage 3).</summary>
     public Func<string, PgExpr>? VariableWriter { get; set; }
 
-    private static PgExpr GlobalVariable(GlobalVariableExpression g, ExpressionContext c) => g.Name.ToUpperInvariant() switch
+    /// <summary>
+    /// How procedural code writes <c>@@ROWCOUNT</c>, <c>@@ERROR</c>, <c>@@IDENTITY</c>… (set by the
+    /// procedural translator); null for a global it does not handle.
+    /// </summary>
+    public Func<string, ExpressionContext, PgExpr?>? ProceduralGlobal { get; set; }
+
+    /// <summary>
+    /// How procedural code writes <c>SCOPE_IDENTITY()</c>, <c>ERROR_MESSAGE()</c>… (set by the
+    /// procedural translator); null for a function it does not handle.
+    /// </summary>
+    public Func<string, FunctionCall, ExpressionContext, PgExpr?>? ProceduralFunction { get; set; }
+
+    private PgExpr GlobalVariable(GlobalVariableExpression g, ExpressionContext c) => g.Name.ToUpperInvariant() switch
     {
+        var name when ProceduralGlobal?.Invoke(name, c) is { } procedural => procedural,
         "@@SPID" => new PgFunctionCall("pg_backend_pid", []),
         "@@VERSION" => new PgFunctionCall("version", []),
         "@@SERVERNAME" => new PgFunctionCall("current_setting", [PgLiteral.String("cluster_name")]),

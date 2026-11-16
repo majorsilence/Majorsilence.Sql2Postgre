@@ -31,10 +31,9 @@ public static partial class PgWriter
             case PgSqlReturnBody:
                 throw new ArgumentException($"Procedure {r.Name} cannot have a RETURN body.", nameof(r));
             case PgSqlBody sql:
-                return sb.Append(DollarQuoted(string.Concat(sql.Statements.Select(s => Write(s, targetVersion))))).Append(";\n").ToString();
+                return sb.Append("AS ").Append(DollarQuoted(string.Concat(sql.Statements.Select(s => Write(s, targetVersion))))).Append(";\n").ToString();
             case PgPlBody pl:
-                var body = string.Concat(pl.Directives.Select(d => d + "\n")) + PlStatement(pl.Block, targetVersion);
-                return sb.Append(DollarQuoted(body)).Append(";\n").ToString();
+                return sb.Append("AS ").Append(DollarQuoted(PlBody(pl, targetVersion))).Append(";\n").ToString();
             default:
                 throw new ArgumentException(r.Body.GetType().Name, nameof(r));
         }
@@ -43,8 +42,13 @@ public static partial class PgWriter
     private static string Parameter(PgParameter p) =>
         (p.Mode is "IN" or "" ? "" : p.Mode + " ") + $"{Q(p.Name)} {p.Type}" + (p.Default is null ? "" : $" DEFAULT {Expression(p.Default)}");
 
+    private static string PlBody(PgPlBody body, int targetVersion) =>
+        string.Concat(body.Directives.Select(d => d + "\n")) + PlStatement(body.Block, targetVersion);
+
+    private static string DoBlock(PgDoBlock d, int targetVersion) => "DO " + DollarQuoted(PlBody(d.Body, targetVersion)) + ";\n";
+
     /// <summary>
-    /// <c>AS $$ … $$</c>, or <c>$body$</c> (then <c>$body1$</c>, …) when the body itself contains the
+    /// <c>$$ … $$</c>, or <c>$body$</c> (then <c>$body1$</c>, …) when the body itself contains the
     /// tag; the body (including comments and string literals) must not contain its own end tag.
     /// </summary>
     internal static string DollarQuoted(string body)
@@ -52,7 +56,7 @@ public static partial class PgWriter
         string tag = "$$";
         for (int n = 0; body.Contains(tag, StringComparison.Ordinal); n++)
             tag = n == 0 ? "$body$" : $"$body{n}$";
-        return $"AS {tag}\n{body}{tag}";
+        return $"{tag}\n{body}{tag}";
     }
 
     /// <summary>Writes one PL/pgSQL statement, unindented, ending in a new line.</summary>

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Procedural T-SQL is translated to PL/pgSQL: variables, SET, SELECT assigning variables,
+  IF/ELSE, WHILE/BREAK/CONTINUE, RETURN, PRINT, RAISERROR, THROW, WAITFOR DELAY, @@ROWCOUNT,
+  SCOPE_IDENTITY()/@@IDENTITY, and the DML and queries between them.** `sql2pg translate` turns a
+  batch that uses variables or control flow into a `DO` block.
+  - Variables become `v_<name>`, all declared at the top of the body. The body starts with
+    `#variable_conflict use_column`, so a bare name is a column, as in T-SQL. Leading DECLAREs
+    keep their initial values in the declaration; a later DECLARE becomes an assignment at its
+    place.
+  - Values are converted on assignment as SQL Server converts them: a decimal assigned to an
+    int is truncated, a string assigned to a shorter varchar is cut, and a bit prints as 1.
+  - `SELECT @v = … FROM …` keeps SQL Server's meaning. A loop over the rows leaves the last
+    row's values, and a query with no rows leaves the variables unchanged. Accumulating
+    assignments (`SELECT @s = @s + name …`) are computed row by row. A plain `SELECT … INTO` is
+    used where it gives the same answer: an aggregate, or at most one row (a unique key or
+    TOP 1) into variables not yet assigned.
+  - `@@ROWCOUNT` is read with `GET DIAGNOSTICS` after each statement, and is reset where T-SQL
+    resets it (PRINT, RAISERROR, SET). The last identity comes from `RETURNING` on the INSERT, or
+    the largest identity value inserted for a multi-row INSERT. The helper variables are named
+    `sql2pg_rowcount` and `sql2pg_identity` (not `v_…`), so they cannot clash with a T-SQL variable.
+  - New diagnostics S2P5001–S2P5009 and S2P5011. Statements not translated yet (EXEC,
+    TRY/CATCH, cursors, temporary tables, transactions) stay as comments with S2P0206.
+  - Checked on both engines: batches print the same messages, in the same order, on SQL Server
+    and PostgreSQL 18. (WP 3.2)
 - **PL/pgSQL syntax tree and writer, the base for translating procedures, functions and
   triggers.** Nodes for blocks (label, declarations, cursors, exception handlers), assignment,
   IF/ELSIF/ELSE, WHILE, LOOP, FOR over a range, a query or a dynamic query, EXIT/CONTINUE,

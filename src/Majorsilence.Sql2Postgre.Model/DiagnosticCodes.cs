@@ -32,7 +32,7 @@ public static class DiagnosticCodes
     /// <summary>DDL in an ad-hoc script: schema objects are converted by sql2pg schema.</summary>
     public const string DdlInScript = "S2P0205";
 
-    /// <summary>Procedural T-SQL (DECLARE, IF, EXEC, …), translated in Stage 3.</summary>
+    /// <summary>Procedural T-SQL not translated yet (EXEC, TRY/CATCH, cursors, temp tables, transactions, …).</summary>
     public const string ProceduralStatement = "S2P0206";
 
     /// <summary>Objects depend on each other in a cycle; they are emitted in name order.</summary>
@@ -223,6 +223,38 @@ public static class DiagnosticCodes
 
     /// <summary>OUTPUT … INTO a table needs procedural code (Stage 3).</summary>
     public const string OutputInto = "S2P4013";
+
+    // ---- 5xxx procedural code ----
+
+    /// <summary>A variable declared twice with different types (PostgreSQL has one declaration per body).</summary>
+    public const string VariableRedeclared = "S2P5001";
+
+    /// <summary>SELECT assigns variables from a query that may return several rows and has no ORDER BY: which row's values remain is arbitrary.</summary>
+    public const string SelectAssignmentOrder = "S2P5002";
+
+    /// <summary>Without XACT_ABORT, SQL Server continues after most statement errors; PostgreSQL stops at the first.</summary>
+    public const string ErrorStopsExecution = "S2P5003";
+
+    /// <summary>@@ERROR outside a CATCH block is translated as 0 (an error has already ended the routine in PostgreSQL).</summary>
+    public const string ErrorGlobal = "S2P5004";
+
+    /// <summary>GOTO and labels have no PL/pgSQL equivalent.</summary>
+    public const string GotoLabel = "S2P5005";
+
+    /// <summary>SELECT @v = expression-using-@v over a query with aggregates, grouping or subqueries (row-by-row accumulation that cannot be rewritten).</summary>
+    public const string SelectAssignmentAccumulates = "S2P5006";
+
+    /// <summary>RAISERROR with severity 11–18 outside TRY: SQL Server continues with the next statement, PostgreSQL ends the routine.</summary>
+    public const string RaiserrorStops = "S2P5007";
+
+    /// <summary>RAISERROR with a message number from sys.messages, or a non-literal message with arguments.</summary>
+    public const string RaiserrorUntranslatable = "S2P5008";
+
+    /// <summary>A statement returning rows inside a script batch that became a DO block, which cannot return rows.</summary>
+    public const string ResultSetInBlock = "S2P5009";
+
+    /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
+    public const string RaiserrorFormat = "S2P5011";
 
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";

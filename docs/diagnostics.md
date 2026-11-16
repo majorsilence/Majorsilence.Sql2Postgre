@@ -67,8 +67,10 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-`DECLARE`, `IF`, `WHILE`, `EXEC`, `BEGIN TRAN` and the rest of procedural T-SQL are translated in
-Stage 3; until then the statement is kept as a comment.
+A procedural statement that is not translated yet: `EXEC`, `TRY … CATCH`, cursors, temporary
+tables and table variables, transaction control and the other statements Stage 3 is still
+adding. Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR` and `THROW` are translated. The
+statement is kept as a comment.
 
 ### S2P0301 ExternalReference (Error)
 
@@ -399,6 +401,72 @@ A view's `TOP 100 PERCENT … ORDER BY` is dropped; SQL Server does not honour t
 
 `OUTPUT … INTO` a table or table variable writes the changed rows somewhere: procedural code,
 translated in Stage 3.
+
+## S2P5xxx — procedural code
+
+Parameters keep their names and are written `<routine>.<name>` in the body; local variables
+become `v_<name>`, all declared at the top of the body, and `#variable_conflict use_column`
+makes a bare name a column, as it is in T-SQL. A script batch that uses variables or control
+flow becomes a `DO` block.
+
+### S2P5001 VariableRedeclared (Error)
+
+A variable is declared twice with different types. A PL/pgSQL body declares each variable once;
+rename one of them.
+
+### S2P5002 SelectAssignmentOrder (Warning)
+
+`SELECT @v = col FROM …` over a query that may return several rows and has no ORDER BY. Like
+SQL Server, the translation assigns from every row in turn (a `FOR` loop), so the last row's
+values remain, but which row comes last is arbitrary on both engines. Add an ORDER BY, or a
+condition that selects one row.
+
+### S2P5003 ErrorStopsExecution (Info)
+
+The routine runs statements after a DML statement without `SET XACT_ABORT ON` or `TRY`. SQL
+Server continues after most statement-level errors; PostgreSQL stops the routine at the first
+error and rolls back to the caller. Code that checks `@@ERROR` after each statement relied on the
+first behaviour.
+
+### S2P5004 ErrorGlobal (Warning)
+
+`@@ERROR` outside a `CATCH` block is translated as `0`: if the previous statement had failed,
+PostgreSQL would already have left the routine. Error handling belongs in `TRY … CATCH`.
+
+### S2P5005 GotoLabel (Error)
+
+`GOTO` and statement labels have no PL/pgSQL equivalent. Rewrite the jump as a loop with `EXIT`
+or `CONTINUE`, or as `IF` blocks.
+
+### S2P5006 SelectAssignmentAccumulates (Error)
+
+`SELECT @v = @v + … FROM …` builds a value row by row. The translation handles this with a loop
+over the rows when the expression uses only the rows' columns; with aggregates, grouping,
+DISTINCT or subqueries it cannot. Rewrite with an aggregate (`STRING_AGG`, `SUM`).
+
+### S2P5007 RaiserrorStops (Info)
+
+`RAISERROR` with severity 11 or more, outside `TRY`, and not followed by `RETURN`: SQL Server
+reports the error and continues with the next statement; PostgreSQL's `RAISE EXCEPTION` ends the
+routine.
+
+### S2P5008 RaiserrorUntranslatable (Error)
+
+`RAISERROR` with a message number (its text is in `sys.messages`, which PostgreSQL does not
+have), or with a message held in a variable and formatted with arguments. Write the message as a
+literal, or use `THROW`.
+
+### S2P5009 ResultSetInBlock (Error)
+
+A script batch that uses variables or control flow is translated as a `DO` block, and a `DO`
+block cannot return rows. The statement that would return rows (a `SELECT`, or `OUTPUT` without
+`INTO`) is kept as a comment. Turn the batch into a function, or select into a temporary table and
+query it after the block.
+
+### S2P5011 RaiserrorFormat (Warning)
+
+The `RAISERROR` message uses flags, a width, a precision, or `%x`/`%o`. PostgreSQL's `RAISE`
+substitutes each argument in its plain text form at `%`, so the padding or base is lost.
 
 ## S2P7xxx — data copy and verification
 

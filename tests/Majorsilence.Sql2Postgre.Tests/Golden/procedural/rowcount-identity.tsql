@@ -1,0 +1,12 @@
+DECLARE @id bigint, @rows int;
+UPDATE shop.customer SET is_active = 0 WHERE email IS NULL;
+IF @@ROWCOUNT = 0
+    PRINT 'nothing to do';
+INSERT INTO shop.[order] (customer_id, order_date, total) VALUES (100, '2024-01-02', 10);
+SET @id = SCOPE_IDENTITY();
+INSERT INTO shop.[order] (customer_id, order_date, total)
+SELECT customer_id, '2024-01-03', 0 FROM shop.customer WHERE is_active = 1;
+SELECT @id = SCOPE_IDENTITY(), @rows = @@ROWCOUNT;
+DELETE FROM shop.[order] WHERE order_id = @id;
+IF @@ERROR <> 0
+    PRINT 'failed';

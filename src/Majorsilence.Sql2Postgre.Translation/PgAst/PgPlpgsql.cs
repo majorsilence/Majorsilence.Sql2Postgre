@@ -223,3 +223,6 @@ public sealed record PgCreateRoutine(PgName Name, bool Procedure, IReadOnlyList<
     /// <summary>The language; <c>plpgsql</c> for a <see cref="PgPlBody"/>, <c>sql</c> otherwise.</summary>
     public string Language => Body is PgPlBody ? "plpgsql" : "sql";
 }
+
+/// <summary><c>DO $$ … $$;</c>: an anonymous PL/pgSQL block run once (a script batch with variables).</summary>
+public sealed record PgDoBlock(PgPlBody Body) : PgStatement;

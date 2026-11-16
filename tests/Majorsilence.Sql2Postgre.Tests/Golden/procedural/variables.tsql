@@ -1,0 +1,9 @@
+DECLARE @count int = 3, @name nvarchar(50) = N'shop';
+DECLARE @price decimal(10, 2);
+SET @price = 12.75;
+SET @count += 2;
+SET @name += N' floor';
+DECLARE @whole int = @price;
+DECLARE @short varchar(3) = @name;
+SET @count = @count * 2;
+PRINT @count;
