@@ -31,6 +31,7 @@ public static partial class PgWriter
         PgCreateIndex i => Index(i),
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
+        PgDropTable d => $"DROP TABLE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
         PgDoBlock d => DoBlock(d, targetVersion),
         PgLineComment c =>string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
         _ => DmlOrQuery(statement),
@@ -56,12 +57,15 @@ public static partial class PgWriter
     private static string Table(PgCreateTable t, int targetVersion)
     {
         var lines = t.Columns.Select(c => Indent + Column(c, targetVersion)).ToList();
-        var sb = new StringBuilder($"CREATE TABLE {t.Name.Qualified} (\n");
+        var sb = new StringBuilder($"CREATE {(t.Temporary ? "TEMP " : "")}TABLE {t.Name.Qualified} (\n");
         sb.Append(string.Join(",\n", lines));
         sb.Append('\n');
         foreach (var comment in t.Comments)
             sb.Append(string.Concat(Untranslated(comment).Split('\n').Where(l => l.Length > 0).Select(l => Indent + l + "\n")));
-        return sb.Append(");\n").ToString();
+        sb.Append(')');
+        if (t.OnCommit is not null)
+            sb.Append(" ON COMMIT ").Append(t.OnCommit);
+        return sb.Append(";\n").ToString();
     }
 
     private static string Column(PgColumnDef c, int targetVersion)

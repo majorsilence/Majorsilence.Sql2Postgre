@@ -13,6 +13,9 @@ public enum BodyKind
     AnonymousBlock,
     Procedure,
     ScalarFunction,
+
+    /// <summary>A multi-statement table-valued function: rows go to its return table, RETURN returns them.</summary>
+    TableFunction,
 }
 
 /// <summary>A routine parameter as its body sees it.</summary>
@@ -27,6 +30,9 @@ public sealed record BodySignature(BodyKind Kind, string? RoutineName, IReadOnly
     SqlServerType? ReturnType = null, DataTypeReference? ReturnDataType = null)
 {
     public static readonly BodySignature AnonymousBlock = new(BodyKind.AnonymousBlock, null, []);
+
+    /// <summary>A multi-statement TVF's <c>RETURNS @t TABLE (…)</c>.</summary>
+    public DeclareTableVariableBody? ReturnTable { get; init; }
 }
 
 /// <summary>
@@ -77,6 +83,12 @@ public sealed partial class ProceduralTranslator
         public bool HasTry { get; init; }
         public bool XactAbortOn { get; set; }
         public bool StatementAfterDml { get; set; }
+
+        /// <summary>Table variables (<c>@t</c>) and the temporary tables they are kept in.</summary>
+        public Dictionary<string, string> TableVariables { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>A table function's return table.</summary>
+        public string? ReturnTable { get; set; }
     }
 
     /// <summary>Translates a body's statements to one outer block with every declaration hoisted to it.</summary>
@@ -92,26 +104,112 @@ public sealed partial class ProceduralTranslator
             ReadsIdentity = finder.Identity,
             HasTry = finder.Try,
         };
-        foreach (var p in signature.Parameters)
-            context.Scope.DefineVariable(p.SourceName, p.Type);
-
-        var (variableWriter, globals, functions) = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction);
-        _x.VariableWriter = name => VariableRef(name, st);
-        _x.ProceduralGlobal = (name, c) => Global(name, c, st);
-        _x.ProceduralFunction = (name, f, c) => Function(name, f, c, st);
-        try
+        return WithHooks(st, () =>
         {
-            var body = List(statements, st, topLevel: true);
+            var body = new List<PgPlStatement>();
+            if (signature.ReturnTable is { } table)
+            {
+                st.ReturnTable = "_ret_" + signature.RoutineName;
+                body.AddRange(TableVariable(table.VariableName.Value, st.ReturnTable, table.Definition, st, onCommit: "DROP"));
+            }
+            body.AddRange(List(statements, st, topLevel: true));
             if (st.StatementAfterDml && !st.XactAbortOn && !st.HasTry)
                 context.Report(DiagnosticCodes.ErrorStopsExecution, Severity.Info,
                     "Statements follow DML without SET XACT_ABORT ON or TRY: SQL Server continues after most statement errors, PostgreSQL stops at the first.");
             return new PgPlBody(new PgBlock(body) { Declarations = st.Declarations }) { Directives = ["#variable_conflict use_column"] };
+        });
+    }
+
+    /// <summary>
+    /// A scalar function's single <c>RETURN expression</c>, for a <c>LANGUAGE sql</c> body:
+    /// converted to the return type, parameters written <c>routine.param</c>.
+    /// </summary>
+    public PgExpr ReturnExpression(ScalarExpression value, BodySignature signature, ExpressionContext context)
+    {
+        var st = new BodyState(signature, context);
+        return WithHooks(st, () => Assigned(value, signature.ReturnType, signature.ReturnDataType, context));
+    }
+
+    /// <summary>A constant such as a parameter's default (no variables in scope).</summary>
+    public PgExpr Constant(ScalarExpression value, ExpressionContext context) => _x.Scalar(value, context);
+
+    /// <summary>An inline table-valued function's query, for a <c>LANGUAGE sql</c> body.</summary>
+    public PgQuery Query(SelectStatement select, BodySignature signature, ExpressionContext context)
+    {
+        var st = new BodyState(signature, context);
+        return WithHooks(st, () => _queries.Query(select.QueryExpression, context, select.WithCtesAndXmlNamespaces));
+    }
+
+    /// <summary>Runs a translation with the body's parameters, variables and globals known to the expression and query translators.</summary>
+    private T WithHooks<T>(BodyState st, Func<T> translate)
+    {
+        foreach (var p in st.Signature.Parameters)
+            st.C.Scope.DefineVariable(p.SourceName, p.Type);
+        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable);
+        _x.VariableWriter = name => VariableRef(name, st);
+        _x.ProceduralGlobal = (name, c) => Global(name, c, st);
+        _x.ProceduralFunction = (name, f, c) => Function(name, f, c, st);
+        _queries.TableVariable = name => st.TableVariables.GetValueOrDefault(name);
+        try
+        {
+            return translate();
         }
         finally
         {
-            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction) = (variableWriter, globals, functions);
+            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable) = saved;
         }
     }
+
+    /// <summary>
+    /// A table variable as a temporary table: dropped if a previous call left it, then created
+    /// with the declared columns (types, NOT NULL, defaults, identity) and keys.
+    /// </summary>
+    private List<PgPlStatement> TableVariable(string variable, string table, TableDefinition definition, BodyState st, string onCommit)
+    {
+        var c = st.C;
+        var name = new PgName("", table);
+        var columns = new List<PgColumnDef>();
+        var relationColumns = new List<ColumnInfo>();
+        var keys = new List<PgStatement>();
+        foreach (var col in definition.ColumnDefinitions)
+        {
+            if (col.ComputedColumnExpression is not null || col.DataType is null)
+                throw ExpressionTranslator.Untranslatable(col, "a computed column in a table variable");
+            var type = _model.TypeOf(col.DataType, c.Schema);
+            var mapped = _x.Types.Map(type with { UserTypeName = null }, c.Owner);
+            string column = _names.Alias(col.ColumnIdentifier.Value);
+            bool notNull = col.Constraints.OfType<NullableConstraintDefinition>().Any(n => !n.Nullable)
+                           || col.Constraints.OfType<UniqueConstraintDefinition>().Any(u => u.IsPrimaryKey);
+            PgIdentity? identity = col.IdentityOptions is { } id
+                ? new PgIdentity(Seed(id.IdentitySeed), Seed(id.IdentityIncrement))
+                : null;
+            string pgType = identity is not null && mapped.PgType.StartsWith("numeric", StringComparison.Ordinal) ? "bigint" : mapped.PgType;
+            PgExpr? defaultValue = col.DefaultConstraint?.Expression is { } d ? Assigned(d, type, col.DataType, c) : null;
+            columns.Add(new PgColumnDef(column, pgType, notNull, defaultValue, identity));
+            relationColumns.Add(new ColumnInfo(col.ColumnIdentifier.Value, type));
+            foreach (var key in col.Constraints.OfType<UniqueConstraintDefinition>())
+                keys.Add(Key(name, table, key.IsPrimaryKey, [column], keys.Count));
+        }
+        foreach (var key in definition.TableConstraints.OfType<UniqueConstraintDefinition>())
+            keys.Add(Key(name, table, key.IsPrimaryKey, key.Columns.Select(k => _names.Alias(k.Column.MultiPartIdentifier.Identifiers[^1].Value)).ToList(), keys.Count));
+
+        st.TableVariables[variable] = table;
+        c.Scope.DefineTable(variable, new RelationInfo(null, ObjectKind.Table, relationColumns));
+        return
+        [
+            new PgSqlStatement(new PgDropTable(name)),
+            new PgSqlStatement(new PgCreateTable(name, columns) { Temporary = true, OnCommit = onCommit }),
+            .. keys.Select(k => new PgSqlStatement(k)),
+        ];
+    }
+
+    private static long Seed(ScalarExpression? e) =>
+        e is null ? 1 : long.Parse(ExpressionTranslator.Text(e).Trim('(', ')', ' '), System.Globalization.CultureInfo.InvariantCulture);
+
+    private static PgStatement Key(PgName table, string tableName, bool primary, IReadOnlyList<string> columns, int n) =>
+        primary
+            ? new PgAddPrimaryKey(table, tableName + "_pkey", columns)
+            : new PgAddUnique(table, $"{tableName}_key{n}", columns);
 
     /// <summary>Whether a statement needs procedural translation (a script batch containing one becomes a DO block).</summary>
     public static bool IsProcedural(TSqlStatement statement) => statement switch
@@ -144,8 +242,15 @@ public sealed partial class ProceduralTranslator
         return result;
     }
 
-    private static bool IsDml(TSqlStatement s) => s is InsertStatement or UpdateStatement or DeleteStatement or MergeStatement
-        or SelectStatement { Into: not null };
+    /// <summary>DML on a real table (a table variable's rows are the routine's own, and rarely fail).</summary>
+    private static bool IsDml(TSqlStatement s) => s switch
+    {
+        InsertStatement i => i.InsertSpecification.Target is not VariableTableReference,
+        UpdateStatement u => u.UpdateSpecification.Target is not VariableTableReference,
+        DeleteStatement d => d.DeleteSpecification.Target is not VariableTableReference,
+        MergeStatement or SelectStatement { Into: not null } => true,
+        _ => false,
+    };
 
     private IEnumerable<PgPlStatement> Statement(TSqlStatement s, TSqlStatement? next, BodyState st)
     {
@@ -355,21 +460,9 @@ public sealed partial class ProceduralTranslator
         if (target is null || dataType is null || value is NullLiteral)
             return value;
         var source = _x.TypeOf(value, c);
-        if (source is null || !NeedsConversion(source, target))
+        if (source is null || !TypeRules.NeedsConversion(source, target))
             return value;
         return new CastCall { Parameter = value, DataType = dataType };
-    }
-
-    private static bool NeedsConversion(SqlServerType source, SqlServerType target)
-    {
-        if (string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase)
-            && source.Length == target.Length && source.Precision == target.Precision && source.Scale == target.Scale)
-            return false;
-        if (TypeRules.IsString(source) && TypeRules.IsString(target))
-            return !(target.IsMax || target.Length is null || source.Length is int sl && sl > 0 && target.Length >= sl);
-        if (TypeRules.IsInteger(source) && (TypeRules.IsNumeric(target) && target.Name != "bit"))
-            return false;
-        return true;
     }
 
     private IEnumerable<PgPlStatement> SetVariable(SetVariableStatement set, BodyState st)
@@ -427,6 +520,12 @@ public sealed partial class ProceduralTranslator
     private IEnumerable<PgPlStatement> Return(ReturnStatement r, BodyState st)
     {
         var sig = st.Signature;
+        if (sig.Kind == BodyKind.TableFunction && st.ReturnTable is { } table)
+            return
+            [
+                new PgReturnQuery(new PgSelect { Targets = [PgTarget.All()], From = [new PgTableRef(new PgName("", table))] }),
+                new PgReturn(),
+            ];
         if (sig.Kind == BodyKind.ScalarFunction)
             return r.Expression is null
                 ? throw ExpressionTranslator.Untranslatable(r, "RETURN without a value in a scalar function")

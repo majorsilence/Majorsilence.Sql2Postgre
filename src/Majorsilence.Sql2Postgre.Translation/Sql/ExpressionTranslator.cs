@@ -401,9 +401,24 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         return mapped.PgType;
     }
 
-    private PgExpr Cast(ScalarExpression operand, DataTypeReference type, ExpressionContext c)
+    private PgExpr Cast(ScalarExpression operand, DataTypeReference type, ExpressionContext c) => CastTo(operand, CastTarget(type, c, out _), c);
+
+    /// <summary>
+    /// A value passed or assigned to something of <paramref name="target"/> type (a parameter, a
+    /// variable): converted as SQL Server converts it implicitly — the same as CAST — when its own
+    /// type is known and differs; as is otherwise.
+    /// </summary>
+    public PgExpr ConvertTo(ScalarExpression value, SqlServerType target, ExpressionContext c)
     {
-        string target = CastTarget(type, c, out var source);
+        var source = TypeOf(value, c);
+        if (value is NullLiteral || source is null || !TypeRules.NeedsConversion(source, target))
+            return Scalar(value, c);
+        return CastTo(value, types.Map(target with { UserTypeName = null }).PgType, c);
+    }
+
+    /// <summary>The operand cast to a PostgreSQL type with T-SQL's CAST semantics.</summary>
+    private PgExpr CastTo(ScalarExpression operand, string target, ExpressionContext c)
+    {
         var inner = Scalar(operand, c);
         if (target == "boolean" && inner is PgLiteral { Sql: "0" or "1" })
             return AsBoolean(inner);

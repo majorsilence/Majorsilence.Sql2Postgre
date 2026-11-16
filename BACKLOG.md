@@ -30,6 +30,7 @@ What was done and measured, as it lands. The plan is in
 - WP 2.7 — result-agreement harness; 180 corpus queries, 179 at 100. Stage 2 (v0.2) complete.
 - WP 3.1 — PL/pgSQL AST and writer; every node compiled and run on PostgreSQL 18.
 - WP 3.2 — statements and control flow; script batches with variables become DO blocks; 6 both-engines message cases, 7 golden cases.
+- WP 3.3 — functions (scalar, inline TVF, multi-statement TVF); corpus compile scan 0 apply failures on all six databases with functions converted.
 
 ## Measured
 

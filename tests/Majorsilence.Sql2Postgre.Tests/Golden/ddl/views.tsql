@@ -18,6 +18,10 @@ CREATE FUNCTION dbo.fmt(@p money) RETURNS nvarchar(20) AS BEGIN RETURN CAST(@p A
 GO
 CREATE VIEW dbo.v_uses_function AS SELECT id, dbo.fmt(price) AS shown FROM dbo.item;
 GO
-CREATE VIEW dbo.v_over_blocked AS SELECT shown FROM dbo.v_uses_function;
+CREATE FUNCTION dbo.blocked() RETURNS int AS BEGIN retry: GOTO retry; RETURN 1; END;
+GO
+CREATE VIEW dbo.v_uses_blocked AS SELECT id, dbo.blocked() AS b FROM dbo.item;
+GO
+CREATE VIEW dbo.v_over_blocked AS SELECT b FROM dbo.v_uses_blocked;
 GO
 CREATE VIEW dbo.v_untranslatable AS SELECT id FROM dbo.item FOR XML RAW;

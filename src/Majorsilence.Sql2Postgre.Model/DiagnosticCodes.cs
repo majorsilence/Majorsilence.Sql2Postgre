@@ -253,6 +253,15 @@ public static class DiagnosticCodes
     /// <summary>A statement returning rows inside a script batch that became a DO block, which cannot return rows.</summary>
     public const string ResultSetInBlock = "S2P5009";
 
+    /// <summary>An inline table-valued function's result column has no known type, so RETURNS TABLE cannot be written.</summary>
+    public const string FunctionColumnTypeUnknown = "S2P5010";
+
+    /// <summary>A parameter named like one of the function's result columns is renamed p_name.</summary>
+    public const string ParameterRenamed = "S2P5012";
+
+    /// <summary>A parameter after one with a default gets DEFAULT NULL (PostgreSQL requires it).</summary>
+    public const string ParameterDefaultAdded = "S2P5020";
+
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";
 

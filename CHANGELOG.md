@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **User-defined functions are converted.**
+  - A scalar function whose body is one `RETURN` becomes a `LANGUAGE sql` function with a
+    SQL-standard `RETURN` body; any other scalar function is PL/pgSQL.
+  - An inline table-valued function is `RETURNS TABLE (…) LANGUAGE sql` over its query. If a
+    result column's type is unknown, the function is Manual with S2P5010.
+  - A multi-statement table-valued function fills a temporary table `_ret_<name>` (dropped
+    first, `ON COMMIT DROP`, with the declared keys) and returns its rows. INSERT, UPDATE and
+    SELECT on its `@table` go to that temporary table.
+  - Volatility comes from the body: VOLATILE when it writes, STABLE when it reads tables, calls a
+    function that is not immutable or works with dates and times, and IMMUTABLE otherwise.
+  - Parameters keep their names. A parameter after a defaulted one gets `DEFAULT NULL`
+    (S2P5020).
+  - Calls to converted routines convert each argument to the parameter's type as SQL Server
+    does, since PostgreSQL will not narrow a bigint to an int to find the function. A trailing
+    `DEFAULT` argument is left out; a `DEFAULT` before other arguments switches the rest to
+    named notation.
+  - A view or function that uses a function or view that is not converted is Manual
+    (S2P0203); views that use converted functions now convert.
+  - Fixed: INSERT, UPDATE and DELETE on a temporary table wrote its name as `"".name`.
+  - Functions of every kind are created by sql2pg and called from queries on both engines with
+    the same rows, including a multi-statement TVF called through CROSS APPLY. (WP 3.3)
 - **Procedural T-SQL is translated to PL/pgSQL: variables, SET, SELECT assigning variables,
   IF/ELSE, WHILE/BREAK/CONTINUE, RETURN, PRINT, RAISERROR, THROW, WAITFOR DELAY, @@ROWCOUNT,
   SCOPE_IDENTITY()/@@IDENTITY, and the DML and queries between them.** `sql2pg translate` turns a

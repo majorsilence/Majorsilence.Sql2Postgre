@@ -34,7 +34,16 @@ public sealed record PgColumnDef(string Name, string Type, bool NotNull = false,
 public sealed record PgCreateTable(PgName Name, IReadOnlyList<PgColumnDef> Columns) : PgStatement
 {
     public IReadOnlyList<PgUntranslated> Comments { get; init; } = [];
+
+    /// <summary>CREATE TEMP TABLE (the name has no schema).</summary>
+    public bool Temporary { get; init; }
+
+    /// <summary>A temporary table's ON COMMIT action: <c>DROP</c>, <c>DELETE ROWS</c> or <c>PRESERVE ROWS</c>.</summary>
+    public string? OnCommit { get; init; }
 }
+
+/// <summary><c>DROP TABLE [IF EXISTS] name</c>.</summary>
+public sealed record PgDropTable(PgName Name, bool IfExists = true) : PgStatement;
 
 public sealed record PgAddPrimaryKey(PgName Table, string Name, IReadOnlyList<string> Columns) : PgStatement;
 

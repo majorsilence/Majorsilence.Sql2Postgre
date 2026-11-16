@@ -1,0 +1,40 @@
+CREATE TABLE dbo.item (id int NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL, price decimal(10, 2) NOT NULL, added datetime2 NOT NULL);
+GO
+CREATE FUNCTION dbo.leading_zeros(@value int) RETURNS varchar(8) AS
+BEGIN
+    DECLARE @r varchar(8);
+    SET @r = CONVERT(varchar(8), @value);
+    SET @r = REPLICATE('0', 8 - LEN(@r)) + @r;
+    RETURN (@r);
+END;
+GO
+CREATE FUNCTION dbo.with_tax(@amount decimal(10, 2), @rate decimal(5, 4) = 0.2) RETURNS int AS BEGIN RETURN @amount * (1 + @rate); END;
+GO
+CREATE FUNCTION dbo.item_name(@id int) RETURNS nvarchar(50) AS
+BEGIN
+    RETURN (SELECT name FROM dbo.item WHERE id = @id);
+END;
+GO
+CREATE FUNCTION dbo.age_days(@since datetime2) RETURNS int AS BEGIN RETURN DATEDIFF(day, @since, SYSDATETIME()); END;
+GO
+CREATE FUNCTION dbo.cheap_items(@max decimal(10, 2), @prefix nvarchar(10) = N'', @limit int) RETURNS TABLE AS
+RETURN SELECT id, name, price FROM dbo.item WHERE price <= @max AND name LIKE @prefix + N'%';
+GO
+CREATE FUNCTION dbo.price_bands(@step decimal(10, 2)) RETURNS @bands TABLE (band int NOT NULL PRIMARY KEY, items int NOT NULL, total decimal(12, 2) NULL) AS
+BEGIN
+    INSERT INTO @bands (band, items, total)
+    SELECT CAST(price / @step AS int), COUNT(*), SUM(price) FROM dbo.item GROUP BY CAST(price / @step AS int);
+    UPDATE @bands SET total = 0 WHERE total IS NULL;
+    IF NOT EXISTS (SELECT 1 FROM @bands)
+        INSERT INTO @bands (band, items) VALUES (-1, 0);
+    RETURN;
+END;
+GO
+CREATE VIEW dbo.item_bands AS SELECT i.id, b.band FROM dbo.item AS i CROSS APPLY dbo.price_bands(i.price) AS b;
+GO
+CREATE FUNCTION dbo.item_row(@id int) RETURNS @r TABLE (id int, name nvarchar(50)) AS
+BEGIN
+    INSERT INTO @r SELECT id, name FROM dbo.item WHERE id = @id;
+    RETURN;
+END;
+GO

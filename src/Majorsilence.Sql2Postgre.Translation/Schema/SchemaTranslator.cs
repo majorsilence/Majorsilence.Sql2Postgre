@@ -13,8 +13,8 @@ namespace Majorsilence.Sql2Postgre.Translation.Schema;
 /// Translates a database's schema objects — schemas, types, sequences, tables, keys, constraints
 /// and indexes — to PostgreSQL statements, one <see cref="TranslatedObject"/> per object and phase.
 /// Tables are created with their columns only; keys, checks, foreign keys and indexes come in later
-/// phases so data loads before them. Views, functions, procedures and triggers are listed as
-/// skipped until Stage 2 and 3 convert them.
+/// phases so data loads before them. Views and functions are converted in the Code phase;
+/// procedures and triggers are listed as skipped until later Stage 3 work converts them.
 /// </summary>
 public sealed partial class SchemaTranslator
 {
@@ -86,18 +86,21 @@ public sealed partial class SchemaTranslator
             objects.AddRange(GuardMany(t.Name, () => Indexes(t)));
             objects.AddRange(GuardMany(t.Name, () => ForeignKeys(t)));
         }
+        var procedural = new ProceduralTranslator(queries);
         foreach (var m in modules)
         {
-            if (m.Kind == ObjectKind.View && string.IsNullOrWhiteSpace(m.Definition))
+            if (m.Kind is ObjectKind.View or ObjectKind.Function && string.IsNullOrWhiteSpace(m.Definition))
                 objects.Add(Untranslated(m, _names.Relation(m.Name).Qualified, [], DiagnosticCodes.EncryptedModule,
                     $"{m.Name} was created WITH ENCRYPTION, so SQL Server does not reveal its text; supply the original script."));
             else if (m.Kind == ObjectKind.View)
                 objects.Add(Guard(m.Name, ObjectKind.View, Phase.Code, () => View(m, model, queries)));
+            else if (m.Kind == ObjectKind.Function)
+                objects.Add(Guard(m.Name, ObjectKind.Function, Phase.Code, () => Function(m, model, procedural)));
             else
                 objects.Add(new TranslatedObject(m.Name, m.Kind, m.Name.ToString(),
                     m.Kind == ObjectKind.Trigger ? Phase.Triggers : Phase.Code, [],
                     [new Diagnostic(DiagnosticCodes.NotYetSupported, Severity.Info, m.Name,
-                        $"{m.Kind} {m.Name} is not converted yet (routines and triggers come in Stage 3).")], [])
+                        $"{m.Kind} {m.Name} is not converted yet (procedures and triggers come later in Stage 3).")], [])
                 { Skipped = true });
         }
         objects = PropagateUnconverted(objects, model);

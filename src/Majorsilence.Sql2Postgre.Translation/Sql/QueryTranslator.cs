@@ -247,7 +247,8 @@ public sealed partial class QueryTranslator
                 if (SemanticModel.IsXmlNodesCall(f.SchemaObject))
                     throw ExpressionTranslator.Untranslatable(f, "the xml nodes() method");
                 var routine = _model.ResolveRoutine(f.SchemaObject, c.Schema) ?? throw ExpressionTranslator.Untranslatable(f, "a table-valued function not in this database");
-                return new PgFunctionRef(_names.Routine(routine).Qualified, f.Parameters.Select(p => _x.Scalar(p, c)).ToList(),
+                var arguments = _model.Routine(routine) is { } info ? _x.RoutineArguments(f.Parameters, info, c) : f.Parameters.Select(p => _x.Scalar(p, c)).ToList();
+                return new PgFunctionRef(_names.Routine(routine).Qualified, arguments,
                     _names.Alias(f.Alias?.Value ?? f.SchemaObject.BaseIdentifier.Value), f.Columns.Select(col => _names.Alias(col.Value)).ToList());
             case GlobalFunctionTableReference g:
                 return BuiltinTableFunction(g, c);
@@ -255,6 +256,8 @@ public sealed partial class QueryTranslator
                 return Pivot(p, outer);
             case UnpivotedTableReference u:
                 return Unpivot(u, outer);
+            case VariableTableReference v when TableVariable?.Invoke(v.Variable.Name) is { } table:
+                return new PgTableRef(new PgName("", table), v.Alias is null ? null : _names.Alias(v.Alias.Value));
             case VariableTableReference v:
                 throw ExpressionTranslator.Untranslatable(v, "a table variable outside procedural code", DiagnosticCodes.ProceduralGlobal);
             default:
@@ -292,6 +295,12 @@ public sealed partial class QueryTranslator
 
     /// <summary>A temp table's PostgreSQL name: its name without <c>#</c>, styled.</summary>
     public string TempTable(string written) => _names.Alias(written.TrimStart('#'));
+
+    /// <summary>
+    /// The temporary table a table variable (<c>@t</c>) is kept in, or null when it is not one the
+    /// procedural translator declared (set by it).
+    /// </summary>
+    public Func<string, string?>? TableVariable { get; set; }
 
     /// <summary>STRING_SPLIT is string_to_table; GENERATE_SERIES is generate_series. Both return a column named value.</summary>
     private PgFromItem BuiltinTableFunction(GlobalFunctionTableReference g, ExpressionContext c)

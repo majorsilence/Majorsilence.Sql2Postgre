@@ -463,10 +463,29 @@ block cannot return rows. The statement that would return rows (a `SELECT`, or `
 `INTO`) is kept as a comment. Turn the batch into a function, or select into a temporary table and
 query it after the block.
 
+### S2P5010 FunctionColumnTypeUnknown (Error)
+
+An inline table-valued function's result column has no type the converter can work out (an
+expression over something it cannot type), so `RETURNS TABLE (…)` cannot be written. Cast the
+column to its type in the function's query.
+
 ### S2P5011 RaiserrorFormat (Warning)
 
 The `RAISERROR` message uses flags, a width, a precision, or `%x`/`%o`. PostgreSQL's `RAISE`
 substitutes each argument in its plain text form at `%`, so the padding or base is lost.
+
+### S2P5012 ParameterRenamed (Info)
+
+A table-valued function has a parameter named like one of its result columns
+(`@PersonID` and a `PersonID` column). PostgreSQL does not allow that, so the parameter becomes
+`p_<name>`. Callers that pass arguments by position are unaffected; named arguments must use the
+new name.
+
+### S2P5020 ParameterDefaultAdded (Info)
+
+In PostgreSQL every parameter after one with a default must have a default too; SQL Server has
+no such rule. The later parameters get `DEFAULT NULL`, which changes nothing for callers that
+pass every argument.
 
 ## S2P7xxx — data copy and verification
 

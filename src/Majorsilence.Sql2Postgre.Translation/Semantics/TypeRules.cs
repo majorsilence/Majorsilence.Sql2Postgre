@@ -36,6 +36,28 @@ public static class TypeRules
 
     public static bool IsDateTime(SqlServerType? t) => t?.Name is "datetime" or "datetime2" or "smalldatetime" or "date" or "time" or "datetimeoffset";
 
+    /// <summary>
+    /// Whether a value of <paramref name="source"/> type passed or assigned to <paramref name="target"/>
+    /// needs an explicit conversion in PostgreSQL to behave as in SQL Server: not when the types are
+    /// the same, a string goes to a string at least as long, or an integer to a wider integer or a
+    /// decimal or float (PostgreSQL widens those itself).
+    /// </summary>
+    public static bool NeedsConversion(SqlServerType source, SqlServerType target)
+    {
+        if (string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase)
+            && source.Length == target.Length && source.Precision == target.Precision && source.Scale == target.Scale)
+            return false;
+        if (IsString(source) && IsString(target))
+            return !(target.IsMax || target.Length is null || source.Length is int sl && sl > 0 && target.Length >= sl);
+        if (IsInteger(source) && IsInteger(target))
+            return IntegerRank(target.Name) < IntegerRank(source.Name);
+        if (IsInteger(source) && IsNumeric(target) && target.Name != "bit")
+            return false;
+        return true;
+    }
+
+    private static int IntegerRank(string name) => name switch { "tinyint" => 1, "smallint" => 2, "int" => 3, _ => 4 };
+
     /// <summary>The type two operand types combine to: the one of higher precedence (null if either is unknown).</summary>
     public static SqlServerType? Wider(SqlServerType? a, SqlServerType? b)
     {

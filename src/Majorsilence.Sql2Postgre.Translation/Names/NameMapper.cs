@@ -10,7 +10,7 @@ namespace Majorsilence.Sql2Postgre.Translation.Names;
 public sealed record PgName(string Schema, string Name)
 {
     /// <summary>Quoted where needed and qualified: <c>sales."order"</c>.</summary>
-    public string Qualified => $"{NameMapper.Quote(Schema)}.{NameMapper.Quote(Name)}";
+    public string Qualified => Schema.Length == 0 ? NameMapper.Quote(Name) : $"{NameMapper.Quote(Schema)}.{NameMapper.Quote(Name)}";
 
     public override string ToString() => Qualified;
 }

@@ -11,8 +11,30 @@ CREATE TABLE public.item (
 -- sql2pg: phase Code
 SET check_function_bodies = off;
 
--- sql2pg:object Function dbo.fmt status=Skipped
--- S2P0201: Function dbo.fmt is not converted yet (routines and triggers come in Stage 3).
+-- sql2pg:object Function public.blocked status=Manual
+CREATE FUNCTION public.blocked()
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+#variable_conflict use_column
+BEGIN
+    /* sql2pg:untranslated S2P5005
+    retry:
+    */
+    /* sql2pg:untranslated S2P5005
+    GOTO retry;
+    */
+    RETURN 1;
+END;
+$$;
+
+-- sql2pg:object Function public.fmt status=Converted
+CREATE FUNCTION public.fmt(p numeric(19,4))
+RETURNS varchar(20)
+LANGUAGE sql
+IMMUTABLE
+RETURN CAST(fmt.p AS varchar(20));
 
 -- sql2pg:object View public.v_active status=Converted
 CREATE VIEW public.v_active AS
@@ -54,15 +76,20 @@ LIMIT 3;
 CREATE VIEW dbo.v_untranslatable AS SELECT id FROM dbo.item FOR XML RAW;
 */
 
--- sql2pg:object View public.v_uses_function status=Manual
-CREATE VIEW public.v_uses_function AS
-SELECT id, public.fmt(price) AS shown
+-- sql2pg:object View public.v_uses_blocked status=Manual
+CREATE VIEW public.v_uses_blocked AS
+SELECT id, public.blocked() AS b
 FROM public.item;
 
 -- sql2pg:object View public.v_over_blocked status=Manual
 CREATE VIEW public.v_over_blocked AS
-SELECT shown
-FROM public.v_uses_function;
+SELECT b
+FROM public.v_uses_blocked;
+
+-- sql2pg:object View public.v_uses_function status=Converted
+CREATE VIEW public.v_uses_function AS
+SELECT id, public.fmt(price) AS shown
+FROM public.item;
 
 -- sql2pg: phase Constraints
 

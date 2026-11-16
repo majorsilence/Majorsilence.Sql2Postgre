@@ -66,8 +66,8 @@ public sealed partial class SchemaTranslator
             [.. earlier ?? [], new Diagnostic(code, Severity.Error, m.Name, message)], dependsOn);
 
     /// <summary>
-    /// A view that uses a routine (not converted before Stage 3), or an object that is Manual or
-    /// skipped, cannot be created; it becomes Manual too, and so on down the chain.
+    /// A view or function that uses a view or routine that is Manual or skipped cannot work; it
+    /// becomes Manual too, and so on down the chain.
     /// </summary>
     private static List<TranslatedObject> PropagateUnconverted(List<TranslatedObject> objects, SemanticModel model)
     {
@@ -79,16 +79,14 @@ public sealed partial class SchemaTranslator
             for (int i = 0; i < objects.Count; i++)
             {
                 var o = objects[i];
-                if (o.Kind != ObjectKind.View || o.Status is ObjectStatus.Manual or ObjectStatus.Skipped)
+                if (o.Kind is not (ObjectKind.View or ObjectKind.Function) || o.Status is ObjectStatus.Manual or ObjectStatus.Skipped)
                     continue;
                 var blocker = o.DependsOn.FirstOrDefault(d =>
-                    (model.Routine(d) is not null)
-                    || (bySource.TryGetValue(d, out var deps) && deps.Any(x => x.Kind is ObjectKind.View && x.Status is ObjectStatus.Manual or ObjectStatus.Skipped)));
+                    bySource.TryGetValue(d, out var deps)
+                    && deps.Any(x => x.Kind is ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure && x.Status is ObjectStatus.Manual or ObjectStatus.Skipped));
                 if (blocker is null)
                     continue;
-                string why = model.Routine(blocker) is not null
-                    ? $"{o.Source} uses {blocker}, a routine converted in Stage 3."
-                    : $"{o.Source} uses {blocker}, which is not converted.";
+                string why = $"{o.Source} uses {blocker}, which is not converted.";
                 objects[i] = o with { Diagnostics = [.. o.Diagnostics, new Diagnostic(DiagnosticCodes.DependsOnUnconverted, Severity.Error, o.Source, why)] };
                 bySource[o.Source] = bySource[o.Source].Select(x => ReferenceEquals(x, o) ? objects[i] : x).ToList();
                 changed = true;

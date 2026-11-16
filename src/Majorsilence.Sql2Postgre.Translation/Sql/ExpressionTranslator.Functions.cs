@@ -297,9 +297,36 @@ public sealed partial class ExpressionTranslator
         var name = new ObjectName(schema, f.FunctionName.Value);
         if (!UserFunctions)
             throw Untranslatable(f, $"the user-defined function {name} in a table definition (Stage 3 creates functions before the tables that use them)");
-        if (model.Routine(name) is null)
+        if (model.Routine(name) is not { } routine)
             throw Untranslatable(f, $"the function {name}, which is not in this database");
-        return new PgFunctionCall(names.Routine(name).Qualified, f.Parameters.Select(p => Scalar(p, c)).ToList());
+        return new PgFunctionCall(names.Routine(name).Qualified, RoutineArguments(f.Parameters, routine, c));
+    }
+
+    /// <summary>
+    /// The arguments of a call to a converted routine, each converted to its parameter's type as
+    /// SQL Server converts it (PostgreSQL picks a function by its argument types and will not narrow
+    /// a bigint to an int by itself). DEFAULT at the end is left out; DEFAULT before other arguments
+    /// switches the rest to named notation (<c>param =&gt; value</c>).
+    /// </summary>
+    public IReadOnlyList<PgExpr> RoutineArguments(IList<ScalarExpression> args, RoutineInfo routine, ExpressionContext c)
+    {
+        int count = args.Count;
+        while (count > 0 && args[count - 1] is DefaultLiteral)
+            count--;
+        var result = new List<PgExpr>();
+        bool named = false;
+        for (int i = 0; i < count; i++)
+        {
+            var parameter = i < routine.Parameters.Count ? routine.Parameters[i] : null;
+            if (args[i] is DefaultLiteral)
+            {
+                named = parameter is not null ? true : throw Untranslatable(args[i], "DEFAULT for an argument the routine does not declare");
+                continue;
+            }
+            var value = parameter is null ? Scalar(args[i], c) : ConvertTo(args[i], parameter.Type, c);
+            result.Add(named ? new PgTemplate($"{NameMapper.Quote(names.Alias(parameter!.Name))} => {{0}}", [value]) : value);
+        }
+        return result;
     }
 
     private PgExpr Extension(string extension, PgExpr call, TSqlFragment source, ExpressionContext c)

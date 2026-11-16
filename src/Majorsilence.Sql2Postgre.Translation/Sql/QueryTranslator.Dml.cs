@@ -53,6 +53,9 @@ public sealed partial class QueryTranslator
 
     private DmlTarget TargetOf(TableReference target, ExpressionContext c, string? alias = null)
     {
+        if (target is VariableTableReference v && TableVariable?.Invoke(v.Variable.Name) is { } table)
+            return new DmlTarget(new PgName("", table), null, c.Scope.Table(v.Variable.Name) ?? new RelationInfo(null, ObjectKind.Table, []),
+                alias ?? v.Alias?.Value);
         if (target is not NamedTableReference n)
             throw ExpressionTranslator.Untranslatable(target, "a DML target that is not a table");
         string written = n.SchemaObject.BaseIdentifier.Value;
