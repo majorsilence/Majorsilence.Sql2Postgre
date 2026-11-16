@@ -17,8 +17,14 @@ public sealed partial class ProceduralTranslator
                 : [Untranslated(s, DiagnosticCodes.ProceduralStatement, "Rows returned by DML with OUTPUT are not translated yet.", st)];
 
         var result = new List<PgPlStatement>();
+        // A routine's SELECT … INTO #t starts afresh, as CREATE TABLE #t does.
+        if (translated is PgCreateTableAs { Temporary: true } created && st.Signature.Kind != BodyKind.AnonymousBlock)
+            result.Add(new PgSqlStatement(new PgDropTable(created.Name)));
         bool rowCountKnown = false;
-        if (st.ReadsIdentity && s is InsertStatement insert && translated is PgInsert pgInsert && IdentityColumn(insert, st) is { } column)
+        if (st.ReadsIdentity && s is InsertStatement { InsertSpecification.OutputIntoClause: not null })
+            throw ExpressionTranslator.Untranslatable(s, "An INSERT with OUTPUT … INTO in a routine reading SCOPE_IDENTITY()", DiagnosticCodes.ProceduralStatement);
+        string? column = st.ReadsIdentity && s is InsertStatement written ? IdentityColumn(written, st) : null;
+        if (column is not null && s is InsertStatement insert && translated is PgInsert pgInsert)
         {
             var identity = Helper(IdentityVariable, "numeric(38,0)", st);
             var returning = pgInsert with { Returning = [new PgTarget(new PgColumnRef(column))] };
@@ -30,7 +36,8 @@ public sealed partial class ProceduralTranslator
             {
                 // Several rows: the last identity is the largest one inserted. The count comes from the
                 // same query, since the statement's own row count is the SELECT's.
-                var targets = new List<PgTarget> { new(new PgFunctionCall("max", [new PgColumnRef(column)])) };
+                // No rows inserted leaves the last identity as it was.
+                var targets = new List<PgTarget> { new(new PgFunctionCall("COALESCE", [new PgFunctionCall("max", [new PgColumnRef(column)]), identity])) };
                 var into = new List<PgExpr> { identity };
                 if (st.ReadsRowCount)
                 {
@@ -53,16 +60,23 @@ public sealed partial class ProceduralTranslator
         }
         if (st.ReadsRowCount && !rowCountKnown)
             result.Add(RowCount(st));
+        // An INSERT of rows into a table without an identity column sets SCOPE_IDENTITY() to NULL.
+        if (st.ReadsIdentity && column is null && s is InsertStatement)
+            result.Add(new PgIf([new PgIfBranch(new PgKeyword("FOUND"), [new PgAssign(Helper(IdentityVariable, "numeric(38,0)", st), PgLiteral.Null)])]));
         return result;
     }
 
     private PgGetDiagnostics RowCount(BodyState st) => new([new(Helper(RowCountVariable, "integer", st).Name, "ROW_COUNT")]);
 
-    /// <summary>The PostgreSQL name of the identity column of an INSERT's target table, if it has one.</summary>
+    /// <summary>The PostgreSQL name of the identity column of an INSERT's target table, temp table or table variable, if it has one.</summary>
     private string? IdentityColumn(InsertStatement insert, BodyState st)
     {
-        if (insert.InsertSpecification.Target is not NamedTableReference target || target.SchemaObject.BaseIdentifier.Value.StartsWith('#'))
+        if (insert.InsertSpecification.Target is VariableTableReference v)
+            return st.IdentityColumns.GetValueOrDefault(v.Variable.Name);
+        if (insert.InsertSpecification.Target is not NamedTableReference target)
             return null;
+        if (target.SchemaObject.BaseIdentifier.Value.StartsWith('#'))
+            return st.IdentityColumns.GetValueOrDefault(target.SchemaObject.BaseIdentifier.Value);
         var name = _model.ResolveRelation(target.SchemaObject, st.C.Schema);
         var table = name is null ? null : _model.Table(name);
         var identity = table?.Columns.FirstOrDefault(col => col.Identity is not null);

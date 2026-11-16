@@ -221,7 +221,7 @@ public static class DiagnosticCodes
     /// <summary>TOP 100 PERCENT … ORDER BY in a view is dropped (SQL Server ignores that order too).</summary>
     public const string ViewOrderIgnored = "S2P4012";
 
-    /// <summary>OUTPUT … INTO a table needs procedural code (Stage 3).</summary>
+    /// <summary>An OUTPUT … INTO form that is not translated (OUTPUT INTO alongside a plain OUTPUT).</summary>
     public const string OutputInto = "S2P4013";
 
     // ---- 5xxx procedural code ----
@@ -282,6 +282,18 @@ public static class DiagnosticCodes
 
     /// <summary>EXEC of a procedure that is not in the source database.</summary>
     public const string UnknownProcedure = "S2P5027";
+
+    /// <summary>A global temporary table (##name), shared by every session: PostgreSQL has none.</summary>
+    public const string GlobalTempTable = "S2P5030";
+
+    /// <summary>ROLLBACK in a routine with table variables: SQL Server keeps their rows, PostgreSQL rolls them back.</summary>
+    public const string TableVariableRollback = "S2P5031";
+
+    /// <summary>A procedure calls one that creates a temp table of the same name: in PostgreSQL the callee's replaces the caller's.</summary>
+    public const string TempTableReplaced = "S2P5032";
+
+    /// <summary>A FOREIGN KEY on a temp table is dropped, as SQL Server itself ignores it.</summary>
+    public const string TempTableForeignKey = "S2P5033";
 
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";

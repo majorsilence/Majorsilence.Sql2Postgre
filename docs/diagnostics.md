@@ -67,10 +67,11 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-A procedural statement that is not translated yet: `TRY … CATCH`, cursors, temporary tables,
-dynamic SQL (`EXEC (string)`, `sp_executesql`) and the other statements Stage 3 is still adding.
-Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a procedure, result
-sets and transaction control are translated. In a procedure, a result set inside a loop,
+A procedural statement that is not translated yet: `TRY … CATCH`, cursors, dynamic SQL
+(`EXEC (string)`, `sp_executesql`), DDL on real tables, and the other statements Stage 3 is
+still adding. Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a
+procedure, result sets, transaction control, temp tables and table variables are translated.
+`ALTER TABLE` on a temp table and computed columns in one also get this code. In a procedure, a result set inside a loop,
 rows returned by DML with `OUTPUT`, and any statement other than a result set under
 `SET ROWCOUNT n` also get this code. The statement is kept as a comment.
 
@@ -403,8 +404,9 @@ A view's `TOP 100 PERCENT … ORDER BY` is dropped; SQL Server does not honour t
 
 ### S2P4013 OutputInto (Error)
 
-`OUTPUT … INTO` a table or table variable writes the changed rows somewhere: procedural code,
-translated in Stage 3.
+A statement has both `OUTPUT … INTO` and a plain `OUTPUT`. `OUTPUT … INTO` alone is translated:
+the statement becomes a data-modifying CTE with `RETURNING`, and an `INSERT` writes its rows to
+the table, temp table or table variable.
 
 ## S2P5xxx — procedural code
 
@@ -541,6 +543,54 @@ that commits is never converted to a function.
 
 `EXEC` names a procedure that is not in the source database (it lives in another database, was
 excluded, or does not exist). The call is kept as a comment.
+
+### Temp tables and table variables
+
+Both become PostgreSQL temporary tables, which belong to the session:
+
+- `#t` is the temporary table `t`. A routine runs `DROP TABLE IF EXISTS t` before it creates the
+  table, and drops it again when it ends or returns, as SQL Server does. The exception is a
+  procedure that returns refcursors: they read the table after the procedure has ended, so it
+  stays until the next call or the end of the session. A script's temp tables last as long as
+  the session, as in SQL Server.
+- `@t` is the temporary table `tv_<routine>_<name>`, or `tv_<name>` in a script. It is created
+  at the start of the body, since T-SQL declares a table variable once however often its
+  `DECLARE` runs. A procedure or script batch drops it when it ends; a function's is
+  `ON COMMIT DROP`.
+- Columns, keys, `CHECK` constraints and indexes are kept. Index names are left to PostgreSQL,
+  since they share the temporary schema with the tables.
+- `SCOPE_IDENTITY()` follows inserts into temp tables and table variables with an identity
+  column. As in SQL Server, inserting rows into a table without one sets it to NULL.
+- `OBJECT_ID('tempdb..#t')` is `to_regclass('pg_temp.t')`, as an integer.
+- `TRUNCATE TABLE` restarts the table's identity (`RESTART IDENTITY`), as SQL Server's does.
+- Creating a temporary table makes a function `VOLATILE`. It cannot run in a read-only
+  transaction or on a hot standby.
+
+### S2P5030 GlobalTempTable (Error)
+
+A global temporary table (`##t`) is shared by every session. PostgreSQL's temporary tables
+belong to one session, so there is no equivalent: use a real table, and delete its rows when
+they are no longer needed.
+
+### S2P5031 TableVariableRollback (Warning)
+
+A routine with table variables runs `ROLLBACK`. SQL Server keeps a table variable's rows when a
+transaction rolls back. In PostgreSQL the table variable is a temporary table, so the rollback
+undoes its rows, and its creation too when that was in the same transaction. The table is
+created again, empty, after the `ROLLBACK`. Code that logs into a table variable and writes
+the log after rolling back loses those rows.
+
+### S2P5032 TempTableReplaced (Warning)
+
+A procedure creates a temp table and calls a procedure that creates one with the same name. In
+SQL Server each procedure sees its own. In PostgreSQL there is one table of that name per
+session: the callee's `DROP TABLE IF EXISTS` removes the caller's, and the caller's later
+statements fail or read the wrong rows. Rename one of the two tables.
+
+### S2P5033 TempTableForeignKey (Info)
+
+A `FOREIGN KEY` on a temp table is dropped. SQL Server does not enforce foreign keys on
+temporary tables either (it skips them with a warning).
 
 ## S2P7xxx — data copy and verification
 

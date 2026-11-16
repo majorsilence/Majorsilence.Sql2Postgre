@@ -283,6 +283,7 @@ public sealed partial class QueryTranslator
         string? alias = n.Alias is null ? null : _names.Alias(n.Alias.Value);
         if (n.SchemaObject.SchemaIdentifier is null && c.Scope.Cte(written) is not null)
             return new PgTableRef(new PgName("", _names.Alias(written)), alias);
+        GlobalTemp(n, written);
         if (written.StartsWith('#'))
             return new PgTableRef(new PgName("", TempTable(written)), alias);
         if (_model.IsExternal(n.SchemaObject))

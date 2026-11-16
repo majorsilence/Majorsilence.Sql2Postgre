@@ -45,6 +45,9 @@ public sealed record PgCreateTable(PgName Name, IReadOnlyList<PgColumnDef> Colum
 /// <summary><c>DROP TABLE [IF EXISTS] name</c>.</summary>
 public sealed record PgDropTable(PgName Name, bool IfExists = true) : PgStatement;
 
+/// <summary><c>TRUNCATE TABLE name [RESTART IDENTITY]</c>.</summary>
+public sealed record PgTruncate(PgName Table, bool RestartIdentity) : PgStatement;
+
 public sealed record PgAddPrimaryKey(PgName Table, string Name, IReadOnlyList<string> Columns) : PgStatement;
 
 public sealed record PgAddUnique(PgName Table, string Name, IReadOnlyList<string> Columns) : PgStatement;
@@ -57,6 +60,7 @@ public sealed record PgAddForeignKey(PgName Table, string Name, IReadOnlyList<st
 
 public sealed record PgIndexKey(string Column, bool Descending = false);
 
+/// <param name="Name">The index name; empty lets PostgreSQL choose one (a temp table's index).</param>
 /// <param name="Method">The access method (<c>gist</c>…), or null for the default B-tree.</param>
 public sealed record PgCreateIndex(string Name, PgName Table, IReadOnlyList<PgIndexKey> Keys, IReadOnlyList<string> Include,
     bool Unique = false, PgExpr? Where = null, string? Method = null) : PgStatement;

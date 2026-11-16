@@ -36,6 +36,9 @@ public sealed record ProcedureShape(ObjectName Name, PgName PgName, bool IsFunct
 
     /// <summary>The number of result sets the procedure returns.</summary>
     public int ResultSetCount { get; init; }
+
+    /// <summary>The temp tables (<c>#t</c>) the procedure creates.</summary>
+    internal IReadOnlySet<string> TempTables { get; init; } = new HashSet<string>();
 }
 
 /// <summary>Procedures: their shape, result sets, status codes, EXEC and transactions.</summary>
@@ -69,6 +72,7 @@ public sealed partial class ProceduralTranslator
             scope.DefineVariable(x.Source, x.Type);
 
         var sites = new List<ResultSetSite>();
+        var tempTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool returnsCode = false, commits = false;
         void Walk(IEnumerable<TSqlStatement?> statements, bool inLoop)
         {
@@ -87,6 +91,17 @@ public sealed partial class ProceduralTranslator
                         scope.DefineTable(t.Body.VariableName.Value, new RelationInfo(null, ObjectKind.Table,
                             t.Body.Definition.ColumnDefinitions.Select(col => new ColumnInfo(col.ColumnIdentifier.Value,
                                 col.DataType is null ? null : _model.TypeOf(col.DataType, name.Schema))).ToList()));
+                        break;
+                    case CreateTableStatement create when IsTemp(create.SchemaObjectName):
+                        tempTables.Add(create.SchemaObjectName.BaseIdentifier.Value);
+                        scope.DefineTable(create.SchemaObjectName.BaseIdentifier.Value, new RelationInfo(null, ObjectKind.Table,
+                            create.Definition.ColumnDefinitions.Select(col => new ColumnInfo(col.ColumnIdentifier.Value,
+                                col.DataType is null ? null : _model.TypeOf(col.DataType, name.Schema))).ToList()));
+                        break;
+                    case SelectStatement { Into: { } into } select when IsTemp(into):
+                        tempTables.Add(into.BaseIdentifier.Value);
+                        if (Columns(select, scope, name.Schema) is { } created)
+                            scope.DefineTable(into.BaseIdentifier.Value, new RelationInfo(null, ObjectKind.Table, created));
                         break;
                     case SelectStatement select when IsResultSet(select):
                         sites.Add(new ResultSetSite(s, 1, inLoop, Columns(select, scope, name.Schema), false));
@@ -166,6 +181,7 @@ public sealed partial class ProceduralTranslator
             Columns = resultColumns,
             ResultSets = resultSets,
             ResultSetCount = total,
+            TempTables = tempTables,
         };
     }
 
@@ -273,6 +289,9 @@ public sealed partial class ProceduralTranslator
         var c = st.C;
         var spec = e.ExecuteSpecification;
         var callee = Callee(spec, e, c);
+        if (callee.TempTables.FirstOrDefault(st.CreatedTempTables.Contains) is { } shared)
+            c.Report(DiagnosticCodes.TempTableReplaced, Severity.Warning,
+                $"{callee.Name} creates its own {shared}, as this routine does: in SQL Server each has its own, in PostgreSQL the callee's replaces this one's and is dropped when the callee ends.");
         var result = new List<PgPlStatement>();
         if (callee.IsFunction)
         {
@@ -487,7 +506,10 @@ public sealed partial class ProceduralTranslator
             case CommitTransactionStatement:
                 return [new PgTransactionControl(true)];
             case RollbackTransactionStatement rollback when rollback.Name?.Value is not { } rolledBack || st.TransactionNames.Contains(rolledBack):
-                return [new PgTransactionControl(false)];
+                if (st.TableVariableSetup.Count > 0)
+                    c.Report(DiagnosticCodes.TableVariableRollback, Severity.Warning,
+                        $"ROLLBACK with table variables ({string.Join(", ", st.TableVariableSetup.Keys)}): SQL Server keeps their rows, PostgreSQL rolls them back (they are created again, empty).");
+                return [new PgTransactionControl(false), .. RecreateTableVariables(st)];
             case RollbackTransactionStatement:
                 throw ExpressionTranslator.Untranslatable(t, "ROLLBACK to a savepoint (PL/pgSQL has none; a BEGIN … EXCEPTION block is the nearest)", DiagnosticCodes.Savepoint);
             case SaveTransactionStatement:

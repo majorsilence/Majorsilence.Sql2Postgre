@@ -1,0 +1,52 @@
+CREATE TABLE dbo.item (id int IDENTITY NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL, price decimal(10, 2) NOT NULL);
+GO
+CREATE TABLE dbo.audit (id int IDENTITY NOT NULL PRIMARY KEY, note nvarchar(100) NOT NULL);
+GO
+CREATE PROCEDURE dbo.cheap_items @max decimal(10, 2) AS
+BEGIN
+    SET NOCOUNT ON;
+    CREATE TABLE #cheap (id int NOT NULL PRIMARY KEY, name nvarchar(50) COLLATE DATABASE_DEFAULT NOT NULL, price decimal(10, 2) CHECK (price >= 0), INDEX ix_name (name));
+    INSERT INTO #cheap (id, name, price) SELECT id, name, price FROM dbo.item WHERE price <= @max;
+    CREATE INDEX ix_price ON #cheap (price DESC);
+    IF NOT EXISTS (SELECT 1 FROM #cheap)
+        RETURN;
+    SELECT c.name, c.price FROM #cheap AS c ORDER BY c.price;
+END;
+GO
+CREATE PROCEDURE dbo.price_changes @rise decimal(10, 2) AS
+BEGIN
+    DECLARE @changes TABLE (seq int IDENTITY(1, 1), id int, old_price decimal(10, 2), new_price decimal(10, 2));
+    UPDATE dbo.item SET price = price + @rise
+    OUTPUT inserted.id, deleted.price, inserted.price INTO @changes (id, old_price, new_price)
+    WHERE price < 5;
+    SELECT id, old_price, new_price FROM @changes ORDER BY seq;
+END;
+GO
+CREATE PROCEDURE dbo.copy_names AS
+BEGIN
+    SELECT id, name INTO #names FROM dbo.item;
+    TRUNCATE TABLE dbo.audit;
+    INSERT INTO dbo.audit (note) SELECT name FROM #names;
+    IF OBJECT_ID('tempdb..#names') IS NOT NULL
+        DROP TABLE #names;
+    BEGIN TRAN;
+    DECLARE @log TABLE (note nvarchar(100));
+    INSERT INTO @log (note) VALUES (N'copied');
+    ROLLBACK;
+    RETURN 1;
+END;
+GO
+CREATE PROCEDURE dbo.shared AS
+BEGIN
+    CREATE TABLE ##everyone (id int);
+    CREATE TABLE #names (id int);
+    EXEC dbo.copy_names;
+END;
+GO
+CREATE FUNCTION dbo.item_count () RETURNS int AS
+BEGIN
+    DECLARE @t TABLE (id int);
+    INSERT INTO @t (id) SELECT id FROM dbo.item;
+    RETURN (SELECT COUNT(*) FROM @t);
+END;
+GO

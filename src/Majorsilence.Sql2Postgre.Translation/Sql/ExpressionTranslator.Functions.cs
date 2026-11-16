@@ -234,6 +234,9 @@ public sealed partial class ExpressionTranslator
                 return new PgKeyword("current_user");
             case "DB_NAME" when a.Count == 0:
                 return Call("current_database");
+            case "OBJECT_ID" when a.Count is 1 or 2 && TempTableName(a[0]) is { } temp:
+                // OBJECT_ID('tempdb..#t'): whether the session has the temp table (its oid as an int, or NULL).
+                return new PgCast(new PgCast(Call("to_regclass", PgLiteral.String("pg_temp." + NameMapper.Quote(names.Alias(temp)))), "oid"), "integer");
             case "HOST_NAME":
                 Arity(0);
                 return new PgCast(Call("inet_client_addr"), "text");
@@ -271,6 +274,18 @@ public sealed partial class ExpressionTranslator
             default:
                 throw Untranslatable(f, $"the function {f.FunctionName.Value}");
         }
+    }
+
+    /// <summary>The temp table a name literal such as <c>'tempdb..#t'</c> or <c>N'#t'</c> names, without its <c>#</c>.</summary>
+    private static string? TempTableName(ScalarExpression e)
+    {
+        if (e is not StringLiteral { Value: var written })
+            return null;
+        int dot = written.LastIndexOf('.');
+        string last = written[(dot + 1)..].Trim('[', ']');
+        string prefix = dot < 0 ? "" : written[..dot].TrimStart('[');
+        bool inTempdb = prefix.Length == 0 || prefix.StartsWith("tempdb", StringComparison.OrdinalIgnoreCase);
+        return inTempdb && last.StartsWith('#') && !last.StartsWith("##", StringComparison.Ordinal) ? last.TrimStart('#') : null;
     }
 
     private static SchemaObjectName SchemaName(Identifier name)

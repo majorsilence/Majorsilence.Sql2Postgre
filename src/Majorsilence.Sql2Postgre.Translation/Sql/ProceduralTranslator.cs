@@ -106,6 +106,18 @@ public sealed partial class ProceduralTranslator
 
         /// <summary>Helper variables passed for INOUT parameters, by type.</summary>
         public Dictionary<string, List<string>> ArgumentHelpers { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The temp tables (<c>#t</c>) the body creates.</summary>
+        public HashSet<string> CreatedTempTables { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The tables dropped when the body ends or returns.</summary>
+        public List<PgName> EndDrops { get; } = [];
+
+        /// <summary>The statements creating each table variable, run at the start of the body.</summary>
+        public Dictionary<string, List<PgPlStatement>> TableVariableSetup { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The identity column of each temp table and table variable that has one, by written name.</summary>
+        public Dictionary<string, string> IdentityColumns { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Translates a body's statements to one outer block with every declaration hoisted to it.</summary>
@@ -121,17 +133,22 @@ public sealed partial class ProceduralTranslator
             ReadsIdentity = finder.Identity,
             HasTry = finder.Try,
         };
+        PlanDrops(statements, st);
         return WithHooks(st, () =>
         {
             var body = new List<PgPlStatement>();
             if (signature.ReturnTable is { } table)
             {
                 st.ReturnTable = "_ret_" + signature.RoutineName;
-                body.AddRange(TableVariable(table.VariableName.Value, st.ReturnTable, table.Definition, st, onCommit: "DROP"));
+                body.AddRange(TableDefinition(table.VariableName.Value, st.ReturnTable, table.Definition, st, onCommit: "DROP", dropFirst: true));
             }
             if (signature.Shape?.ReturnCode is { } returnCode)
                 body.Add(new PgAssign(new PgColumnRef(returnCode, signature.RoutineName), new PgLiteral("0")));
-            body.AddRange(List(statements, st, topLevel: true));
+            var statementsTranslated = List(statements, st, topLevel: true);
+            body.AddRange(st.TableVariableSetup.Values.SelectMany(x => x));
+            body.AddRange(statementsTranslated);
+            if (statementsTranslated.LastOrDefault() is not PgReturn)
+                body.AddRange(Drops(st));
             if (st.StatementAfterDml && !st.XactAbortOn && !st.HasTry)
                 context.Report(DiagnosticCodes.ErrorStopsExecution, Severity.Info,
                     "Statements follow DML without SET XACT_ABORT ON or TRY: SQL Server continues after most statement errors, PostgreSQL stops at the first.");
@@ -179,49 +196,6 @@ public sealed partial class ProceduralTranslator
         }
     }
 
-    /// <summary>
-    /// A table variable as a temporary table: dropped if a previous call left it, then created
-    /// with the declared columns (types, NOT NULL, defaults, identity) and keys.
-    /// </summary>
-    private List<PgPlStatement> TableVariable(string variable, string table, TableDefinition definition, BodyState st, string onCommit)
-    {
-        var c = st.C;
-        var name = new PgName("", table);
-        var columns = new List<PgColumnDef>();
-        var relationColumns = new List<ColumnInfo>();
-        var keys = new List<PgStatement>();
-        foreach (var col in definition.ColumnDefinitions)
-        {
-            if (col.ComputedColumnExpression is not null || col.DataType is null)
-                throw ExpressionTranslator.Untranslatable(col, "a computed column in a table variable");
-            var type = _model.TypeOf(col.DataType, c.Schema);
-            var mapped = _x.Types.Map(type with { UserTypeName = null }, c.Owner);
-            string column = _names.Alias(col.ColumnIdentifier.Value);
-            bool notNull = col.Constraints.OfType<NullableConstraintDefinition>().Any(n => !n.Nullable)
-                           || col.Constraints.OfType<UniqueConstraintDefinition>().Any(u => u.IsPrimaryKey);
-            PgIdentity? identity = col.IdentityOptions is { } id
-                ? new PgIdentity(Seed(id.IdentitySeed), Seed(id.IdentityIncrement))
-                : null;
-            string pgType = identity is not null && mapped.PgType.StartsWith("numeric", StringComparison.Ordinal) ? "bigint" : mapped.PgType;
-            PgExpr? defaultValue = col.DefaultConstraint?.Expression is { } d ? Assigned(d, type, col.DataType, c) : null;
-            columns.Add(new PgColumnDef(column, pgType, notNull, defaultValue, identity));
-            relationColumns.Add(new ColumnInfo(col.ColumnIdentifier.Value, type));
-            foreach (var key in col.Constraints.OfType<UniqueConstraintDefinition>())
-                keys.Add(Key(name, table, key.IsPrimaryKey, [column], keys.Count));
-        }
-        foreach (var key in definition.TableConstraints.OfType<UniqueConstraintDefinition>())
-            keys.Add(Key(name, table, key.IsPrimaryKey, key.Columns.Select(k => _names.Alias(k.Column.MultiPartIdentifier.Identifiers[^1].Value)).ToList(), keys.Count));
-
-        st.TableVariables[variable] = table;
-        c.Scope.DefineTable(variable, new RelationInfo(null, ObjectKind.Table, relationColumns));
-        return
-        [
-            new PgSqlStatement(new PgDropTable(name)),
-            new PgSqlStatement(new PgCreateTable(name, columns) { Temporary = true, OnCommit = onCommit }),
-            .. keys.Select(k => new PgSqlStatement(k)),
-        ];
-    }
-
     private static long Seed(ScalarExpression? e) =>
         e is null ? 1 : long.Parse(ExpressionTranslator.Text(e).Trim('(', ')', ' '), System.Globalization.CultureInfo.InvariantCulture);
 
@@ -237,7 +211,7 @@ public sealed partial class ProceduralTranslator
         InsertStatement or UpdateStatement or DeleteStatement or MergeStatement => false,
         UseStatement or PredicateSetStatement or SetCommandStatement or SetRowCountStatement
             or SetTransactionIsolationLevelStatement or SetIdentityInsertStatement => false,
-        TransactionStatement => false,
+        TransactionStatement or TruncateTableStatement or DeclareTableVariableStatement => false,
         ExecuteStatement e => !IsPlainCall(e),
         CreateTableStatement or AlterTableStatement or CreateIndexStatement or CreateViewStatement or CreateTypeStatement
             or CreateSequenceStatement or CreateSchemaStatement or DropObjectsStatement => false,
@@ -253,7 +227,7 @@ public sealed partial class ProceduralTranslator
         {
             var s = statements[i];
             // Session options produce no code, so DECLAREs after SET NOCOUNT ON still open the body.
-            if (topLevel && s is not (DeclareVariableStatement or PredicateSetStatement or SetCommandStatement))
+            if (topLevel && s is not (DeclareVariableStatement or DeclareTableVariableStatement or PredicateSetStatement or SetCommandStatement))
                 st.Prologue = false;
             var next = i + 1 < statements.Count ? statements[i + 1] : null;
             result.AddRange(Statement(s, next, st));
@@ -305,6 +279,14 @@ public sealed partial class ProceduralTranslator
         {
             case DeclareVariableStatement d:
                 return Declare(d, st);
+            case DeclareTableVariableStatement d:
+                return DeclareTable(d, st);
+            case CreateTableStatement create when IsTemp(create.SchemaObjectName):
+                return CreateTemp(create, st);
+            case DropTableStatement drop when IsTempTableDdl(drop):
+                return DropTemp(drop);
+            case CreateIndexStatement index when IsTemp(index.OnName):
+                return [CreateTempIndex(index, st)];
             case SetVariableStatement set:
                 return SetVariable(set, st);
             case SelectStatement select when select.QueryExpression is QuerySpecification spec && spec.SelectElements.OfType<SelectSetVariable>().Any():
@@ -315,7 +297,7 @@ public sealed partial class ProceduralTranslator
                 return Execute(e, st);
             case TransactionStatement t:
                 return Transaction(t, st);
-            case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement:
+            case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement:
                 return Dml(s, st);
             case BeginEndBlockStatement block:
                 return List(block.StatementList.Statements, st);
@@ -374,16 +356,13 @@ public sealed partial class ProceduralTranslator
                 return [Untranslated(s, DiagnosticCodes.GotoLabel, "GOTO and labels have no PL/pgSQL equivalent.", st)];
             case CreateTableStatement or AlterTableStatement or CreateIndexStatement or CreateViewStatement or CreateTypeStatement
                 or CreateSequenceStatement or CreateSchemaStatement or DropObjectsStatement
-                when st.Signature.Kind == BodyKind.AnonymousBlock && !IsTempTableDdl(s):
+                when st.Signature.Kind == BodyKind.AnonymousBlock:
                 return [Untranslated(s, DiagnosticCodes.DdlInScript,
                     "DDL in an ad-hoc script: convert schema objects with 'sql2pg schema', which orders them and creates their keys and indexes.", st)];
             default:
                 return [Untranslated(s, DiagnosticCodes.ProceduralStatement, $"'{s.GetType().Name}' is not translated yet.", st)];
         }
     }
-
-    private static bool IsTempTableDdl(TSqlStatement s) =>
-        s is CreateTableStatement create && create.SchemaObjectName.BaseIdentifier.Value.StartsWith('#');
 
     /// <summary>A nested statement (IF/WHILE body): a BEGIN … END is flattened into its statements.</summary>
     private List<PgPlStatement> Nested(TSqlStatement s, BodyState st)
@@ -578,13 +557,15 @@ public sealed partial class ProceduralTranslator
             if (sig.Shape?.ReturnCode is not { } returnCode)
                 throw ExpressionTranslator.Untranslatable(r, "RETURN with a status code here", DiagnosticCodes.ProceduralStatement);
             var intType = new SqlDataTypeReference { SqlDataTypeOption = SqlDataTypeOption.Int };
+            // The status code first: it may read a temp table the drops remove.
             return
             [
                 new PgAssign(new PgColumnRef(returnCode, sig.RoutineName), Assigned(r.Expression, IntType, intType, st.C)),
+                .. Drops(st),
                 new PgReturn(),
             ];
         }
-        return [new PgReturn()];
+        return [.. Drops(st), new PgReturn()];
     }
 
     /// <summary>

@@ -32,6 +32,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.2 — statements and control flow; script batches with variables become DO blocks; 6 both-engines message cases, 7 golden cases.
 - WP 3.3 — functions (scalar, inline TVF, multi-statement TVF); corpus compile scan 0 apply failures on all six databases with functions converted.
 - WP 3.4 — procedures (CREATE PROCEDURE or set-returning function, refcursor result sets, INOUT OUTPUT parameters and return_code, EXEC → CALL, INSERT … EXEC, transactions); 11 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: Northwind 7/0, pubs 4/0, WideWorldImportersDW 14/10, WideWorldImporters 10/32, AdventureWorks 2/8. Manual is mostly S2P0206, from TRY/CATCH, cursors, temp tables and dynamic SQL (WP 3.5–3.8).
+- WP 3.5 — temp tables and table variables (temporary tables dropped when the routine ends, table variables per routine, OUTPUT … INTO, TRUNCATE, OBJECT_ID on temp tables); 11 both-engines cases, each run twice in one session. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: WideWorldImportersDW 16/8 (was 14/10); WideWorldImporters 10/32 and AdventureWorks 2/8 unchanged, as each of those procedures also has TRY/CATCH, cursors or dynamic SQL. WideWorldImporters' S2P0206 count fell from 230 to 207.
 
 ## Measured
 
@@ -117,7 +118,7 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - The Compat phase now comes before Tables (file 03-compat.sql; tables are 05-tables.sql): a default or computed column may call a helper, and PostgreSQL checks it exists at CREATE TABLE.
 - Differences no translation fixes, found by the both-engines grid: string comparison, REPLACE and CHARINDEX follow the column's collation (SQL Server's defaults are case-insensitive; PostgreSQL's are not), and ORDER BY on text follows each server's collation (PostgreSQL's linguistic collations ignore leading spaces). Decimal division keeps more digits in PostgreSQL than SQL Server's result-scale rules give. CONCAT and implicit date-to-string conversions format datetimes differently.
 - In generated columns, CONCAT of strings and numbers becomes coalesce(x, '') || …; concat(), to_char() and the TRY_CAST helpers are not immutable, so columns using them are held back (S2P2009).
-- Not translated yet (diagnostics say so): UPDATE/DELETE with the target inside an outer join, DML with TOP, FOR XML other than PATH('') concatenation, FOR JSON AUTO over joins, OUTPUT INTO, variables (Stage 3).
+- Not translated yet (diagnostics say so): UPDATE/DELETE with the target inside an outer join, DML with TOP, FOR XML other than PATH('') concatenation, FOR JSON AUTO over joins, OUTPUT INTO together with a plain OUTPUT.
 - The compile scan and the agreement harness share one migration per corpus database per test run (`CorpusMigration.DefaultAsync`); its PostgreSQL database is dropped with the container.
 - An INSERT that leaves out a `rowversion` column fails on PostgreSQL (the column is a NOT NULL bytea with no default, S2P1103). Stage 3's trigger work should give it a default or a trigger.
 - `Module` has `IsIndexed` (an indexed view), read from sys.indexes by the catalog reader and from CREATE CLUSTERED INDEX by the script reader.
@@ -146,3 +147,49 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   inside a loop; any statement other than a result set under `SET ROWCOUNT n`; `SET ROWCOUNT`
   inside IF/WHILE or with a variable; `INSERT … EXEC` of a procedure that returns cursors
   (S2P4003).
+- WP 3.5 departs from the plan in these places:
+  - `ON COMMIT PRESERVE ROWS` is not written, since it is PostgreSQL's default.
+  - A temp table named like a real table is not renamed `tmp_…`. References to real tables are
+    always schema-qualified, so a temp table cannot hide one.
+  - A table variable is `tv_<routine>_<name>`, not `tv_<name>`. Nested procedures often declare
+    table variables with the same name (`@t`, `@result`); with one name per session, the
+    callee's `DROP TABLE IF EXISTS` would remove the caller's. Scripts use `tv_<name>`.
+  - A table variable is created at the start of the body, not where its DECLARE is: T-SQL
+    declares it once, so one declared inside a loop keeps its rows across iterations. A
+    function's table variables are `ON COMMIT DROP`, as WP 3.3's return table is.
+  - A procedure that returns refcursors does not drop its temp tables at the end: the cursors
+    read them after the procedure has returned. They go at the next call or the end of the
+    session.
+  - `OUTPUT … INTO` works into any table, not only table variables. The CTE gets a column list
+    (`sql2pg_output (c1, …)`), so unnamed or repeated OUTPUT columns are fine.
+  - After a `ROLLBACK`, each table variable is created again when the rollback removed it.
+  - Four codes are added: S2P5030 (global temp table), S2P5031 (ROLLBACK with table variables),
+    S2P5032 (a callee creates a temp table of the caller's name) and S2P5033 (FOREIGN KEY on a
+    temp table dropped).
+  - Also done: `TRUNCATE TABLE` (with `RESTART IDENTITY`), `CREATE INDEX` and `DROP TABLE` on
+    temp tables, `OBJECT_ID('tempdb..#t')`, and in `sql2pg translate` a batch with table
+    variables but no other procedural code stays plain SQL rather than a DO block.
+- Established on SQL Server 2022:
+  - `SCOPE_IDENTITY()` and `@@IDENTITY` follow inserts into temp tables and table variables.
+  - An `INSERT` of one or more rows into a table without an identity column sets both to NULL.
+    An `INSERT` of no rows leaves them as they were. WP 3.2 had both wrong: it kept the value
+    in the first case and set NULL in the second. Both are fixed.
+  - A table variable keeps its rows when the transaction is rolled back.
+- Established on PostgreSQL 18:
+  - `DROP TABLE` fails ("being used by active queries in this session") on a table that an open
+    cursor reads.
+  - `MERGE … RETURNING` can be a data-modifying CTE.
+  - `to_regclass('pg_temp.t')` finds the session's temp table.
+  - `CREATE INDEX ON t (…)` without a name works.
+- Not translated yet for temp tables and table variables:
+  - `ALTER TABLE` on a temp table, and computed columns in one (S2P0206).
+  - Under `CaseInsensitive = IcuCollation`, a temp table's text columns get the default
+    collation, not `sql2pg_ci`.
+  - S2P5032 looks only at procedures called directly, not further down the call chain.
+  - A table variable declared after a `ROLLBACK` in the text is not created again after it.
+  - A table variable makes a function `VOLATILE` and needs a writable transaction, so such a
+    function fails in a read-only transaction or on a standby.
+- Seen while testing WP 3.5, from WP 3.4: `BEGIN TRAN` is dropped, so a `ROLLBACK` in a
+  procedure called outside a transaction also undoes what the procedure did before
+  `BEGIN TRAN`. SQL Server had already committed that work. Decide this together with
+  TRY/CATCH (WP 3.6), where `COMMIT` before `BEGIN TRAN` is one option.

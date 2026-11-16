@@ -254,11 +254,8 @@ public sealed partial class SchemaTranslator
             "NEWID", "NEWSEQUENTIALID", "RAND", "CRYPT_GEN_RANDOM",
         };
 
-        public override void Visit(NamedTableReference node)
-        {
-            if (!node.SchemaObject.BaseIdentifier.Value.StartsWith('#'))
-                Raise(1);
-        }
+        // A temp table's rows change too: reading one is not immutable.
+        public override void Visit(NamedTableReference node) => Raise(1);
 
         public override void Visit(SchemaObjectFunctionTableReference node) =>
             Raise(model.ResolveRoutine(node.SchemaObject, schema) is { } name ? routine(name) : "STABLE");
@@ -307,6 +304,20 @@ public sealed partial class SchemaTranslator
         public override void Visit(ExecuteStatement node) => Raise(2);
 
         public override void Visit(DeclareTableVariableStatement node) => Raise(2);
+
+        public override void Visit(CreateTableStatement node) => Raise(2);
+
+        public override void Visit(DropTableStatement node) => Raise(2);
+
+        public override void Visit(CreateIndexStatement node) => Raise(2);
+
+        public override void Visit(TruncateTableStatement node) => Raise(2);
+
+        public override void Visit(SelectStatement node)
+        {
+            if (node.Into is not null)
+                Raise(2);
+        }
 
         public override void Visit(TableValuedFunctionReturnType node) => Raise(2);
     }

@@ -26,7 +26,7 @@ BEGIN
     FROM shop.customer
     WHERE is_active = true
     RETURNING order_id)
-    SELECT max(order_id), CAST(count(*) AS integer)
+    SELECT COALESCE(max(order_id), sql2pg_identity), CAST(count(*) AS integer)
     INTO sql2pg_identity, sql2pg_rowcount
     FROM sql2pg_inserted;
     v_id := CAST(trunc(sql2pg_identity) AS bigint);

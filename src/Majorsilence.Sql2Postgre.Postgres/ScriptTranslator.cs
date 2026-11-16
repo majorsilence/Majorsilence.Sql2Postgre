@@ -60,13 +60,19 @@ public static class ScriptTranslator
                 compat.UnionWith(context.CompatFunctions);
                 continue;
             }
+            // Table variables are temporary tables that live as long as the batch.
+            var tableVariables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            queries.TableVariable = name => tableVariables.GetValueOrDefault(name);
             foreach (var statement in batch.Statements)
             {
                 var context = new ExpressionContext(scope, SemanticModel.DefaultSchema, owner);
-                body.Append(Statement(statement, context, queries, procedural, names, model, options, transactionNames));
+                body.Append(Statement(statement, context, queries, procedural, names, model, options, transactionNames, tableVariables));
                 diagnostics.AddRange(context.Diagnostics);
                 compat.UnionWith(context.CompatFunctions);
             }
+            queries.TableVariable = null;
+            foreach (var table in tableVariables.Values)
+                body.Append(PgWriter.Write(new PgDropTable(new PgName("", table)), options.TargetVersion)).Append('\n');
         }
 
         var prelude = new StringBuilder();
@@ -76,7 +82,7 @@ public static class ScriptTranslator
     }
 
     private static string Statement(TSqlStatement statement, ExpressionContext c, QueryTranslator queries, ProceduralTranslator procedural,
-        NameMapper names, SemanticModel model, ConversionOptions options, HashSet<string> transactionNames)
+        NameMapper names, SemanticModel model, ConversionOptions options, HashSet<string> transactionNames, Dictionary<string, string> tableVariables)
     {
         string original = ExpressionTranslator.Text(statement);
         switch (statement)
@@ -115,7 +121,10 @@ public static class ScriptTranslator
                     c.Report(ex.Code, Severity.Error, ex.Message);
                     return PgWriter.Write(new PgUntranslated(ex.Code, original), options.TargetVersion) + "\n";
                 }
-            case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement:
+            case var table when ProceduralTranslator.IsTableStatement(table):
+                // Temp tables and table variables: temporary tables (other DDL is the schema's).
+                return string.Concat(procedural.ScriptTable(table, c, tableVariables).Select(x => PgWriter.Write(x, options.TargetVersion))) + "\n";
+            case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement:
                 try
                 {
                     return PgWriter.Write(queries.Statement(statement, c), options.TargetVersion) + "\n";

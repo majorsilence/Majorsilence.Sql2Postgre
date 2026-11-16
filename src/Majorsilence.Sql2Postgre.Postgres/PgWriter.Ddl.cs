@@ -32,6 +32,7 @@ public static partial class PgWriter
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
         PgDropTable d => $"DROP TABLE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
+        PgTruncate t => $"TRUNCATE TABLE {t.Table.Qualified}{(t.RestartIdentity ? " RESTART IDENTITY" : "")};\n",
         PgDoBlock d => DoBlock(d, targetVersion),
         PgLineComment c =>string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
         _ => DmlOrQuery(statement),
@@ -99,7 +100,7 @@ public static partial class PgWriter
 
     private static string Index(PgCreateIndex i)
     {
-        var sb = new StringBuilder($"CREATE {(i.Unique ? "UNIQUE " : "")}INDEX {Q(i.Name)} ON {i.Table.Qualified}");
+        var sb = new StringBuilder($"CREATE {(i.Unique ? "UNIQUE " : "")}INDEX {(i.Name.Length == 0 ? "" : Q(i.Name) + " ")}ON {i.Table.Qualified}");
         if (i.Method is not null)
             sb.Append($" USING {i.Method}");
         sb.Append($" ({string.Join(", ", i.Keys.Select(k => Q(k.Column) + (k.Descending ? " DESC" : "")))})");

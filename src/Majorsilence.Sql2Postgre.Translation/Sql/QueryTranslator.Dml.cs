@@ -27,6 +27,7 @@ public sealed partial class QueryTranslator
             UpdateStatement u => Update(u, c),
             DeleteStatement d => Delete(d, c),
             MergeStatement m => Merge(m, c),
+            TruncateTableStatement t => Truncate(t, c),
             _ => throw ExpressionTranslator.Untranslatable(statement, "this statement"),
         };
     }
@@ -35,6 +36,7 @@ public sealed partial class QueryTranslator
     {
         var query = Query(s.QueryExpression, c, s.WithCtesAndXmlNamespaces);
         string written = into.BaseIdentifier.Value;
+        GlobalTemp(into, written);
         if (written.StartsWith('#'))
         {
             // Later statements of the batch can use the temp table: the scope remembers its columns.
@@ -59,6 +61,7 @@ public sealed partial class QueryTranslator
         if (target is not NamedTableReference n)
             throw ExpressionTranslator.Untranslatable(target, "a DML target that is not a table");
         string written = n.SchemaObject.BaseIdentifier.Value;
+        GlobalTemp(n, written);
         if (written.StartsWith('#'))
             return new DmlTarget(new PgName("", TempTable(written)), null, c.Scope.Table(written) ?? new RelationInfo(null, ObjectKind.Table, []), alias ?? n.Alias?.Value);
         if (_model.IsExternal(n.SchemaObject))
@@ -99,17 +102,19 @@ public sealed partial class QueryTranslator
 
     // ---- OUTPUT ----
 
+    /// <summary>The RETURNING list of OUTPUT, or of OUTPUT … INTO (whose rows <see cref="OutputInto"/> then writes).</summary>
     private IReadOnlyList<PgTarget> Returning(OutputClause? output, OutputIntoClause? into, DmlTarget target, ExpressionContext c, Scope? scope = null)
     {
-        if (into is not null)
-            throw ExpressionTranslator.Untranslatable(into, "OUTPUT … INTO a table", DiagnosticCodes.OutputInto);
-        if (output is null)
+        if (into is not null && output is not null)
+            throw ExpressionTranslator.Untranslatable(into, "OUTPUT … INTO together with a plain OUTPUT", DiagnosticCodes.OutputInto);
+        var columns = into?.SelectColumns ?? output?.SelectColumns;
+        if (columns is null)
             return [];
         var pseudo = (scope ?? c.Scope).Child();
         pseudo.Bind(new Binding("inserted", target.Relation));
         pseudo.Bind(new Binding("deleted", target.Relation));
         var rc = c.WithReturning(pseudo);
-        return output.SelectColumns.Select(e => e switch
+        return columns.Select(e => e switch
         {
             SelectScalarExpression { Expression: ColumnReferenceExpression { ColumnType: ColumnType.PseudoColumnAction } } s =>
                 new PgTarget(new PgFunctionCall("merge_action", []), s.ColumnName is null ? null : _names.Alias(s.ColumnName.Value)),
@@ -117,6 +122,55 @@ public sealed partial class QueryTranslator
             SelectStarExpression { Qualifier.Identifiers: [var q] } => PgTarget.All(q.Value.ToLowerInvariant() == "deleted" ? "old" : "new"),
             _ => throw ExpressionTranslator.Untranslatable(e, "this OUTPUT item"),
         }).ToList();
+    }
+
+    /// <summary>
+    /// OUTPUT … INTO t: the changed rows written to t by the same statement, through a
+    /// data-modifying CTE — <c>WITH sql2pg_output (c1, …) AS (dml RETURNING …) INSERT INTO t (…)
+    /// SELECT c1, … FROM sql2pg_output</c>. The statement's own CTEs move up beside it.
+    /// </summary>
+    private PgStatement OutputInto(PgStatement dml, OutputIntoClause? into, ExpressionContext c)
+    {
+        if (into is null)
+            return dml;
+        var table = TargetOf(into.IntoTable, c);
+        var (inner, ctes, returning) = dml switch
+        {
+            PgInsert i => ((PgStatement)(i with { With = [] }), i.With, i.Returning),
+            PgUpdate u => (u with { With = [] }, u.With, u.Returning),
+            PgDelete d => (d with { With = [] }, d.With, d.Returning),
+            PgMerge m => (m with { With = [] }, m.With, m.Returning),
+            _ => throw ExpressionTranslator.Untranslatable(into, "OUTPUT … INTO here", DiagnosticCodes.OutputInto),
+        };
+        var columns = into.IntoTableColumns.Select(col => Column(table, col.MultiPartIdentifier.Identifiers[^1].Value)).ToList();
+        bool star = returning.Any(t => t.Star);
+        List<string> names = star ? [] : Enumerable.Range(1, returning.Count).Select(k => $"c{k}").ToList();
+        var rows = new PgSelect
+        {
+            Targets = star ? [PgTarget.All()] : names.Select(n => new PgTarget(new PgColumnRef(n))).ToList(),
+            From = [new PgTableRef(new PgName("", "sql2pg_output"))],
+        };
+        return new PgInsert(table.Name, columns, rows) { With = [.. ctes, new PgCte("sql2pg_output", names, new PgModifyingQuery(inner))] };
+    }
+
+    // ---- TRUNCATE ----
+
+    /// <summary>TRUNCATE TABLE also restarts the table's identity, as SQL Server's does.</summary>
+    private PgStatement Truncate(TruncateTableStatement t, ExpressionContext c)
+    {
+        if (t.PartitionRanges.Count > 0)
+            throw ExpressionTranslator.Untranslatable(t, "TRUNCATE TABLE … WITH (PARTITIONS …)");
+        var target = TargetOf(new NamedTableReference { SchemaObject = t.TableName }, c);
+        return new PgTruncate(target.Name, RestartIdentity: true);
+    }
+
+    /// <summary>A global temporary table (<c>##t</c>) is shared by every session; PostgreSQL has none.</summary>
+    internal static void GlobalTemp(TSqlFragment fragment, string written)
+    {
+        if (written.StartsWith("##", StringComparison.Ordinal))
+            throw ExpressionTranslator.Untranslatable(fragment,
+                $"The global temporary table {written}, which every session shares (PostgreSQL's temporary tables belong to one session; use a real table),",
+                DiagnosticCodes.GlobalTempTable);
     }
 
     // ---- INSERT ----
@@ -142,11 +196,11 @@ public sealed partial class QueryTranslator
                                      ?? throw ExpressionTranslator.Untranslatable(e, "INSERT … EXEC", DiagnosticCodes.InsertExec),
             var other => throw ExpressionTranslator.Untranslatable(other, "this INSERT source"),
         };
-        return new PgInsert(target.Name, source is null ? [] : columns.Select(col => Column(target, col)).ToList(), source)
+        return OutputInto(new PgInsert(target.Name, source is null ? [] : columns.Select(col => Column(target, col)).ToList(), source)
         {
             With = Ctes(statement.WithCtesAndXmlNamespaces, c, out _),
             Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, c),
-        };
+        }, spec.OutputIntoClause, c);
     }
 
     /// <summary>INSERT … SELECT: the selected values converted to the target columns' types.</summary>
@@ -285,11 +339,11 @@ public sealed partial class QueryTranslator
         var where = And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, uc) : null]);
         if (spec.WhereClause?.Cursor is not null)
             throw ExpressionTranslator.Untranslatable(spec.WhereClause, "WHERE CURRENT OF (cursors are procedural code)", DiagnosticCodes.ProceduralGlobal);
-        return new PgUpdate(target.Name, alias, set)
+        return OutputInto(new PgUpdate(target.Name, alias, set)
         {
             With = ctes, From = from, Where = where,
             Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, uc, scope),
-        };
+        }, spec.OutputIntoClause, cc);
     }
 
     /// <summary>When the UPDATE/DELETE target is an alias, the table it stands for in FROM.</summary>
@@ -354,12 +408,12 @@ public sealed partial class QueryTranslator
         var dc = cc.With(scope);
         if (spec.WhereClause?.Cursor is not null)
             throw ExpressionTranslator.Untranslatable(spec.WhereClause, "WHERE CURRENT OF (cursors are procedural code)", DiagnosticCodes.ProceduralGlobal);
-        return new PgDelete(target.Name, alias)
+        return OutputInto(new PgDelete(target.Name, alias)
         {
             With = ctes, Using = from,
             Where = And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, dc) : null]),
             Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, dc, scope),
-        };
+        }, spec.OutputIntoClause, cc);
     }
 
     // ---- MERGE ----
@@ -392,11 +446,11 @@ public sealed partial class QueryTranslator
                 InsertMergeAction ins => MergeInsert(ins, target, mc),
                 var other => throw ExpressionTranslator.Untranslatable(other, "this MERGE action"),
             })).ToList();
-        return new PgMerge(target.Name, target.Alias is null ? null : _names.Alias(target.Alias), source, _x.Boolean(spec.SearchCondition, mc), whens)
+        return OutputInto(new PgMerge(target.Name, target.Alias is null ? null : _names.Alias(target.Alias), source, _x.Boolean(spec.SearchCondition, mc), whens)
         {
             With = ctes,
             Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, mc, scope),
-        };
+        }, spec.OutputIntoClause, cc);
     }
 
     private PgMergeAction MergeInsert(InsertMergeAction ins, DmlTarget target, ExpressionContext c)

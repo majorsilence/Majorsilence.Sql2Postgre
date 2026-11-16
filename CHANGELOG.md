@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **Temp tables and table variables are converted.**
+  - `CREATE TABLE #t` and `SELECT … INTO #t` create a PostgreSQL temporary table `t`. Columns,
+    keys, `CHECK` constraints and indexes are kept, and `CREATE INDEX` and `DROP TABLE` on a temp
+    table are translated.
+  - A routine drops a temp table before creating it, and again when it ends or returns. A
+    procedure that returns refcursors keeps its temp tables, which the cursors still read.
+  - `DECLARE @t TABLE` is a temporary table `tv_<routine>_<name>`, or `tv_<name>` in a script.
+    It is created once at the start of the body, as T-SQL declares it once, and dropped when a
+    procedure or script batch ends. A function's is `ON COMMIT DROP`.
+  - A script batch that only uses table variables, temp tables and plain statements stays plain
+    SQL rather than a `DO` block, so its result sets reach the caller.
+  - `OUTPUT … INTO` a table, temp table or table variable becomes a data-modifying CTE with
+    `RETURNING`, and an `INSERT` that writes its rows. This works for INSERT, UPDATE, DELETE and
+    MERGE.
+  - `TRUNCATE TABLE` becomes `TRUNCATE TABLE … RESTART IDENTITY`.
+  - `OBJECT_ID('tempdb..#t')` becomes `to_regclass('pg_temp.t')`.
+  - `SCOPE_IDENTITY()` and `@@IDENTITY` follow inserts into temp tables and table variables.
+    - Fixed: an insert of rows into a table without an identity column now sets them to NULL,
+      as SQL Server does.
+    - Fixed: an `INSERT … SELECT` that inserts no rows now leaves them unchanged.
+  - Creating a temp table makes a procedure converted to a function `VOLATILE`. Reading one no
+    longer counts as immutable.
+  - New codes:
+    - S2P5030: a global temp table (`##t`).
+    - S2P5031: `ROLLBACK` in a routine with table variables, whose rows SQL Server keeps.
+    - S2P5032: a procedure calls one that creates a temp table of the same name.
+    - S2P5033: a `FOREIGN KEY` on a temp table is dropped, as SQL Server ignores it too.
+  - Temp tables and table variables are created by sql2pg and run twice in one session on both
+    engines with the same rows. (WP 3.5)
 - **Stored procedures are converted.**
   - A procedure becomes `CREATE PROCEDURE`. OUTPUT parameters are `INOUT … DEFAULT NULL`, and
     T-SQL defaults are kept.
