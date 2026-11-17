@@ -1,0 +1,51 @@
+Imports System.Data
+Imports System.Data.SqlClient
+
+Namespace Shop.Data
+
+    ' Reads and writes customers with plain ADO.NET.
+    Public NotInheritable Class CustomerRepository
+        Private ReadOnly _connectionString As String
+
+        Public Sub New(connectionString As String)
+            _connectionString = connectionString
+        End Sub
+
+        Public Function Names(minimumId As Integer) As List(Of String)
+            Dim result As New List(Of String)
+            Using connection As New SqlConnection(_connectionString)
+                connection.Open()
+                Using command As New SqlCommand("SELECT name FROM customer WHERE customer_id >= @id", connection)
+                    command.Parameters.Add(New SqlParameter("@id", SqlDbType.Int) With {.Value = minimumId})
+                    Using reader As SqlDataReader = command.ExecuteReader()
+                        While reader.Read()
+                            result.Add(reader.GetString(0))
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return result
+        End Function
+
+        Public Function TryAdd(code As String, name As String) As Boolean
+            Using connection As New SqlConnection(_connectionString)
+                connection.Open()
+                Dim command = connection.CreateCommand()
+                command.CommandText = "INSERT INTO customer (customer_code, name) VALUES (@code, @name)"
+                command.Parameters.Add("@code", sqldbtype.NVarChar, 20).Value = code
+                command.Parameters.Add(New SqlParameter With {.ParameterName = "@name", .SqlDbType = SqlDbType.NVarChar, .Value = name})
+                Try
+                    command.ExecuteNonQuery()
+                    Return True
+                Catch ex As SqlException When ex.Number = 2627
+                    Return False
+                Catch ex As SqlException
+                    If ex.Number <> 547 Then Throw
+                    Console.WriteLine(ex.Errors.Count)
+                    Return False
+                End Try
+            End Using
+        End Function
+    End Class
+
+End Namespace

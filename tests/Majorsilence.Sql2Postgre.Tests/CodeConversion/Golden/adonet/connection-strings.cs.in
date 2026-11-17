@@ -1,0 +1,11 @@
+using Microsoft.Data.SqlClient;
+
+static class Settings
+{
+    public const string Shop = "Server=tcp:db.example.com,1433;Initial Catalog=Shop;User ID=app;Password='p;w=1';Encrypt=True;TrustServerCertificate=True;Connect Timeout=30;MultipleActiveResultSets=True";
+    public const string Local = @"Data Source=.\SQLEXPRESS;Database=Shop;Integrated Security=SSPI;Application Name=shop-api";
+    public const string LocalDb = "Server=(localdb)\\MSSQLLocalDB;Database=Shop;Trusted_Connection=True;Max Pool Size=50";
+    public const string NotAConnectionString = "Server=yes; this is a sentence";
+
+    public static SqlConnection Open() => new SqlConnection("Data Source=localhost;Initial Catalog=Shop;User Id=sa;Password=x");
+}

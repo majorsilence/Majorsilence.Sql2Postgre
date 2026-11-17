@@ -1,0 +1,52 @@
+Imports System.Data
+Imports Npgsql
+Imports NpgsqlTypes
+
+Namespace Shop.Data
+
+    ' Reads and writes customers with plain ADO.NET.
+    Public NotInheritable Class CustomerRepository
+        Private ReadOnly _connectionString As String
+
+        Public Sub New(connectionString As String)
+            _connectionString = connectionString
+        End Sub
+
+        Public Function Names(minimumId As Integer) As List(Of String)
+            Dim result As New List(Of String)
+            Using connection As New NpgsqlConnection(_connectionString)
+                connection.Open()
+                Using command As New NpgsqlCommand("SELECT name FROM customer WHERE customer_id >= @id", connection)
+                    command.Parameters.Add(New NpgsqlParameter("@id", NpgsqlDbType.Integer) With {.Value = minimumId})
+                    Using reader As NpgsqlDataReader = command.ExecuteReader()
+                        While reader.Read()
+                            result.Add(reader.GetString(0))
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return result
+        End Function
+
+        Public Function TryAdd(code As String, name As String) As Boolean
+            Using connection As New NpgsqlConnection(_connectionString)
+                connection.Open()
+                Dim command = connection.CreateCommand()
+                command.CommandText = "INSERT INTO customer (customer_code, name) VALUES (@code, @name)"
+                command.Parameters.Add("@code", NpgsqlDbType.Varchar, 20).Value = code
+                command.Parameters.Add(New NpgsqlParameter With {.ParameterName = "@name", .NpgsqlDbType = NpgsqlDbType.Varchar, .Value = name})
+                Try
+                    command.ExecuteNonQuery()
+                    Return True
+                Catch ex As NpgsqlException When ex.SqlState = "23505"
+                    Return False
+                Catch ex As NpgsqlException
+                    If (ex.SqlState <> "23503" AndAlso ex.SqlState <> "23514") Then Throw
+                    Console.WriteLine(ex.Errors.Count)
+                    Return False
+                End Try
+            End Using
+        End Function
+    End Class
+
+End Namespace

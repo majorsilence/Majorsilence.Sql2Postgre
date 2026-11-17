@@ -1,0 +1,61 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using Microsoft.Data.SqlClient;
+
+namespace Shop.Data;
+
+// Reads and writes customers with plain ADO.NET.
+public sealed class CustomerRepository(string connectionString)
+{
+    public List<string> Names(int minimumId)
+    {
+        var names = new List<string>();
+        using var connection = new SqlConnection(connectionString);
+        connection.Open();
+        using var command = new SqlCommand("SELECT name FROM customer WHERE customer_id >= @id", connection);
+        command.Parameters.Add(new SqlParameter("@id", SqlDbType.Int) { Value = minimumId });
+        using SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+            names.Add(reader.GetString(0));
+        return names;
+    }
+
+    public bool TryAdd(string code, string name)
+    {
+        using var connection = new SqlConnection(connectionString);
+        connection.Open();
+        using SqlTransaction transaction = connection.BeginTransaction();
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO customer (customer_code, name) VALUES (@code, @name)";
+        var p = command.Parameters.Add("@code", SqlDbType.NVarChar, 20);
+        p.Value = code;
+        command.Parameters.AddWithValue("@name", name).SqlDbType = SqlDbType.NVarChar;
+        try
+        {
+            command.ExecuteNonQuery();
+            transaction.Commit();
+            return true;
+        }
+        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+        {
+            transaction.Rollback();
+            return false;
+        }
+        catch (SqlException ex)
+        {
+            if (ex.Number != 547)
+                throw;
+            Console.WriteLine($"constraint: {ex.Message} ({ex.Class})");
+            return false;
+        }
+    }
+
+    public static Microsoft.Data.SqlClient.SqlConnection Open(string connectionString)
+    {
+        var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+        connection.Open();
+        return connection;
+    }
+}

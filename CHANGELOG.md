@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`sql2pg code` converts ADO.NET.**
+  - SqlClient namespaces and types become Npgsql's, and `SqlDbType` becomes `NpgsqlDbType`
+    following the type mapper.
+  - `SqlException` becomes `NpgsqlException`, with known error numbers compared as SQLSTATEs.
+  - SQL Server connection strings become Npgsql's.
+  - What has no counterpart is reported: `SqlBulkCopy`, table-valued parameters, `SqlTypes`,
+    query notifications, `InfoMessage` (S2P8001–S2P8008).
+  - In C# and VB.NET. A sample program in each language prints the same on PostgreSQL after
+    conversion as on SQL Server before it. (WP A.2)
 - **`sql2pg code`: the start of the application code converter (Stage A).**
   - A new library, `Majorsilence.Sql2Postgre.CodeConversion`, parses C# and VB.NET with Roslyn.
     Rules record edits, and the edits are applied to the original text, so untouched code

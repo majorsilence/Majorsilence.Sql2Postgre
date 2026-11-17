@@ -348,6 +348,32 @@ public static class DiagnosticCodes
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";
 
+    // ---- 8xxx application code (sql2pg code) ----
+
+    /// <summary>SqlException becomes NpgsqlException: errors are identified by SQLSTATE, and messages differ.</summary>
+    public const string SqlExceptionToNpgsql = "S2P8001";
+
+    /// <summary>A SqlException member or error number with no Npgsql counterpart.</summary>
+    public const string SqlExceptionMember = "S2P8002";
+
+    /// <summary>A table-valued parameter (SqlDbType.Structured).</summary>
+    public const string TableValuedParameter = "S2P8003";
+
+    /// <summary>SqlBulkCopy: the Npgsql replacement (binary COPY) has a different shape.</summary>
+    public const string SqlBulkCopy = "S2P8004";
+
+    /// <summary>Integrated Security in a connection string: PostgreSQL signs in differently.</summary>
+    public const string IntegratedSecurity = "S2P8005";
+
+    /// <summary>Connection string keys with no Npgsql counterpart, or a SQL Server instance name.</summary>
+    public const string ConnectionStringKeyDropped = "S2P8006";
+
+    /// <summary>System.Data.SqlTypes values.</summary>
+    public const string SqlTypes = "S2P8007";
+
+    /// <summary>A SqlClient feature with no Npgsql counterpart (query notifications, InfoMessage, XML readers, …).</summary>
+    public const string SqlClientOnly = "S2P8008";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 

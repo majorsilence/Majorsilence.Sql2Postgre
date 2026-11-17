@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <None Include="Golden\**\*.tsql;Golden\**\*.pgsql;Golden\**\*.diag" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="CodeConversion\Golden\**\*.in;CodeConversion\Golden\**\*.out;CodeConversion\Golden\**\*.diag" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

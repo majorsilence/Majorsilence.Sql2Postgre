@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Postgres\Majorsilence.Sql2Postgre.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Data\Majorsilence.Sql2Postgre.Data.csproj" />
     <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.Compat\Majorsilence.Sql2Postgre.Compat.csproj" />
+    <ProjectReference Include="..\..\src\Majorsilence.Sql2Postgre.CodeConversion\Majorsilence.Sql2Postgre.CodeConversion.csproj" />
   </ItemGroup>
 
   <ItemGroup>

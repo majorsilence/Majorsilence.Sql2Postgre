@@ -867,6 +867,68 @@ The table has the same number of rows on both sides, but some values differ afte
 the documented transforms (rounding, UTC, NUL removal…). Compare the table's rows to find which;
 rows changed in SQL Server after the copy are the usual cause.
 
+## S2P8xxx — application code (`sql2pg code`)
+
+See [code-conversion.md](code-conversion.md) for what `sql2pg code` changes. These codes point
+at a line and column in a C# or VB.NET file.
+
+### S2P8001 SqlExceptionToNpgsql (Warning)
+
+`SqlException` becomes `NpgsqlException`. That is the base of `PostgresException`, so it also
+catches network and timeout errors, as `SqlException` did. Errors are identified by `SqlState`, a
+five-character SQLSTATE such as `23505`, not by `Number`. Comparisons with known numbers are
+rewritten (2627 and 2601 → 23505, 547 → 23503 or 23514, 515 → 23502, 1205 → 40P01, 8152 →
+22001, 8134 → 22012, 245 → 22P02, 50000 → P0001). Messages are PostgreSQL's, so code that parses
+or shows them may need a look.
+
+### S2P8002 SqlExceptionMember (Error)
+
+A `SqlException` member with no counterpart (`Errors`, `Class`, `LineNumber`, `Procedure`,
+`State`, `Server`), or an error number the converter cannot map. For example, -2 is a SqlClient
+timeout, which surfaces in Npgsql as an `NpgsqlException` with a `TimeoutException` inside.
+Test the SQLSTATE of the same PostgreSQL error (PostgreSQL manual, appendix A) or the exception
+type.
+
+### S2P8003 TableValuedParameter (Error)
+
+`SqlDbType.Structured`, a table-valued parameter. PostgreSQL has no table-valued parameters. Pass
+one array per column and `unnest` them in the SQL, or pass an array of a composite type.
+
+### S2P8004 SqlBulkCopy (Error)
+
+`SqlBulkCopy` has no Npgsql class of the same shape. The fast path is binary COPY:
+`connection.BeginBinaryImport("COPY t (a, b) FROM STDIN (FORMAT BINARY)")`, then `StartRow` and
+`Write` for each row, and `Complete`.
+
+### S2P8005 IntegratedSecurity (Warning)
+
+A connection string asks for Windows authentication (`Integrated Security`,
+`Trusted_Connection`). It is dropped. PostgreSQL signs in with a user name and password, or with
+Kerberos (GSSAPI) configured on the server. Add `Username` and `Password`, or set up GSSAPI.
+
+### S2P8006 ConnectionStringKeyDropped (Info)
+
+Connection string keys with no Npgsql counterpart are dropped: `MultipleActiveResultSets`,
+`TrustServerCertificate`, `MultiSubnetFailover`, `Packet Size`, `Workstation ID`, and the like.
+It is a Warning for a named instance (`server\instance`) or LocalDB, which PostgreSQL does not
+have: give the PostgreSQL server's port instead.
+
+### S2P8007 SqlTypes (Error)
+
+`System.Data.SqlTypes` values (`SqlString`, `SqlInt32`, …) and the readers that return them
+(`GetSqlString`, …) are SqlClient's. Use the plain .NET types, the plain getters and `IsDBNull`.
+
+### S2P8008 SqlClientOnly (Error)
+
+A SqlClient feature with no Npgsql counterpart:
+
+- `SqlDependency`: use LISTEN/NOTIFY with a trigger that calls `pg_notify`.
+- `InfoMessage`: PRINT/RAISERROR messages arrive through `NpgsqlConnection.Notice`.
+- `ExecuteXmlReader`: select the xml and read it as a string.
+- `SqlCredential` and access tokens: use a password provider.
+- `SqlDbType.Udt`.
+- Connection statistics.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

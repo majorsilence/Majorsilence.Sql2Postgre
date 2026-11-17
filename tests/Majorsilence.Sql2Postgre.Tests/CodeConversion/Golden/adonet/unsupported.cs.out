@@ -1,0 +1,22 @@
+using System.Data;
+using System.Data.SqlTypes;
+using Npgsql;
+using NpgsqlTypes;
+
+class Loader
+{
+    public void Load(NpgsqlConnection connection, DataTable rows)
+    {
+        using var bulk = new SqlBulkCopy(connection) { DestinationTableName = "dbo.item" };
+        bulk.WriteToServer(rows);
+
+        var command = new NpgsqlCommand("dbo.import_items", connection) { CommandType = CommandType.StoredProcedure };
+        command.Parameters.Add(new NpgsqlParameter("@items", SqlDbType.Structured) { Value = rows });
+        connection.InfoMessage += (_, e) => System.Console.WriteLine(e.Message);
+        using var reader = command.ExecuteReader();
+        SqlString name = reader.GetSqlString(0);
+        var xml = command.ExecuteXmlReader();
+    }
+
+    public bool IsTimeout(NpgsqlException ex) => ex.Number == -2;
+}

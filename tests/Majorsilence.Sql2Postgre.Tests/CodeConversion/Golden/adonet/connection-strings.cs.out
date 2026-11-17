@@ -1,0 +1,11 @@
+using Npgsql;
+
+static class Settings
+{
+    public const string Shop = "Host=db.example.com;Port=1433;Database=Shop;Username=app;Password='p;w=1';SSL Mode=Require;Timeout=30";
+    public const string Local = @"Host=localhost;Database=Shop;Application Name=shop-api";
+    public const string LocalDb = "Host=localhost;Database=Shop;Maximum Pool Size=50";
+    public const string NotAConnectionString = "Server=yes; this is a sentence";
+
+    public static NpgsqlConnection Open() => new NpgsqlConnection("Host=localhost;Database=Shop;Username=sa;Password=x");
+}

@@ -38,8 +38,55 @@ The rules are added work package by work package (Stage A in the
 | Area | Work package |
 |---|---|
 | Edit engine, input discovery, `sql2pg code` | A.1 (done) |
-| ADO.NET types, `SqlDbType`, exceptions, connection strings | A.2 |
+| ADO.NET types, `SqlDbType`, exceptions, connection strings | A.2 (done) |
 | SQL strings in code (ADO.NET, Dapper, EF Core raw SQL) | A.3 |
 | Stored procedure calls | A.4 |
 | Dapper and Dapper.Contrib | A.5 |
 | Entity Framework Core | A.6 |
+
+## ADO.NET
+
+In a file that imports `Microsoft.Data.SqlClient` or `System.Data.SqlClient`, or names their
+types in full:
+
+- **Namespaces and types.** The import becomes `Npgsql`, plus `NpgsqlTypes` when `NpgsqlDbType`
+  is used. These types are renamed:
+
+  | SqlClient | Npgsql |
+  |---|---|
+  | `SqlConnection` | `NpgsqlConnection` |
+  | `SqlCommand` | `NpgsqlCommand` |
+  | `SqlDataReader` | `NpgsqlDataReader` |
+  | `SqlParameter` | `NpgsqlParameter` |
+  | `SqlParameterCollection` | `NpgsqlParameterCollection` |
+  | `SqlTransaction` | `NpgsqlTransaction` |
+  | `SqlDataAdapter` | `NpgsqlDataAdapter` |
+  | `SqlCommandBuilder` | `NpgsqlCommandBuilder` |
+  | `SqlConnectionStringBuilder` | `NpgsqlConnectionStringBuilder` |
+  | `SqlClientFactory` | `NpgsqlFactory` |
+  | `SqlBatch` | `NpgsqlBatch` |
+  | `SqlBatchCommand` | `NpgsqlBatchCommand` |
+  | `SqlException` | `NpgsqlException` (S2P8001) |
+
+  Fully qualified names (`Microsoft.Data.SqlClient.SqlConnection`) are renamed too.
+- **SqlDbType.** `SqlDbType.X` becomes `NpgsqlDbType.Y` for the PostgreSQL type the schema
+  converter gives that SQL Server type. For example, `NVarChar` → `Varchar`, `Int` → `Integer`,
+  `Bit` → `Boolean`, `DateTime2` → `Timestamp`, `DateTimeOffset` → `TimestampTz`,
+  `UniqueIdentifier` → `Uuid`, `Decimal`/`Money` → `Numeric` and `VarBinary` → `Bytea`. The
+  `SqlDbType` property becomes `NpgsqlDbType`. `DbType` is provider-neutral and stays as it is.
+- **Errors.** `SqlException` becomes `NpgsqlException`. Comparisons of `.Number` with a known
+  SQL Server error number, on a caught exception, parameter or local, become SQLSTATE
+  comparisons: `ex.Number == 2627` → `ex.SqlState == "23505"`.
+- **Connection strings.** A string literal that is a SQL Server connection string (a server
+  key, and a database or credential key) is rewritten for Npgsql:
+  - `Server`/`Data Source` → `Host` and `Port` (from `host,port`);
+  - `Initial Catalog` → `Database`;
+  - `User ID` → `Username`;
+  - `Encrypt=True` → `SSL Mode=Require`;
+  - timeouts and pool sizes are kept;
+  - Windows authentication (S2P8005) and SQL Server-only keys (S2P8006) are dropped and
+    reported.
+
+  Connection strings in `appsettings.json` and `web.config` are not converted yet.
+- **Reported:** `SqlBulkCopy` (S2P8004), table-valued parameters (S2P8003), `SqlTypes` (S2P8007),
+  and SqlClient-only features (S2P8008).

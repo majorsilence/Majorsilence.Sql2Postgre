@@ -1,0 +1,62 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using Npgsql;
+using NpgsqlTypes;
+
+namespace Shop.Data;
+
+// Reads and writes customers with plain ADO.NET.
+public sealed class CustomerRepository(string connectionString)
+{
+    public List<string> Names(int minimumId)
+    {
+        var names = new List<string>();
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+        using var command = new NpgsqlCommand("SELECT name FROM customer WHERE customer_id >= @id", connection);
+        command.Parameters.Add(new NpgsqlParameter("@id", NpgsqlDbType.Integer) { Value = minimumId });
+        using NpgsqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+            names.Add(reader.GetString(0));
+        return names;
+    }
+
+    public bool TryAdd(string code, string name)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+        using NpgsqlTransaction transaction = connection.BeginTransaction();
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO customer (customer_code, name) VALUES (@code, @name)";
+        var p = command.Parameters.Add("@code", NpgsqlDbType.Varchar, 20);
+        p.Value = code;
+        command.Parameters.AddWithValue("@name", name).NpgsqlDbType = NpgsqlDbType.Varchar;
+        try
+        {
+            command.ExecuteNonQuery();
+            transaction.Commit();
+            return true;
+        }
+        catch (NpgsqlException ex) when (ex.SqlState == "23505" || ex.SqlState == "23505")
+        {
+            transaction.Rollback();
+            return false;
+        }
+        catch (NpgsqlException ex)
+        {
+            if (ex.SqlState != "23503" && ex.SqlState != "23514")
+                throw;
+            Console.WriteLine($"constraint: {ex.Message} ({ex.Class})");
+            return false;
+        }
+    }
+
+    public static Npgsql.NpgsqlConnection Open(string connectionString)
+    {
+        var connection = new Npgsql.NpgsqlConnection(connectionString);
+        connection.Open();
+        return connection;
+    }
+}

@@ -1,0 +1,21 @@
+using System.Data;
+using System.Data.SqlTypes;
+using Microsoft.Data.SqlClient;
+
+class Loader
+{
+    public void Load(SqlConnection connection, DataTable rows)
+    {
+        using var bulk = new SqlBulkCopy(connection) { DestinationTableName = "dbo.item" };
+        bulk.WriteToServer(rows);
+
+        var command = new SqlCommand("dbo.import_items", connection) { CommandType = CommandType.StoredProcedure };
+        command.Parameters.Add(new SqlParameter("@items", SqlDbType.Structured) { Value = rows });
+        connection.InfoMessage += (_, e) => System.Console.WriteLine(e.Message);
+        using var reader = command.ExecuteReader();
+        SqlString name = reader.GetSqlString(0);
+        var xml = command.ExecuteXmlReader();
+    }
+
+    public bool IsTimeout(SqlException ex) => ex.Number == -2;
+}
