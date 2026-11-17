@@ -21,6 +21,9 @@ public sealed record RelationInfo(ObjectName? Name, ObjectKind Kind, IReadOnlyLi
 /// <summary>The target of an xml method: the expression, and whether it is a <c>nodes()</c> row (an element) rather than a document.</summary>
 public sealed record XmlTarget(Microsoft.SqlServer.TransactSql.ScriptDom.ScalarExpression Expression, bool IsNode);
 
+/// <summary>A hierarchyid method call: its lower-case name and target (null for <c>hierarchyid::GetRoot()</c> and <c>Parse</c>).</summary>
+public sealed record HierarchyIdCall(string Method, Microsoft.SqlServer.TransactSql.ScriptDom.ScalarExpression? Target);
+
 /// <param name="Name">The name without its <c>@</c>.</param>
 public sealed record ParameterInfo(string Name, SqlServerType Type, bool IsOutput, bool HasDefault);
 

@@ -21,6 +21,8 @@ public sealed partial class ExpressionTranslator
             return XmlValueSubquery(sq.QueryExpression, c);
         if (model.XmlMethodTarget(f, c.Scope, c.Schema) is { } xml)
             return XmlMethod(f, xml, c);
+        if (model.HierarchyIdCall(f, c.Scope, c.Schema) is { } hierarchy)
+            return HierarchyIdMethod(f, hierarchy, c);
         if (f.CallTarget is not null)
             throw MethodCall(f);
 
@@ -445,7 +447,7 @@ public sealed partial class ExpressionTranslator
     public PgSortKey SortKey(ExpressionWithSortOrder o, ExpressionContext c)
     {
         bool descending = o.SortOrder == SortOrder.Descending;
-        return new PgSortKey(Scalar(o.Expression, c), descending, NullsFirst: !descending);
+        return new PgSortKey(Ordered(o.Expression, c), descending, NullsFirst: !descending);
     }
 
     // ---- dates ----

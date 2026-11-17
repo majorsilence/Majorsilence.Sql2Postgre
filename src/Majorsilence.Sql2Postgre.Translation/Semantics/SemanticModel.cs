@@ -253,6 +253,14 @@ public sealed partial class SemanticModel
     {
         if (XmlMethodTarget(f, scope, contextSchema) is not null)
             return XmlMethodType(f, contextSchema);
+        if (HierarchyIdCall(f, scope, contextSchema) is not null)
+            return f.FunctionName.Value.ToLowerInvariant() switch
+            {
+                "getlevel" => new SqlServerType("smallint"),
+                "isdescendantof" => new SqlServerType("bit"),
+                "tostring" => new SqlServerType("nvarchar", 4000),
+                _ => new SqlServerType("hierarchyid"),
+            };
         if (f.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: { Count: 1 } parts })
         {
             var routine = Routine(new ObjectName(parts[0].Value, f.FunctionName.Value));
@@ -286,6 +294,29 @@ public sealed partial class SemanticModel
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// A hierarchyid method (<c>GetLevel</c>, <c>GetAncestor</c>, <c>IsDescendantOf</c>,
+    /// <c>GetDescendant</c>, <c>GetReparentedValue</c>, <c>ToString</c>) on a hierarchyid column or
+    /// expression, or <c>hierarchyid::GetRoot()</c> / <c>hierarchyid::Parse(…)</c>; null otherwise.
+    /// The target is null for the static two.
+    /// </summary>
+    public HierarchyIdCall? HierarchyIdCall(FunctionCall f, Scope scope, string? contextSchema)
+    {
+        string method = f.FunctionName.Value.ToLowerInvariant();
+        if (f.CallTarget is UserDefinedTypeCallTarget { SchemaObjectName.BaseIdentifier.Value: var type }
+            && type.Equals("hierarchyid", StringComparison.OrdinalIgnoreCase) && method is "getroot" or "parse")
+            return new HierarchyIdCall(method, null);
+        if (method is not ("getlevel" or "getancestor" or "isdescendantof" or "getdescendant" or "getreparentedvalue" or "tostring"))
+            return null;
+        return f.CallTarget switch
+        {
+            MultiPartIdentifierCallTarget mp when scope.ResolveColumn(mp.MultiPartIdentifier.Identifiers.Select(i => i.Value).ToList()) is { Column.Type.Name: "hierarchyid" }
+                => new HierarchyIdCall(method, new ColumnReferenceExpression { MultiPartIdentifier = mp.MultiPartIdentifier }),
+            ExpressionCallTarget e when TypeOf(e.Expression, scope, contextSchema)?.Name == "hierarchyid" => new HierarchyIdCall(method, e.Expression),
+            _ => null,
+        };
     }
 
     /// <summary>What an xml method returns: <c>value</c> its second argument's type, <c>exist</c> bit, <c>query</c> xml.</summary>

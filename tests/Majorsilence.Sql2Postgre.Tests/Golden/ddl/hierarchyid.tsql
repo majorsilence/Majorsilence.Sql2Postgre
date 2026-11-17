@@ -1,0 +1,26 @@
+CREATE TABLE dbo.Employee (EmployeeId int NOT NULL PRIMARY KEY, Name nvarchar(50) NOT NULL, OrganizationNode hierarchyid NULL,
+    OrganizationLevel AS OrganizationNode.GetLevel());
+GO
+CREATE INDEX IX_Employee_Node ON dbo.Employee (OrganizationNode);
+GO
+CREATE PROCEDURE dbo.Managers @id int AS
+BEGIN
+    WITH chain (EmployeeId, Node, Depth) AS (
+        SELECT EmployeeId, OrganizationNode, 0 FROM dbo.Employee WHERE EmployeeId = @id
+        UNION ALL
+        SELECT e.EmployeeId, e.OrganizationNode, chain.Depth + 1
+        FROM dbo.Employee e JOIN chain ON e.OrganizationNode = chain.Node.GetAncestor(1)
+    )
+    SELECT Depth, EmployeeId, Node.ToString() AS Node FROM chain ORDER BY Depth, Node;
+END;
+GO
+CREATE PROCEDURE dbo.Reports @boss hierarchyid AS
+BEGIN
+    SELECT EmployeeId, OrganizationNode.ToString() AS Node, OrganizationNode.IsDescendantOf(@boss) AS Under
+    FROM dbo.Employee
+    WHERE OrganizationNode > @boss AND OrganizationNode.GetLevel() <= @boss.GetLevel() + 2
+    ORDER BY OrganizationNode DESC;
+    SELECT hierarchyid::GetRoot().GetDescendant(NULL, NULL).ToString() AS FirstChild,
+        @boss.GetReparentedValue(hierarchyid::GetRoot(), CAST('/9/' AS hierarchyid)).ToString() AS Moved;
+END;
+GO

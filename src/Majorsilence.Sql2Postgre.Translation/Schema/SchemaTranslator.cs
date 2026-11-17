@@ -316,7 +316,12 @@ public sealed partial class SchemaTranslator
             else if (!computed.IsPersisted && keyed)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
                     $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it is indexed or part of a key, which PostgreSQL allows only for a STORED generated column."));
-            generated = new PgGenerated(result.Expression, computed.IsPersisted || keyed);
+            // PostgreSQL 18 allows no user-defined function, an mssql_compat helper included, in a VIRTUAL generated column.
+            bool usesHelper = result.CompatFunctions.Count > 0;
+            if (!computed.IsPersisted && !keyed && usesHelper && _options.TargetVersion >= 18)
+                diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
+                    $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it calls an mssql_compat helper ({string.Join(", ", result.CompatFunctions)}), which PostgreSQL allows only in a STORED generated column."));
+            generated = new PgGenerated(result.Expression, computed.IsPersisted || keyed || usesHelper);
         }
 
         PgExpr? defaultValue = null;

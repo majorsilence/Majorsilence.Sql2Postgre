@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **hierarchyid methods are translated** (WP 4.4):
+  - New `mssql_compat` helpers over the text form: `GetLevel`, `GetAncestor`, `IsDescendantOf`,
+    `GetDescendant`, `GetReparentedValue`.
+  - `ToString`, `Parse` and `GetRoot` need no helper.
+  - `ORDER BY` a hierarchyid and `<`/`>` between two use `hierarchyid_key`, which sorts
+    depth-first as SQL Server does.
+  - A computed column that calls a helper is `STORED`: PostgreSQL 18 allows no user-defined
+    function in a `VIRTUAL` one.
+  - AdventureWorks' two recursive manager procedures, its org chart and its document tree are
+    new agreement queries, all at 100.
 - **xml methods are translated** over `XMLTABLE` (WP 4.3):
   - `value()`, `exist()` and `query()` in expressions, and `nodes()` in `CROSS`/`OUTER APPLY`.
   - Paths are turned into XPath 1.0. `declare namespace` becomes `XMLNAMESPACES`, and a default

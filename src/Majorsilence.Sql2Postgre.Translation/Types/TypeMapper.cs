@@ -87,7 +87,7 @@ public sealed class TypeMapper(ConversionOptions options, NameMapper names)
             "sql_variant" => new TypeMapping("text", [Warn(DiagnosticCodes.SqlVariantAsText,
                 "sql_variant holds values of many types; it is kept as their text form, and the original type of each value is lost.")]),
             "hierarchyid" => new TypeMapping("text", [Warn(DiagnosticCodes.HierarchyIdAsText,
-                "hierarchyid is kept as its string form (/1/2/); its methods (GetAncestor, IsDescendantOf, …) must be rewritten.")]),
+                "hierarchyid is kept as its string form (/1/2/): its methods become mssql_compat helpers and ORDER BY uses mssql_compat.hierarchyid_key, but an index, MIN/MAX and an ORDER BY on an output alias order the text.")]),
             "geography" or "geometry" => Spatial(type.Name, owner),
             "vector" => Vector(type, owner),
             _ => new TypeMapping("text", [new Diagnostic(DiagnosticCodes.UnknownType, Severity.Error, owner,

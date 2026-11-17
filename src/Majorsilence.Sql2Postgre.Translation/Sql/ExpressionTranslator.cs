@@ -259,6 +259,8 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             BooleanComparisonType.NotGreaterThan => "<=",
             _ => throw Untranslatable(cmp, "this comparison"),
         };
+        if (op is "<" or ">" or "<=" or ">=" && TypeOf(cmp.FirstExpression, c)?.Name == "hierarchyid" && TypeOf(cmp.SecondExpression, c)?.Name == "hierarchyid")
+            return new PgBinary(op, Ordered(cmp.FirstExpression, c), Ordered(cmp.SecondExpression, c));
         return new PgBinary(op, Compared(cmp.FirstExpression, cmp.SecondExpression, c), Compared(cmp.SecondExpression, cmp.FirstExpression, c));
     }
 

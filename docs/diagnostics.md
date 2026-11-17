@@ -123,9 +123,17 @@ value's string form; the type of each value is lost.
 
 ### S2P1105 HierarchyIdAsText (Warning)
 
-`hierarchyid` becomes `text` holding its string form (`/1/3/`). Ordering by the text is not
-the same as ordering by the hierarchy, and its methods (`GetAncestor`, `IsDescendantOf`,
-`GetLevel`, …) must be rewritten.
+`hierarchyid` becomes `text` holding its string form (`/1/3/`). Its methods become `mssql_compat`
+helpers over that text: `GetLevel`, `GetAncestor`, `IsDescendantOf`, `GetDescendant` and
+`GetReparentedValue`. `ToString`, `Parse` and a cast are the text itself, and `GetRoot` is `/`.
+A computed column that calls one is `STORED`, since PostgreSQL 18 allows no user-defined function
+in a `VIRTUAL` one.
+
+`ORDER BY` a hierarchyid and `<`/`>` between two compare `mssql_compat.hierarchyid_key(x)`,
+which orders depth-first as SQL Server does (a parent before its children, `/2/` before `/10/`,
+dotted and negative labels in their places). Some things still order the text: an index on the
+column, `MIN`/`MAX`, and `ORDER BY` on an output alias of one. Use the key there if the order
+matters.
 
 ### S2P1106 SpatialAsWkb (Warning)
 
