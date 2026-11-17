@@ -1,0 +1,51 @@
+CREATE TABLE dbo.Customer (CustomerId int NOT NULL CONSTRAINT PK_Customer PRIMARY KEY, Name nvarchar(50) NOT NULL);
+GO
+CREATE TABLE dbo.Sale (SaleId int NOT NULL, CustomerId int NOT NULL, Amount decimal(10, 2) NOT NULL,
+    Region nvarchar(10) NULL CONSTRAINT DF_Sale_Region DEFAULT N'north',
+    CONSTRAINT PK_Sale PRIMARY KEY (SaleId),
+    CONSTRAINT FK_Sale_Customer FOREIGN KEY (CustomerId) REFERENCES dbo.Customer (CustomerId),
+    CONSTRAINT CK_Sale_Amount CHECK (Amount >= 0));
+GO
+CREATE INDEX IX_Sale_Customer ON dbo.Sale (CustomerId) INCLUDE (Amount);
+GO
+CREATE INDEX IX_Sale_Region ON dbo.Sale (Region) WHERE Region IS NOT NULL;
+GO
+CREATE PROCEDURE dbo.LoadSales AS
+BEGIN
+    SET NOCOUNT ON;
+    ALTER TABLE dbo.Sale NOCHECK CONSTRAINT FK_Sale_Customer;
+    ALTER TABLE dbo.Sale DROP CONSTRAINT PK_Sale;
+    DROP INDEX IF EXISTS IX_Sale_Customer ON dbo.Sale;
+    DROP INDEX dbo.Sale.IX_Sale_Region;
+    ALTER INDEX IX_Sale_Region ON dbo.Sale DISABLE;
+    INSERT INTO dbo.Sale (SaleId, CustomerId, Amount) VALUES (100, 1, 5.00);
+    ALTER TABLE dbo.Sale ADD CONSTRAINT PK_Sale PRIMARY KEY NONCLUSTERED (SaleId);
+    ALTER TABLE dbo.Sale WITH CHECK CHECK CONSTRAINT FK_Sale_Customer;
+    CREATE NONCLUSTERED INDEX IX_Sale_Customer ON dbo.Sale (CustomerId DESC) INCLUDE (Amount) WITH (DROP_EXISTING = ON, SORT_IN_TEMPDB = ON);
+    ALTER INDEX IX_Sale_Region ON dbo.Sale REBUILD;
+    ALTER INDEX IX_Sale_Customer ON dbo.Sale REORGANIZE;
+    ALTER INDEX ALL ON dbo.Sale REBUILD;
+END;
+GO
+CREATE PROCEDURE dbo.ReshapeSales AS
+BEGIN
+    CREATE CLUSTERED COLUMNSTORE INDEX CCX_Sale ON dbo.Sale;
+    ALTER INDEX CCX_Sale ON dbo.Sale REORGANIZE WITH (COMPRESS_ALL_ROW_GROUPS = ON);
+    ALTER TABLE dbo.Sale NOCHECK CONSTRAINT ALL;
+    ALTER TABLE dbo.Sale CHECK CONSTRAINT ALL;
+    ALTER TABLE dbo.Sale ADD Note nvarchar(100) NULL, Rank int NOT NULL CONSTRAINT DF_Sale_Rank DEFAULT 0;
+    ALTER TABLE dbo.Sale WITH NOCHECK ADD CONSTRAINT CK_Sale_Rank CHECK (Rank >= 0);
+    ALTER TABLE dbo.Sale NOCHECK CONSTRAINT CK_Sale_Rank;
+    ALTER TABLE dbo.Sale CHECK CONSTRAINT CK_Sale_Rank;
+    ALTER TABLE dbo.Sale ALTER COLUMN Note nvarchar(200) NOT NULL;
+    ALTER TABLE dbo.Sale DROP CONSTRAINT DF_Sale_Region;
+    ALTER TABLE dbo.Sale ADD CONSTRAINT DF_Sale_Region DEFAULT N'south' FOR Region;
+    ALTER TABLE dbo.Sale DROP CONSTRAINT CK_Sale_Rank, COLUMN Note, Rank;
+    ALTER TABLE dbo.Sale NOCHECK CONSTRAINT FK_Unknown;
+    DROP PROCEDURE IF EXISTS dbo.LoadSales;
+    DROP FUNCTION dbo.Helper;
+    ALTER TABLE dbo.Sale SET (LOCK_ESCALATION = AUTO);
+    ALTER TABLE dbo.Sale SET (SYSTEM_VERSIONING = OFF);
+    ALTER TABLE dbo.Sale DROP PERIOD FOR SYSTEM_TIME;
+END;
+GO

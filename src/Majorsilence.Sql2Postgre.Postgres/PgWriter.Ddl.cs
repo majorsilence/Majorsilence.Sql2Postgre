@@ -29,6 +29,15 @@ public static partial class PgWriter
         PgAddCheck c => $"ALTER TABLE {c.Table.Qualified} ADD CONSTRAINT {Q(c.Name)} CHECK ({Expression(c.Condition)}){(c.NotValid ? " NOT VALID" : "")};\n",
         PgAddForeignKey fk => ForeignKey(fk),
         PgCreateIndex i => Index(i),
+        PgDropIndex d => $"DROP INDEX {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
+        PgReindex r => $"REINDEX {(r.Table ? "TABLE" : "INDEX")} {r.Name.Qualified};\n",
+        PgDropConstraint d => $"ALTER TABLE {d.Table.Qualified} DROP CONSTRAINT {(d.IfExists ? "IF EXISTS " : "")}{Q(d.Name)};\n",
+        PgValidateConstraint v => $"ALTER TABLE {v.Table.Qualified} VALIDATE CONSTRAINT {Q(v.Name)};\n",
+        PgAddColumn a => $"ALTER TABLE {a.Table.Qualified} ADD COLUMN {Column(a.Column, targetVersion)};\n",
+        PgDropColumn d => $"ALTER TABLE {d.Table.Qualified} DROP COLUMN {(d.IfExists ? "IF EXISTS " : "")}{Q(d.Column)};\n",
+        PgAlterColumn a => AlterColumn(a),
+        PgSetDefault d => $"ALTER TABLE {d.Table.Qualified} ALTER COLUMN {Q(d.Column)} {(d.Default is null ? "DROP DEFAULT" : "SET DEFAULT " + Expression(d.Default))};\n",
+        PgDropRoutine d => $"DROP ROUTINE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
         PgDropTable d => $"DROP TABLE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
@@ -38,6 +47,15 @@ public static partial class PgWriter
         PgLineComment c =>string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
         _ => DmlOrQuery(statement),
     };
+
+    private static string AlterColumn(PgAlterColumn a)
+    {
+        string column = Q(a.Column);
+        var actions = new List<string> { $"ALTER COLUMN {column} TYPE {a.Type} USING {column}::{a.Type}" };
+        if (a.NotNull is { } notNull)
+            actions.Add($"ALTER COLUMN {column} {(notNull ? "SET" : "DROP")} NOT NULL");
+        return $"ALTER TABLE {a.Table.Qualified}\n{string.Join(",\n", actions.Select(x => Indent + x))};\n";
+    }
 
     private static string Q(string identifier) => NameMapper.Quote(identifier);
 

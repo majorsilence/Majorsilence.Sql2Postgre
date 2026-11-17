@@ -82,6 +82,36 @@ public sealed record PgIndexKey(string Column, bool Descending = false);
 public sealed record PgCreateIndex(string Name, PgName Table, IReadOnlyList<PgIndexKey> Keys, IReadOnlyList<string> Include,
     bool Unique = false, PgExpr? Where = null, string? Method = null) : PgStatement;
 
+/// <summary><c>DROP INDEX [IF EXISTS] schema.name</c>.</summary>
+public sealed record PgDropIndex(PgName Name, bool IfExists) : PgStatement;
+
+/// <summary><c>REINDEX INDEX name</c>, or <c>REINDEX TABLE name</c> when <paramref name="Table"/> is set.</summary>
+public sealed record PgReindex(PgName Name, bool Table = false) : PgStatement;
+
+/// <summary><c>ALTER TABLE t DROP CONSTRAINT [IF EXISTS] name</c>.</summary>
+public sealed record PgDropConstraint(PgName Table, string Name, bool IfExists = true) : PgStatement;
+
+/// <summary><c>ALTER TABLE t VALIDATE CONSTRAINT name</c>.</summary>
+public sealed record PgValidateConstraint(PgName Table, string Name) : PgStatement;
+
+/// <summary><c>ALTER TABLE t ADD COLUMN …</c>.</summary>
+public sealed record PgAddColumn(PgName Table, PgColumnDef Column) : PgStatement;
+
+/// <summary><c>ALTER TABLE t DROP COLUMN [IF EXISTS] c</c>.</summary>
+public sealed record PgDropColumn(PgName Table, string Column, bool IfExists = false) : PgStatement;
+
+/// <summary>
+/// <c>ALTER TABLE t ALTER COLUMN c TYPE type USING c::type</c>, then <c>SET</c> or <c>DROP NOT
+/// NULL</c> when <paramref name="NotNull"/> is given.
+/// </summary>
+public sealed record PgAlterColumn(PgName Table, string Column, string Type, bool? NotNull) : PgStatement;
+
+/// <summary><c>ALTER TABLE t ALTER COLUMN c SET DEFAULT expr</c>, or <c>DROP DEFAULT</c> when <paramref name="Default"/> is null.</summary>
+public sealed record PgSetDefault(PgName Table, string Column, PgExpr? Default) : PgStatement;
+
+/// <summary><c>DROP ROUTINE [IF EXISTS] name</c>: a procedure or a function (sql2pg never overloads a name).</summary>
+public sealed record PgDropRoutine(PgName Name, bool IfExists) : PgStatement;
+
 /// <summary>
 /// The original T-SQL of something that could not be translated, kept in the output as a block
 /// comment headed by its diagnostic code, at the place the translation would have gone.

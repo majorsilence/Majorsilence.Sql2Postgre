@@ -13,7 +13,7 @@ public sealed record ScanResult(string Database, int PostgresVersion,
     IReadOnlyList<string> ApplyFailures, IReadOnlyList<string> CopyFailures, IReadOnlyList<string> VerifyFailures,
     long RowsCopied)
 {
-    /// <summary>What is left untranslated in code (S2P0206 and S2P5060), by the start of each message.</summary>
+    /// <summary>What is left untranslated in code (S2P0206, S2P5060 and S2P5070), by the start of each message.</summary>
     public IReadOnlyDictionary<string, int> Untranslated { get; init; } = new Dictionary<string, int>();
 
     public bool Clean => ApplyFailures.Count == 0 && CopyFailures.Count == 0 && VerifyFailures.Count == 0;
@@ -42,6 +42,7 @@ public class CompileScanTests
             Assert.That(result.ApplyFailures, Is.Empty, "objects that are not Manual must apply");
             Assert.That(result.CopyFailures, Is.Empty, "every table must copy");
             Assert.That(result.VerifyFailures, Is.Empty, "every table must verify");
+            Assert.That(result.DiagnosticsByCode.Keys, Has.None.StartsWith(DiagnosticCodes.InternalError), "no internal errors (S2P9001)");
         });
     }
 
@@ -85,7 +86,7 @@ public class CompileScanTests
 
         int.TryParse(Engines.PostgresVersion, out int pg);
         var untranslated = conversion.Objects.SelectMany(o => o.Diagnostics)
-            .Where(d => d.Code is DiagnosticCodes.ProceduralStatement or DiagnosticCodes.DynamicSqlUntranslatable)
+            .Where(d => d.Code is DiagnosticCodes.ProceduralStatement or DiagnosticCodes.DynamicSqlUntranslatable or DiagnosticCodes.DdlInRoutine)
             .GroupBy(d => $"{d.Code} {Kind(d.Message)}").OrderByDescending(g => g.Count()).ToDictionary(g => g.Key, g => g.Count());
         return new ScanResult(entry.Database, pg, statuses, diagnostics, applyFailures,
             copy.Tables.Where(t => t.Error is not null).Select(t => $"{t.Target}: {t.Error}").ToList(),

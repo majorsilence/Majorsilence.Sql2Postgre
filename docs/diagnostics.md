@@ -760,12 +760,73 @@ means. If it is not, split the TRY.
 
 ### S2P5070 DdlInRoutine (Error)
 
-A procedure, function or trigger runs DDL: `CREATE`, `ALTER` or `DROP` of a table, index,
-constraint, procedure or trigger, or `ALTER TABLE … SET (SYSTEM_VERSIONING = …)`. Load procedures
-often drop and re-create indexes, or disable constraints, around a bulk load. The DDL names
-SQL Server objects with SQL Server options, so it stays as a comment. Rewrite it for PostgreSQL
-(`DROP INDEX`/`CREATE INDEX`, `ALTER TABLE … DISABLE TRIGGER`), or move it out of the routine.
-Temp tables are not affected: their DDL is translated. In an ad-hoc script, DDL is S2P0205.
+A procedure, function or trigger runs DDL that is not translated. That covers:
+
+- `ALTER TABLE … SET (…)`, `ADD`/`DROP PERIOD FOR SYSTEM_TIME`, and `SWITCH`;
+- `CREATE`/`DROP` of a table, view or trigger;
+- `ALTER INDEX … DISABLE` of an index the source model does not have;
+- `NOCHECK`/`CHECK CONSTRAINT` of a constraint the routine neither added nor the model has;
+- an unnamed constraint, and a column with a computed value or inline constraints;
+- any other `CREATE`, `ALTER` or `DROP`.
+
+Rewrite the statement for PostgreSQL, or move it out of the routine; it stays as a comment.
+
+Index, constraint and column changes on real tables, and dropping procedures and functions, are
+translated (S2P5071 to S2P5074). Temp tables are not affected: their DDL is translated. In an
+ad-hoc script, DDL is S2P0205.
+
+### S2P5071 IndexDdlInRoutine (Info)
+
+Index DDL in a routine was translated:
+
+- `CREATE INDEX` names the index, table and columns as the schema converter does. `CLUSTERED`,
+  the filegroup or partition scheme, and `WITH` options are dropped. `DROP_EXISTING = ON`
+  becomes a `DROP INDEX IF EXISTS` first.
+- `DROP INDEX ix ON t` and `DROP INDEX t.ix` become `DROP INDEX schema.ix`, since PostgreSQL index
+  names are per schema.
+- `ALTER INDEX … REBUILD` creates the index from its definition in the source model when the index
+  is missing (`DISABLE` dropped it), and is `REINDEX INDEX` otherwise.
+- `ALTER INDEX … REORGANIZE` is `REINDEX INDEX`, which rebuilds the whole index (PostgreSQL has no
+  lighter form). `ALTER INDEX ALL … REBUILD|REORGANIZE` is `REINDEX TABLE`.
+- DDL on an index PostgreSQL does not have (a columnstore, xml or full-text index, S2P2003) is
+  dropped.
+
+### S2P5072 IndexDisabled (Warning)
+
+`ALTER INDEX … DISABLE` drops the index: PostgreSQL cannot disable one. A later
+`ALTER INDEX … REBUILD`, in the same routine or another, creates it again from its definition. If
+the code disables an index to stop it being used rather than to speed up a load, the index is
+gone until then.
+
+### S2P5073 ConstraintDisabled (Warning)
+
+PostgreSQL cannot switch a constraint off, so:
+
+- `ALTER TABLE t NOCHECK CONSTRAINT c` (or `ALL`: the table's foreign keys and checks) becomes
+  `ALTER TABLE t DROP CONSTRAINT IF EXISTS c`.
+- `CHECK CONSTRAINT c` adds the constraint back `NOT VALID` when it is missing. Like SQL Server,
+  this leaves the rows loaded in between unchecked (`is_not_trusted`). Under `WITH CHECK CHECK
+  CONSTRAINT`, `VALIDATE CONSTRAINT` then checks them.
+
+The definition comes from the source model, or from an `ADD CONSTRAINT` earlier in the routine.
+Both statements work whichever routine runs the other. While the constraint is off, PostgreSQL
+has no constraint at all; SQL Server keeps a disabled one.
+
+### S2P5074 SchemaChangeInRoutine (Warning)
+
+The routine changes the schema at run time:
+
+- `ALTER TABLE … ADD` of columns (type, NOT NULL, default, identity) and of named primary key,
+  unique, foreign key, check and default constraints (`WITH NOCHECK` → `NOT VALID`);
+- `DROP COLUMN` and `DROP CONSTRAINT` (a default constraint becomes `ALTER COLUMN … DROP
+  DEFAULT`);
+- `ALTER COLUMN` (`TYPE … USING`, then `SET`/`DROP NOT NULL`: SQL Server makes the column nullable
+  unless NOT NULL is given);
+- `DROP PROCEDURE` and `DROP FUNCTION`, which become `DROP ROUTINE`, since a procedure may have
+  become a function.
+
+The converted schema, and the code converted against it, do not see these changes until the
+routine runs. Statements in other routines that use an added column may need a second look.
 
 ## S2P6xxx — triggers
 

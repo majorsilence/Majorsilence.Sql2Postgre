@@ -325,6 +325,18 @@ public static class DiagnosticCodes
     /// <summary>DDL (CREATE, ALTER, DROP) inside a procedure, function or trigger.</summary>
     public const string DdlInRoutine = "S2P5070";
 
+    /// <summary>Index DDL in a routine (CREATE, DROP, ALTER INDEX … REBUILD/REORGANIZE) translated; options SQL Server's alone are dropped.</summary>
+    public const string IndexDdlInRoutine = "S2P5071";
+
+    /// <summary>ALTER INDEX … DISABLE: PostgreSQL cannot disable an index, so it is dropped (REBUILD creates it again).</summary>
+    public const string IndexDisabled = "S2P5072";
+
+    /// <summary>ALTER TABLE … NOCHECK/CHECK CONSTRAINT: PostgreSQL cannot disable a constraint, so it is dropped and added back.</summary>
+    public const string ConstraintDisabled = "S2P5073";
+
+    /// <summary>A routine changes the schema at run time (columns, constraints, routines).</summary>
+    public const string SchemaChangeInRoutine = "S2P5074";
+
     // ---- 6xxx triggers ----
 
     /// <summary>UPDATE(column) in an UPDATE trigger is true: PostgreSQL does not tell a trigger which columns the statement set.</summary>

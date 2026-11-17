@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **DDL inside routines is translated** for the forms load procedures use (WP 4.1):
+  - `CREATE INDEX`, `DROP INDEX`, and `ALTER INDEX … REBUILD|REORGANIZE|DISABLE`. REBUILD creates
+    a dropped (disabled) index again from its definition (S2P5071, S2P5072).
+  - `NOCHECK`/`CHECK CONSTRAINT` drop the constraint and add it back `NOT VALID`, with
+    `VALIDATE` under `WITH CHECK` (S2P5073).
+  - `ALTER TABLE … ADD`/`DROP` of columns and constraints, and `ALTER COLUMN`.
+  - `DROP PROCEDURE`/`DROP FUNCTION` become `DROP ROUTINE` (S2P5074).
+  - Columnstore, xml and full-text index DDL is reported as S2P2003, as in the schema.
+  - The corpus scan lists S2P5070 by statement, and fails on any internal error (S2P9001).
 - Plan: Stage 4 broken into WPs 4.1–4.16, ordered by what the corpus scan and BACKLOG still
   report. `.dacpac` input and PostgreSQL 15–17 wait for the maintainer.
 - **`sql2pg code` converts Entity Framework Core.**

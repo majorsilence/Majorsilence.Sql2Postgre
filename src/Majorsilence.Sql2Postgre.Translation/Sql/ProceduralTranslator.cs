@@ -106,6 +106,15 @@ public sealed partial class ProceduralTranslator
         /// <summary>Table variables (<c>@t</c>) and the temporary tables they are kept in.</summary>
         public Dictionary<string, string> TableVariables { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Indexes (<c>table.index</c>) whose CREATE was not translated: later DDL on them is dropped.</summary>
+        public HashSet<string> SkippedIndexes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Foreign keys and checks added by the body (by PostgreSQL name), NOT VALID, for a later CHECK CONSTRAINT.</summary>
+        public Dictionary<string, PgStatement> AddedConstraints { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Primary keys and unique constraints added by the body (<c>table.name</c>), named as indexes.</summary>
+        public HashSet<string> AddedKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>A table function's return table.</summary>
         public string? ReturnTable { get; set; }
 
@@ -439,6 +448,8 @@ public sealed partial class ProceduralTranslator
             case var ddl when IsDdl(ddl) && st.Signature.Kind == BodyKind.AnonymousBlock:
                 return [Untranslated(s, DiagnosticCodes.DdlInScript,
                     "DDL in an ad-hoc script: convert schema objects with 'sql2pg schema', which orders them and creates their keys and indexes.", st)];
+            case var ddl when IsDdl(ddl) && RoutineDdl(ddl, st) is { } translated:
+                return translated;
             case var ddl when IsDdl(ddl):
                 return [Untranslated(s, DiagnosticCodes.DdlInRoutine,
                     $"DDL inside a routine ({DdlKind(ddl)}) is not translated: its names, options and effects are SQL Server's. Rewrite it for PostgreSQL, or move it out of the routine.", st)];
