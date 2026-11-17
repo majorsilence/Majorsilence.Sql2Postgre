@@ -1,0 +1,24 @@
+Imports Microsoft.EntityFrameworkCore
+
+Public NotInheritable Class ShopContext
+    Inherits DbContext
+
+    Private ReadOnly _connectionString As String
+
+    Public Sub New(connectionString As String)
+        _connectionString = connectionString
+    End Sub
+
+    Protected Overrides Sub OnConfiguring(options As DbContextOptionsBuilder)
+        options.UseSqlServer(_connectionString)
+    End Sub
+
+    Protected Overrides Sub OnModelCreating(modelBuilder As ModelBuilder)
+        modelBuilder.Entity(Of Customer)().Property(Function(c) c.Name).HasColumnType("nvarchar(max)")
+    End Sub
+End Class
+
+Public Class Customer
+    Public Property CustomerId As Integer
+    Public Property Name As String
+End Class

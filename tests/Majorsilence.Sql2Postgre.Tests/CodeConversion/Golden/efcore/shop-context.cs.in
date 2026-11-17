@@ -1,0 +1,40 @@
+using System;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+
+public sealed class Person
+{
+    public int PersonId { get; set; }
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public decimal Balance { get; set; }
+}
+
+public sealed class ShopContext(string connectionString) : DbContext
+{
+    public DbSet<Person> People => Set<Person>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options) =>
+        options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure().UseCompatibilityLevel(120));
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.HasDefaultSchema("dbo");
+        modelBuilder.Entity<Person>(person =>
+        {
+            person.ToTable("Person", "Sales");
+            person.HasKey(p => p.PersonId).IsClustered(false);
+            person.Property(p => p.PersonId).UseIdentityColumn(1000, 1);
+            person.Property(p => p.FirstName).HasColumnType("nvarchar(50)");
+            person.Property(p => p.FullName).HasComputedColumnSql("[FirstName] + N' ' + [LastName]", stored: true);
+            person.Property(p => p.CreatedAt).HasColumnType("datetime2(3)").HasDefaultValueSql("getdate()");
+            person.Property(p => p.Balance).HasColumnType("money").HasDefaultValueSql("0");
+            person.HasIndex(p => p.LastName).IsClustered();
+        });
+    }
+
+    public int RecentDays(DateTime since) =>
+        People.Count(p => EF.Functions.DateDiffDay(p.CreatedAt, since) < 7);
+}

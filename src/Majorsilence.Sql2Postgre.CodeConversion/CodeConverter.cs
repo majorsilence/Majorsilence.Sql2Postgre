@@ -58,13 +58,15 @@ public sealed class CodeConverter(CodeConversionOptions options, IReadOnlyList<I
     private readonly IReadOnlyList<ICodeRule> _rules = rules ?? DefaultRules();
 
     /// <summary>The rules, in the order they run.</summary>
-    public static IReadOnlyList<ICodeRule> DefaultRules() => [new Rules.AdoNetRule(), new Rules.SqlInCodeRule(), new Rules.StoredProcedureRule(), new Rules.DapperContribRule()];
+    public static IReadOnlyList<ICodeRule> DefaultRules() => [new Rules.AdoNetRule(), new Rules.SqlInCodeRule(), new Rules.StoredProcedureRule(), new Rules.DapperContribRule(), new Rules.EfCoreRule()];
 
     public CodeConversionResult Convert(IEnumerable<(string RelativePath, string Text)> files) =>
         new(files.Select(f => ConvertFile(f.RelativePath, f.Text)).ToList());
 
     public CodeFileResult ConvertFile(string relativePath, string text)
     {
+        if (ProjectFiles.Is(relativePath))
+            return ProjectFiles.Convert(relativePath, text);
         var language = CodeLanguages.For(relativePath)
                        ?? throw new ArgumentException($"{relativePath} is not a .cs or .vb file.", nameof(relativePath));
         var context = new CodeContext(relativePath, language, language.Parse(text, relativePath), options);

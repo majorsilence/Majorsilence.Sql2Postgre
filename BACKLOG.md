@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP A.6 — Entity Framework Core (UseNpgsql, column types, default and computed SQL, identity, SQL Server-only calls removed, naming loop in OnModelCreating, EF.Functions and migrations reported, project file package swap); 4 golden files and a both-engines DbContext run. Stage A complete: the C# and VB samples give the same output on PostgreSQL after conversion.
 - WP A.5 — Dapper and Dapper.Contrib (`[Table]` names, S2P8030/S2P8031); 2 golden files and a both-engines run of Dapper queries, a procedure call and Contrib CRUD.
 - WP A.4 — stored procedure calls (ADO.NET and Dapper; function shape read with SELECT, procedures CALLed, parameters renamed); 2 golden files and a C#/VB both-engines run.
 - WP A.3 — SQL in code (`CommandTranslator`: parameters mode, INSERT … RETURNING for SCOPE_IDENTITY, int COUNT/SUM casts, EXEC with parameters; `SqlInCodeRule` for ADO.NET, Dapper and EF Core sites in C# and VB); 6 translator tests, 2 golden files, and a program run on both engines after migrating the database and converting the code.
@@ -353,3 +354,15 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   with lower-case converted names, PascalCase entities fail on Insert ("column "Name" … does
   not exist"). Contrib has no column mapping and no public way to add an adapter, so this is
   reported (S2P8030) rather than fixed.
+- WP A.6 departs from the plan in these places:
+  - `ToTable`, `HasColumnName`, `[Table]` and `[Column]` names are not rewritten one by one.
+    The naming loop at the end of OnModelCreating lower-cases every name the model ends up with,
+    explicit or by convention, so the explicit names need no edit.
+  - The loop also gives `DateTime` properties without a column type
+    `timestamp without time zone`. Npgsql's EF provider maps DateTime to timestamptz by default,
+    and writing an unspecified-kind DateTime there fails.
+  - `EF.Functions` methods are reported rather than mapped.
+- Established with EF Core 10 and Npgsql's provider 10.0.3: a model named in lower case through
+  `SetTableName`/`SetColumnName` at the end of OnModelCreating, with DateTime columns typed
+  `timestamp without time zone`, works against the schema sql2pg converts (query, insert with a
+  database default, update, FromSqlRaw, delete).

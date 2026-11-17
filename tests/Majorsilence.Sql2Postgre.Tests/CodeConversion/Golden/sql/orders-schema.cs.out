@@ -78,4 +78,31 @@ RETURNING CAST(trunc(CAST(order_id AS numeric)) AS bigint);";
 public sealed class ShopContext : DbContext
 {
     public DbSet<Customer> Customers => Set<Customer>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // sql2pg: name tables, columns, keys, indexes and foreign keys as the converted schema does.
+        foreach (var entity in modelBuilder.Model.GetEntityTypes())
+        {
+            if (entity.GetTableName() is { } table)
+                entity.SetTableName(table.ToLowerInvariant());
+            if (entity.GetSchema() is { } schema)
+                entity.SetSchema(schema.ToLowerInvariant() switch { "dbo" => "public", var other => other });
+            foreach (var property in entity.GetProperties())
+            {
+                property.SetColumnName(property.GetColumnName().ToLowerInvariant());
+                // datetime and datetime2 are converted to timestamp (without time zone); Npgsql's default for DateTime is timestamptz.
+                if ((property.ClrType == typeof(System.DateTime) || property.ClrType == typeof(System.DateTime?)) && property.FindAnnotation("Relational:ColumnType") is null)
+                    property.SetColumnType("timestamp without time zone");
+            }
+            foreach (var key in entity.GetKeys())
+                key.SetName(key.GetName()?.ToLowerInvariant());
+            foreach (var foreignKey in entity.GetForeignKeys())
+                foreignKey.SetConstraintName(foreignKey.GetConstraintName()?.ToLowerInvariant());
+            foreach (var index in entity.GetIndexes())
+                index.SetDatabaseName(index.GetDatabaseName()?.ToLowerInvariant());
+        }
+    }
 }

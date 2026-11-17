@@ -133,10 +133,10 @@ public class EngineTests
             string Rel(CodeFile f) => f.RelativePath.Replace('\\', '/');
             Assert.Multiple(() =>
             {
-                Assert.That(CodeInput.Discover(dir).Files.Select(Rel), Is.EqualTo(new[] { "App/Program.cs", "Lib/Data.vb" }));
-                Assert.That(CodeInput.Discover(Path.Combine(dir, "App", "App.csproj")).Files.Select(Rel), Is.EqualTo(new[] { "Program.cs" }));
-                Assert.That(CodeInput.Discover(Path.Combine(dir, "All.slnx")).Files.Select(Rel), Is.EqualTo(new[] { "App/Program.cs", "Lib/Data.vb" }));
-                Assert.That(CodeInput.Discover(Path.Combine(dir, "All.sln")).Files.Select(Rel), Is.EqualTo(new[] { "App/Program.cs" }));
+                Assert.That(CodeInput.Discover(dir).Files.Select(Rel), Is.EqualTo(new[] { "App/App.csproj", "App/Program.cs", "Lib/Data.vb", "Lib/Lib.vbproj" }));
+                Assert.That(CodeInput.Discover(Path.Combine(dir, "App", "App.csproj")).Files.Select(Rel), Is.EqualTo(new[] { "App.csproj", "Program.cs" }));
+                Assert.That(CodeInput.Discover(Path.Combine(dir, "All.slnx")).Files.Select(Rel), Is.EqualTo(new[] { "App/App.csproj", "App/Program.cs", "Lib/Data.vb", "Lib/Lib.vbproj" }));
+                Assert.That(CodeInput.Discover(Path.Combine(dir, "All.sln")).Files.Select(Rel), Is.EqualTo(new[] { "App/App.csproj", "App/Program.cs" }));
             });
         }
         finally

@@ -398,6 +398,21 @@ public static class DiagnosticCodes
     /// <summary>A Dapper.Contrib adapter hook (GetDatabaseType, ISqlAdapter).</summary>
     public const string DapperContribAdapter = "S2P8031";
 
+    /// <summary>An EF Core option or fluent call that is SQL Server's, removed or changed.</summary>
+    public const string EfSqlServerOnly = "S2P8040";
+
+    /// <summary>EF Core model names: OnModelCreating names everything as the converted schema does.</summary>
+    public const string EfNaming = "S2P8041";
+
+    /// <summary>An EF.Functions method or model feature (temporal tables) with no PostgreSQL counterpart.</summary>
+    public const string EfSqlServerFunction = "S2P8042";
+
+    /// <summary>EF Core migrations made for SQL Server: regenerate them.</summary>
+    public const string EfMigrations = "S2P8043";
+
+    /// <summary>A package reference in a project file changed (SqlClient or the EF Core SQL Server provider).</summary>
+    public const string PackageReplaced = "S2P8044";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 

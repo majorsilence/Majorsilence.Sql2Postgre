@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="7.0.20" />
+    <PackageVersion Include="Npgsql" Version="4.9.0" />
+  </ItemGroup>
+</Project>

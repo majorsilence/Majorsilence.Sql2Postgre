@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **`sql2pg code` converts Entity Framework Core.**
+  - `UseSqlServer` becomes `UseNpgsql`.
+  - Column types, default SQL and computed SQL go through the schema converter's mappings, and
+    identity columns and the default schema are converted.
+  - SQL Server-only fluent calls are removed (S2P8040).
+  - A loop in `OnModelCreating` names the model as the converted schema does, lower case with
+    `DateTime` as `timestamp` (S2P8041).
+  - SQL Server-only `EF.Functions`, temporal tables and migrations are reported (S2P8042,
+    S2P8043).
+  - Project files and `Directory.Packages.props` swap the SQL Server packages for Npgsql's at the
+    matching versions (S2P8044).
+  - A DbContext gives the same results on the migrated database after conversion. This
+    completes Stage A. (WP A.6)
 - **`sql2pg code` and Dapper.Contrib.**
   - `[Table]` names become the converted table names.
   - Entities whose property names differ from the converted columns are reported (S2P8030):

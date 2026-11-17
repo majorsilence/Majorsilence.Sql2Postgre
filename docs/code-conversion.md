@@ -11,7 +11,8 @@ sql2pg code <path> --in-place ...
 ```
 
 - `<path>` is a `.cs` or `.vb` file, a folder (searched recursively, skipping `bin/` and `obj/`), a
-  `.csproj`/`.vbproj` (the files under its folder), or a `.sln`/`.slnx` (its projects).
+  `.csproj`/`.vbproj` (the files under its folder), or a `.sln`/`.slnx` (its projects). Project
+  files and `Directory.Packages.props` are converted too (package references).
 - `--out` writes converted copies, mirroring the input tree. `--in-place` rewrites the files
   where they are. Keep them under version control, so the change can be reviewed as a diff.
 - `--source` is the same as for `sql2pg schema`. With it, the converter knows the tables, identity
@@ -42,7 +43,7 @@ The rules are added work package by work package (Stage A in the
 | SQL strings in code (ADO.NET, Dapper, EF Core raw SQL) | A.3 (done) |
 | Stored procedure calls | A.4 (done) |
 | Dapper and Dapper.Contrib | A.5 (done) |
-| Entity Framework Core | A.6 |
+| Entity Framework Core | A.6 (done) |
 
 ## ADO.NET
 
@@ -159,3 +160,32 @@ constructor or `CommandText`. In Dapper, a call with `commandType: CommandType.S
   - Contrib's PostgreSQL adapter quotes property names in `Insert`, `Update` and `Delete`, so an
     entity whose property names differ from the converted column names is reported (S2P8030).
     `Get` and `GetAll` work either way.
+
+## Entity Framework Core
+
+In files that import `Microsoft.EntityFrameworkCore`:
+
+- **The provider.** `UseSqlServer(…)` becomes `UseNpgsql(…)`. Options Npgsql also has
+  (`EnableRetryOnFailure`, `CommandTimeout`, `MigrationsAssembly`) stay; SQL Server-only ones
+  are removed (S2P8040).
+- **The model.**
+  - `HasColumnType("nvarchar(50)")` → `"varchar(50)"`, through the same type mapper as the schema.
+  - `HasDefaultValueSql("getdate()")` → `"localtimestamp"`, and `HasComputedColumnSql("[A] + ' ' + [B]")`
+    → `"a || ' ' || b"`, through the same expression translator.
+  - `HasDefaultSchema("dbo")` → `"public"`.
+  - `UseIdentityColumn` → `UseIdentityByDefaultColumn`.
+  - `IsClustered`, `IsMemoryOptimized` and other SQL Server-only calls are removed from their
+    chain (S2P8040).
+- **Names.** EF Core quotes names exactly as its model has them, so a loop added at the end of
+  `OnModelCreating` names every table, column, key, index and foreign key as the converted
+  schema does: lower case, with schemas through the schema map. It also gives `DateTime`
+  properties `timestamp without time zone`, the converted type of datetime and datetime2
+  (S2P8041).
+- **Raw SQL** (`FromSqlRaw`, `FromSql`, `ExecuteSql…`) is translated like other SQL in code.
+- **Reported:** `EF.Functions` methods only SQL Server translates, and temporal tables (S2P8042).
+  Migrations made for SQL Server are reported too; regenerate them instead of converting them
+  (S2P8043).
+- **Project files.** `Microsoft.EntityFrameworkCore.SqlServer` becomes
+  `Npgsql.EntityFrameworkCore.PostgreSQL` at the release for the same EF Core major, and
+  `Microsoft.Data.SqlClient` becomes `Npgsql`. This applies in `.csproj`, `.vbproj` and
+  `Directory.Packages.props` (S2P8044).

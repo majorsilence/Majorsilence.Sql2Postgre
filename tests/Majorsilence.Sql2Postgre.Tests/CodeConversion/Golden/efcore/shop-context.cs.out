@@ -1,0 +1,62 @@
+using System;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+
+public sealed class Person
+{
+    public int PersonId { get; set; }
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public decimal Balance { get; set; }
+}
+
+public sealed class ShopContext(string connectionString) : DbContext
+{
+    public DbSet<Person> People => Set<Person>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options) =>
+        options.UseNpgsql(connectionString, sql => sql.EnableRetryOnFailure());
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.HasDefaultSchema("public");
+        modelBuilder.Entity<Person>(person =>
+        {
+            person.ToTable("Person", "Sales");
+            person.HasKey(p => p.PersonId);
+            person.Property(p => p.PersonId).UseIdentityByDefaultColumn();
+            person.Property(p => p.FirstName).HasColumnType("varchar(50)");
+            person.Property(p => p.FullName).HasComputedColumnSql("firstname || ' ' || lastname", stored: true);
+            person.Property(p => p.CreatedAt).HasColumnType("timestamp(3)").HasDefaultValueSql("localtimestamp");
+            person.Property(p => p.Balance).HasColumnType("numeric(19,4)").HasDefaultValueSql("0");
+            person.HasIndex(p => p.LastName);
+        });
+
+        // sql2pg: name tables, columns, keys, indexes and foreign keys as the converted schema does.
+        foreach (var entity in modelBuilder.Model.GetEntityTypes())
+        {
+            if (entity.GetTableName() is { } table)
+                entity.SetTableName(table.ToLowerInvariant());
+            if (entity.GetSchema() is { } schema)
+                entity.SetSchema(schema.ToLowerInvariant() switch { "dbo" => "public", var other => other });
+            foreach (var property in entity.GetProperties())
+            {
+                property.SetColumnName(property.GetColumnName().ToLowerInvariant());
+                // datetime and datetime2 are converted to timestamp (without time zone); Npgsql's default for DateTime is timestamptz.
+                if ((property.ClrType == typeof(System.DateTime) || property.ClrType == typeof(System.DateTime?)) && property.FindAnnotation("Relational:ColumnType") is null)
+                    property.SetColumnType("timestamp without time zone");
+            }
+            foreach (var key in entity.GetKeys())
+                key.SetName(key.GetName()?.ToLowerInvariant());
+            foreach (var foreignKey in entity.GetForeignKeys())
+                foreignKey.SetConstraintName(foreignKey.GetConstraintName()?.ToLowerInvariant());
+            foreach (var index in entity.GetIndexes())
+                index.SetDatabaseName(index.GetDatabaseName()?.ToLowerInvariant());
+        }
+    }
+
+    public int RecentDays(DateTime since) =>
+        People.Count(p => EF.Functions.DateDiffDay(p.CreatedAt, since) < 7);
+}

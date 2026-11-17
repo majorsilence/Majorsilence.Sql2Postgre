@@ -992,6 +992,58 @@ The code sets `SqlMapperExtensions.GetDatabaseType` or implements `ISqlAdapter`.
 Contrib picks its PostgreSQL adapter from the connection's type name (`npgsqlconnection`), so an
 override that picks SQL Server's dialect must go.
 
+### S2P8040 EfSqlServerOnly (Info)
+
+An EF Core option or fluent call that is SQL Server's was removed or changed:
+
+- removed: `IsClustered`, `IsMemoryOptimized`, `HasFillFactor`, `IsSparse`, `UseCompatibilityLevel`,
+  `UseCollation`, the Azure service tier calls, and the like;
+- `UseAzureSql` becomes `UseNpgsql`;
+- `UseIdentityColumn(seed, increment)` becomes `UseIdentityByDefaultColumn()`. Add
+  `HasIdentityOptions` if the seed matters; the converted schema keeps it.
+
+It is a Warning when `HasDefaultValueSql` or `HasComputedColumnSql` could not be translated.
+
+### S2P8041 EfNaming (Info)
+
+EF Core quotes table and column names exactly as its model has them (`"Customers"."Name"`), and
+the converted schema's names are lower case (`NameStyle = Lower`). So the converter adds a loop
+at the end of `OnModelCreating` (or adds the method):
+
+- every table, column, key, index and foreign key is named in lower case;
+- schemas go through the schema map (`dbo` → `public`);
+- `DateTime` properties without a column type get `timestamp without time zone`, the type
+  datetime and datetime2 are converted to. Npgsql's default for `DateTime` is
+  `timestamp with time zone`.
+
+It is a Warning when the loop cannot be added (an expression-bodied OnModelCreating), and under
+`NameStyle = SnakeCase`, where the model needs a snake_case convention.
+
+### S2P8042 EfSqlServerFunction (Error)
+
+An `EF.Functions` method that only SQL Server translates (`DateDiffDay` and the other
+`DateDiff…` methods, `DateFromParts`, `IsDate`, `IsNumeric`, `DataLength`, full-text `Contains`
+and `FreeText`), or a temporal table (`IsTemporal`). Write the query with what Npgsql translates.
+For example, `(end.Date - start.Date).Days` for a day difference, or `EF.Functions.ILike` and
+`to_tsvector` search. Keep history with a trigger instead of a temporal table.
+
+### S2P8043 EfMigrations (Warning)
+
+An EF Core migration made for SQL Server (`SqlServer:` annotations, SQL Server column types). Do
+not convert migrations: regenerate them against PostgreSQL from the converted model
+(`dotnet ef migrations add`). The database itself comes from `sql2pg migrate`.
+
+### S2P8044 PackageReplaced (Info)
+
+A package reference changed in a project file or `Directory.Packages.props`:
+
+- `Microsoft.EntityFrameworkCore.SqlServer` → `Npgsql.EntityFrameworkCore.PostgreSQL`, at the
+  release for the same EF Core major (8 → 8.0.11, 9 → 9.0.4, 10 → 10.0.3);
+- the `.NetTopologySuite` plugin the same way;
+- `Microsoft.Data.SqlClient` and `System.Data.SqlClient` → `Npgsql`.
+
+It is a Warning when the matching version is not known (EF Core 7 and earlier): set it by hand.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

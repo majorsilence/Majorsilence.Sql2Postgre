@@ -38,12 +38,25 @@ public static partial class CodeInput
     private static IReadOnlyList<CodeFile> Project(string project, string root)
     {
         string extension = Path.GetExtension(project).Equals(".vbproj", StringComparison.OrdinalIgnoreCase) ? ".vb" : ".cs";
-        return Under(Path.GetDirectoryName(project)!, root).Where(f => f.FullPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase)).ToList();
+        var files = Under(Path.GetDirectoryName(project)!, root)
+            .Where(f => f.FullPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase) || f.FullPath.Equals(project, StringComparison.OrdinalIgnoreCase)).ToList();
+        // Central package versions apply to the project too.
+        for (var dir = new DirectoryInfo(Path.GetDirectoryName(project)!); dir is not null; dir = dir.Parent)
+        {
+            string props = Path.Combine(dir.FullName, "Directory.Packages.props");
+            if (File.Exists(props))
+            {
+                if (Path.GetRelativePath(root, props) is var rel && !rel.StartsWith("..", StringComparison.Ordinal))
+                    files.Add(new CodeFile(props, rel));
+                break;
+            }
+        }
+        return files;
     }
 
     private static List<CodeFile> Under(string folder, string root) =>
         Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
-            .Where(f => CodeLanguages.For(f) is not null && !InBuildOutput(Path.GetRelativePath(folder, f)))
+            .Where(f => (CodeLanguages.For(f) is not null || ProjectFiles.Is(f)) && !InBuildOutput(Path.GetRelativePath(folder, f)))
             .Order(StringComparer.Ordinal)
             .Select(f => new CodeFile(f, Path.GetRelativePath(root, f)))
             .ToList();

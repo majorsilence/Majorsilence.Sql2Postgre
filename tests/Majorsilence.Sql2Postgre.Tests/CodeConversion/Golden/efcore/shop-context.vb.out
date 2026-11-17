@@ -1,0 +1,45 @@
+Imports Microsoft.EntityFrameworkCore
+
+Public NotInheritable Class ShopContext
+    Inherits DbContext
+
+    Private ReadOnly _connectionString As String
+
+    Public Sub New(connectionString As String)
+        _connectionString = connectionString
+    End Sub
+
+    Protected Overrides Sub OnConfiguring(options As DbContextOptionsBuilder)
+        options.UseNpgsql(_connectionString)
+    End Sub
+
+    Protected Overrides Sub OnModelCreating(modelBuilder As ModelBuilder)
+        modelBuilder.Entity(Of Customer)().Property(Function(c) c.Name).HasColumnType("text")
+        ' sql2pg: name tables, columns, keys, indexes and foreign keys as the converted schema does.
+        For Each entity In modelBuilder.Model.GetEntityTypes()
+            If entity.GetTableName() IsNot Nothing Then entity.SetTableName(entity.GetTableName().ToLowerInvariant())
+            If entity.GetSchema() IsNot Nothing Then entity.SetSchema(If(entity.GetSchema().ToLowerInvariant() = "dbo", "public", entity.GetSchema().ToLowerInvariant()))
+            For Each [property] In entity.GetProperties()
+                [property].SetColumnName([property].GetColumnName().ToLowerInvariant())
+                ' datetime and datetime2 are converted to timestamp (without time zone); Npgsql's default for DateTime is timestamptz.
+                If ([property].ClrType Is GetType(Date) OrElse [property].ClrType Is GetType(Date?)) AndAlso [property].FindAnnotation("Relational:ColumnType") Is Nothing Then
+                    [property].SetColumnType("timestamp without time zone")
+                End If
+            Next
+            For Each key In entity.GetKeys()
+                key.SetName(key.GetName()?.ToLowerInvariant())
+            Next
+            For Each foreignKey In entity.GetForeignKeys()
+                foreignKey.SetConstraintName(foreignKey.GetConstraintName()?.ToLowerInvariant())
+            Next
+            For Each index In entity.GetIndexes()
+                index.SetDatabaseName(index.GetDatabaseName()?.ToLowerInvariant())
+            Next
+        Next
+    End Sub
+End Class
+
+Public Class Customer
+    Public Property CustomerId As Integer
+    Public Property Name As String
+End Class
