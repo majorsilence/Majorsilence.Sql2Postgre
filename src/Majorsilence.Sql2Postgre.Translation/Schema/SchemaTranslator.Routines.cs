@@ -180,9 +180,22 @@ public sealed partial class SchemaTranslator
         bool defaulted = false;
         foreach (var p in parameters)
         {
-            if (p.Modifier == ParameterModifier.ReadOnly)
-                throw new UntranslatableException(DiagnosticCodes.UnsupportedExpression, $"{p.VariableName.Value} is a table-valued parameter (READONLY).");
             string source = p.VariableName.Value.TrimStart('@');
+            if (p.Modifier == ParameterModifier.ReadOnly)
+            {
+                // A table-valued parameter: an array of the table type's composite type.
+                var tableType = p.DataType is UserDataTypeReference { Name: var typeName }
+                    ? new ObjectName(typeName.SchemaIdentifier?.Value ?? c.Schema ?? "dbo", typeName.BaseIdentifier.Value)
+                    : null;
+                if (tableType is null || model.UserType(tableType) is not { IsTableType: true })
+                    throw new UntranslatableException(DiagnosticCodes.UnsupportedExpression, $"{p.VariableName.Value} is READONLY but its type is not a table type in the source.");
+                string tvp = _names.Alias(source);
+                c.Report(DiagnosticCodes.TableTypeAsComposite, Severity.Info,
+                    $"{p.VariableName.Value} ({tableType}) becomes an array of the composite type {_names.Type(tableType).Qualified}: pass ARRAY[ROW(…)::type, …] from SQL, or an array of a mapped composite from Npgsql.");
+                pg.Add(new PgParameter(tvp, _names.Type(tableType).Qualified + "[]", "IN", defaulted ? PgLiteral.Null : null));
+                body.Add(new BodyParameter(source, tvp, new SqlServerType("table"), p.DataType) { TableType = tableType });
+                continue;
+            }
             string target = _names.Alias(source);
             if (reserved?.Contains(target) == true)
             {

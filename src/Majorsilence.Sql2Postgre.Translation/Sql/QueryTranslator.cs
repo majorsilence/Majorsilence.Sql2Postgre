@@ -256,6 +256,8 @@ public sealed partial class QueryTranslator
                 return Pivot(p, outer);
             case UnpivotedTableReference u:
                 return Unpivot(u, outer);
+            case VariableTableReference v when TableParameter?.Invoke(v.Variable.Name) is { } array:
+                return new PgFunctionRef("unnest", [array], _names.Alias(v.Alias?.Value ?? v.Variable.Name.TrimStart('@')), []);
             case VariableTableReference v when TableVariable?.Invoke(v.Variable.Name) is { } table:
                 return new PgTableRef(new PgName("", table), v.Alias is null ? null : _names.Alias(v.Alias.Value));
             case VariableTableReference v:
@@ -364,6 +366,12 @@ public sealed partial class QueryTranslator
     /// procedural translator declared (set by it).
     /// </summary>
     public Func<string, string?>? TableVariable { get; set; }
+
+    /// <summary>
+    /// The array a table-valued parameter (<c>@t</c>, READONLY) arrives in, read as
+    /// <c>unnest(array)</c>; null when the name is not one (set by the procedural translator).
+    /// </summary>
+    public Func<string, PgExpr?>? TableParameter { get; set; }
 
     /// <summary>
     /// The rows of <c>INSERT … EXEC procedure</c> as a query, or null when the procedure's rows

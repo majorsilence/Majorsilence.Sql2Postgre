@@ -126,7 +126,8 @@ public sealed class AdoNetRule : ICodeRule
             else if (member == "Structured")
             {
                 C.Report(DiagnosticCodes.TableValuedParameter, Severity.Error, access,
-                    "SqlDbType.Structured (a table-valued parameter) has no Npgsql counterpart: pass arrays (one per column, unnest in the SQL) or a composite-type array.");
+                    "SqlDbType.Structured (a table-valued parameter): the converted routine takes an array of the table type's composite type. "
+                    + "Map a class to it (dataSourceBuilder.MapComposite<T>(\"schema.type\")) and pass a T[] instead of the DataTable.");
                 Consumed.Add(access.Span);
             }
             else

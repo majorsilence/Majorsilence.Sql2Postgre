@@ -194,7 +194,7 @@ public sealed partial class SchemaTranslator
             fields.Add(new PgField(_names.Column(u.Name, c.Name), mapped.PgType));
         }
         diagnostics.Add(new Diagnostic(DiagnosticCodes.TableTypeAsComposite, Severity.Info, u.Name,
-            $"Table type {u.Name} becomes a composite type; procedures taking it as a table-valued parameter need manual review."));
+            $"Table type {u.Name} becomes a composite type; a table-valued parameter of it is an array of that type."));
         return new TranslatedObject(u.Name, ObjectKind.UserType, name.Qualified, Phase.Types,
             [new PgCreateCompositeType(name, fields)], diagnostics, []) { Extensions = extensions };
     }

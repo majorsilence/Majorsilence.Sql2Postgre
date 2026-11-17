@@ -361,6 +361,14 @@ public sealed partial class ProceduralTranslator
         {
             var p = callee.Parameters[i];
             given.TryGetValue(i, out var a);
+            if (!p.Output && a?.ParameterValue is VariableReference table && st.TableVariableTypes.TryGetValue(table.Name, out var tableType))
+            {
+                // PostgreSQL allows no subquery in a CALL argument: the array goes through a helper variable.
+                var array = ArgumentHelper(_names.Type(tableType).Qualified + "[]");
+                before.Add(new PgAssign(array, TableVariableArray(table.Name, tableType, st)));
+                args.Add(new PgCallArgument(array, p.PgName));
+                continue;
+            }
             if (!p.Output)
             {
                 if (!IsDefault(a))

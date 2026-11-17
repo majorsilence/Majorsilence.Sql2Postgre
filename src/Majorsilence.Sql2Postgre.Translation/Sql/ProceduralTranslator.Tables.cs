@@ -92,6 +92,70 @@ public sealed partial class ProceduralTranslator
     private IEnumerable<PgPlStatement> Drops(BodyState st) =>
         st.EndDrops.Select(name => (PgPlStatement)new PgSqlStatement(new PgDropTable(name)));
 
+    /// <summary>
+    /// A table-valued parameter (<c>@t dbo.TableType READONLY</c>) arrives as an array of the table
+    /// type's composite type; the body reads it as a table, <c>unnest(routine.t)</c> (the
+    /// <see cref="QueryTranslator.TableParameter"/> hook), with the table type's columns.
+    /// </summary>
+    private void TableParameters(BodyState st)
+    {
+        foreach (var p in st.Signature.Parameters.Where(p => p.TableType is not null))
+        {
+            var type = _model.UserType(p.TableType!) ?? throw new UntranslatableException(DiagnosticCodes.UnsupportedExpression,
+                $"@{p.SourceName}'s table type {p.TableType} is not in the source.");
+            st.C.Scope.DefineTable("@" + p.SourceName,
+                new RelationInfo(null, ObjectKind.Table, type.TableColumns.Select(c => new ColumnInfo(c.Name, c.Type)).ToList()));
+        }
+    }
+
+    /// <summary>The table type a DECLARE names (<c>DECLARE @t dbo.OrderList</c>), or null for any other type.</summary>
+    private UserType? TableTypeOf(DataTypeReference? dataType, ExpressionContext c) =>
+        dataType is UserDataTypeReference { Name: var name }
+        && _model.UserType(new ObjectName(name.SchemaIdentifier?.Value ?? c.Schema ?? "dbo", name.BaseIdentifier.Value)) is { IsTableType: true } type
+            ? type
+            : null;
+
+    /// <summary>
+    /// DECLARE @t dbo.TableType: a table variable with the type's columns, created at the start of
+    /// the body like DECLARE @t TABLE (…). Passed to a routine, it is an array of the type.
+    /// </summary>
+    private void DeclareTypedTable(DeclareVariableElement e, UserType type, BodyState st)
+    {
+        string variable = e.VariableName.Value;
+        if (st.TableVariables.ContainsKey(variable))
+            throw ExpressionTranslator.Untranslatable(e, $"{variable}, declared a second time,", DiagnosticCodes.VariableRedeclared);
+        var name = new PgName("", TableVariableName(variable, st));
+        var columns = type.TableColumns.Select(col => new PgColumnDef(_names.Column(type.Name, col.Name),
+            _x.Types.Map(col.Type with { UserTypeName = null }, st.C.Owner).PgType)).ToList();
+        bool function = st.Signature.Kind is BodyKind.ScalarFunction or BodyKind.TableFunction;
+        st.TableVariableSetup[variable] =
+        [
+            new PgSqlStatement(new PgDropTable(name)),
+            new PgSqlStatement(new PgCreateTable(name, columns) { Temporary = true, OnCommit = function ? "DROP" : null }),
+        ];
+        st.TableVariables[variable] = name.Name;
+        st.TableVariableTypes[variable] = type.Name;
+        st.C.Scope.DefineVariable(variable.TrimStart('@'), new SqlServerType("table"));
+        st.C.Scope.DefineTable(variable, new RelationInfo(null, ObjectKind.Table, type.TableColumns.Select(col => new ColumnInfo(col.Name, col.Type)).ToList()));
+        bool procedure = st.Signature.Kind is BodyKind.Procedure or BodyKind.Trigger && st.Signature.Shape is not { Cursors.Count: > 0 };
+        if ((procedure || st.Signature.Kind == BodyKind.AnonymousBlock) && !st.EndDrops.Contains(name))
+            st.EndDrops.Add(name);
+    }
+
+    /// <summary>A table variable of a table type passed to a routine: <c>ARRAY(SELECT ROW(…)::type FROM tv)</c>.</summary>
+    private PgExpr TableVariableArray(string variable, ObjectName typeName, BodyState st)
+    {
+        var type = _model.UserType(typeName)!;
+        var row = new PgCast(new PgFunctionCall("ROW", type.TableColumns.Select(col => (PgExpr)new PgColumnRef(_names.Column(type.Name, col.Name))).ToList()),
+            _names.Type(typeName).Qualified);
+        var rows = new PgSelect
+        {
+            Targets = [new PgTarget(row)],
+            From = [new PgTableRef(new PgName("", st.TableVariables[variable]))],
+        };
+        return new PgTemplate("ARRAY{0}", [new PgSubquery(rows)]);
+    }
+
     /// <summary>DECLARE @t TABLE (…): created at the start of the body, whatever the DECLARE's place.</summary>
     private IEnumerable<PgPlStatement> DeclareTable(DeclareTableVariableStatement d, BodyState st)
     {

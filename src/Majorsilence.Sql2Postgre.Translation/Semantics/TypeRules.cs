@@ -44,6 +44,9 @@ public static class TypeRules
     /// </summary>
     public static bool NeedsConversion(SqlServerType source, SqlServerType target)
     {
+        // A table variable passed to a table-valued parameter is an array of the table type already.
+        if (source.Name == "table")
+            return false;
         if (string.Equals(source.Name, target.Name, StringComparison.OrdinalIgnoreCase)
             && source.Length == target.Length && source.Precision == target.Precision && source.Scale == target.Scale)
             return false;

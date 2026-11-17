@@ -194,8 +194,16 @@ break it. It is created `NOT VALID`: PostgreSQL checks new and changed rows only
 
 ### S2P2005 TableTypeAsComposite (Info)
 
-A table type (`CREATE TYPE … AS TABLE`) becomes a composite type. Procedures that take it as a
-table-valued parameter need it passed as an array of that type; Stage 4 covers those.
+A table type (`CREATE TYPE … AS TABLE`) becomes a composite type. Its keys, indexes, defaults
+and identity are not kept; a caller supplies every value.
+
+- **A table-valued parameter** (`@t dbo.T READONLY`) becomes `t dbo.t[]`. The body reads `@t` as
+  `unnest(routine.t)`, in procedures and inline functions alike.
+- **A variable of the type** (`DECLARE @t dbo.T`) becomes a table variable with its columns. Passed
+  to a routine, it becomes `ARRAY(SELECT ROW(…)::type FROM it)`, through a helper variable for a
+  CALL, which allows no subquery.
+- **From other SQL**, pass `ARRAY[ROW(…)::type, …]`.
+- **From application code**, pass an array of a mapped composite (S2P8003).
 
 ### S2P2006 SequenceTypeChanged (Info)
 
@@ -1045,8 +1053,15 @@ type.
 
 ### S2P8003 TableValuedParameter (Error)
 
-`SqlDbType.Structured`, a table-valued parameter. PostgreSQL has no table-valued parameters. Pass
-one array per column and `unnest` them in the SQL, or pass an array of a composite type.
+`SqlDbType.Structured`, a table-valued parameter. The converted routine takes an array of the
+table type's composite type (S2P2005), so the code that builds the `DataTable` changes:
+
+1. Write a class with the type's columns, mapping each property to its field (`[PgName("orderreference")]`).
+2. Map the class to the type: `dataSourceBuilder.MapComposite<OrderRow>("public.orderlist")`.
+3. Pass a `OrderRow[]` as the parameter's value.
+
+From SQL, pass `ARRAY[ROW(…)::public.orderlist, …]`. The converter does not rewrite the
+`DataTable` code itself.
 
 ### S2P8004 SqlBulkCopy (Error)
 

@@ -1,0 +1,38 @@
+CREATE TYPE dbo.OrderList AS TABLE (OrderReference int NOT NULL PRIMARY KEY, CustomerId int NOT NULL, Comments nvarchar(100) NULL);
+GO
+CREATE TYPE dbo.OrderLineList AS TABLE (OrderReference int NOT NULL, ItemId int NOT NULL, Quantity int NOT NULL);
+GO
+CREATE TYPE dbo.IdList AS TABLE (Id int NOT NULL);
+GO
+CREATE TABLE dbo.Orders (OrderId int IDENTITY(1, 1) NOT NULL PRIMARY KEY, CustomerId int NOT NULL, Comments nvarchar(100) NULL, Reference int NOT NULL);
+GO
+CREATE TABLE dbo.OrderLines (OrderLineId int IDENTITY(1, 1) NOT NULL PRIMARY KEY, OrderId int NOT NULL, ItemId int NOT NULL, Quantity int NOT NULL);
+GO
+CREATE PROCEDURE dbo.InsertOrders @Orders dbo.OrderList READONLY, @Lines dbo.OrderLineList READONLY, @MinQuantity int = 1 AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM @Orders)
+        RETURN 0;
+    INSERT INTO dbo.Orders (CustomerId, Comments, Reference)
+    SELECT o.CustomerId, o.Comments, o.OrderReference FROM @Orders AS o ORDER BY o.OrderReference;
+    INSERT INTO dbo.OrderLines (OrderId, ItemId, Quantity)
+    SELECT d.OrderId, l.ItemId, l.Quantity
+    FROM @Lines AS l JOIN dbo.Orders AS d ON d.Reference = l.OrderReference
+    WHERE l.Quantity >= @MinQuantity;
+    SELECT MAX(OrderReference) AS LastReference, (SELECT COUNT(*) FROM @Lines) AS Lines FROM @Orders;
+    RETURN 1;
+END;
+GO
+CREATE FUNCTION dbo.OrdersFor(@Ids dbo.IdList READONLY) RETURNS TABLE AS
+RETURN SELECT o.OrderId, o.CustomerId FROM dbo.Orders AS o JOIN @Ids AS i ON i.Id = o.CustomerId;
+GO
+CREATE PROCEDURE dbo.PlaceOrder @customer int AS
+BEGIN
+    DECLARE @o dbo.OrderList, @l dbo.OrderLineList, @ids AS dbo.IdList;
+    INSERT INTO @o (OrderReference, CustomerId, Comments) VALUES (1, @customer, N'first');
+    INSERT INTO @l (OrderReference, ItemId, Quantity) VALUES (1, 10, 2), (1, 11, 1);
+    EXEC dbo.InsertOrders @Orders = @o, @Lines = @l;
+    INSERT INTO @ids (Id) VALUES (@customer);
+    SELECT OrderId FROM dbo.OrdersFor(@ids) ORDER BY OrderId;
+END;
+GO

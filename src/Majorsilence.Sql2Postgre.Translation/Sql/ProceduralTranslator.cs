@@ -25,7 +25,11 @@ public enum BodyKind
 /// <param name="SourceName">The T-SQL name without <c>@</c>.</param>
 /// <param name="PgName">The PostgreSQL parameter name.</param>
 /// <param name="DataType">The declared type, for conversions on assignment.</param>
-public sealed record BodyParameter(string SourceName, string PgName, SqlServerType Type, DataTypeReference? DataType);
+public sealed record BodyParameter(string SourceName, string PgName, SqlServerType Type, DataTypeReference? DataType)
+{
+    /// <summary>A table-valued parameter's (READONLY) table type: the parameter is an array of its composite type.</summary>
+    public ObjectName? TableType { get; init; }
+}
 
 /// <param name="RoutineName">The PostgreSQL routine name parameters are qualified with (null for a DO block).</param>
 /// <param name="ReturnType">A scalar function's return type.</param>
@@ -105,6 +109,9 @@ public sealed partial class ProceduralTranslator
 
         /// <summary>Table variables (<c>@t</c>) and the temporary tables they are kept in.</summary>
         public Dictionary<string, string> TableVariables { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Table variables declared with a table type (<c>DECLARE @t dbo.TableType</c>), by name: passed to a routine as an array of it.</summary>
+        public Dictionary<string, ObjectName> TableVariableTypes { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Indexes (<c>table.index</c>) whose CREATE was not translated: later DDL on them is dropped.</summary>
         public HashSet<string> SkippedIndexes { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -236,11 +243,15 @@ public sealed partial class ProceduralTranslator
     {
         foreach (var p in st.Signature.Parameters)
             st.C.Scope.DefineVariable(p.SourceName, p.Type);
-        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.PseudoTable, _x.ProceduralPredicate);
+        TableParameters(st);
+        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.PseudoTable, _x.ProceduralPredicate, _queries.TableParameter);
         _x.VariableWriter = name => VariableRef(name, st);
         _x.ProceduralGlobal = (name, c) => Global(name, c, st);
         _x.ProceduralFunction = (name, f, c) => Function(name, f, c, st);
         _queries.TableVariable = name => st.TableVariables.GetValueOrDefault(name);
+        _queries.TableParameter = name => st.Signature.Parameters.FirstOrDefault(p => p.TableType is not null && ("@" + p.SourceName).Equals(name, StringComparison.OrdinalIgnoreCase)) is { } tvp
+            ? new PgColumnRef(tvp.PgName, st.Signature.RoutineName)
+            : null;
         _queries.CursorVariable = id => st.Cursors.GetValueOrDefault(CursorKey(id))?.Variable;
         _queries.PseudoTable = st.Signature.Trigger is { } trigger ? (written, alias) => PseudoTable(written, alias, trigger) : null;
         _x.ProceduralPredicate = (e, c) => TriggerPredicate(e, c, st);
@@ -250,7 +261,7 @@ public sealed partial class ProceduralTranslator
         }
         finally
         {
-            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.PseudoTable, _x.ProceduralPredicate) = saved;
+            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.PseudoTable, _x.ProceduralPredicate, _queries.TableParameter) = saved;
         }
     }
 
@@ -486,6 +497,8 @@ public sealed partial class ProceduralTranslator
 
     private PgExpr VariableRef(string name, BodyState st)
     {
+        if (st.TableVariableTypes.TryGetValue("@" + name, out var tableType))
+            return TableVariableArray("@" + name, tableType, st);
         PgExpr reference = st.Variables.TryGetValue(name, out var v)
             ? new PgColumnRef(v.PgName)
             : st.Signature.Parameters.FirstOrDefault(p => string.Equals(p.SourceName, name, StringComparison.OrdinalIgnoreCase)) is { } p
@@ -513,6 +526,11 @@ public sealed partial class ProceduralTranslator
         foreach (var e in d.Declarations)
         {
             string name = e.VariableName.Value.TrimStart('@');
+            if (TableTypeOf(e.DataType, c) is { } tableType)
+            {
+                DeclareTypedTable(e, tableType, st);
+                continue;
+            }
             if (e.DataType is SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Cursor })
             {
                 CursorVariable(e.VariableName.Value, st);

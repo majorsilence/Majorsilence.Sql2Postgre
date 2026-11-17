@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Table-valued parameters** (WP 4.5):
+  - A `READONLY` table-type parameter becomes an array of the type's composite type, read as
+    `unnest(routine.param)` in procedures and inline functions.
+  - `DECLARE @t dbo.TableType` is a table variable with the type's columns, passed to a routine as
+    `ARRAY(SELECT ROW(…)::type …)`, through a helper variable in a CALL.
+  - S2P8003 in application code now says how to call the converted routine (an array of a mapped
+    composite); the `DataTable` code itself is not rewritten.
 - **hierarchyid methods are translated** (WP 4.4):
   - New `mssql_compat` helpers over the text form: `GetLevel`, `GetAncestor`, `IsDescendantOf`,
     `GetDescendant`, `GetReparentedValue`.

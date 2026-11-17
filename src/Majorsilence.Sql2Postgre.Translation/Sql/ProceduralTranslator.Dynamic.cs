@@ -235,13 +235,14 @@ public sealed partial class ProceduralTranslator
         foreach (var p in parameters)
             scope.DefineVariable(p.Name, p.Type);
         var inner = new ExpressionContext(scope, st.C.Schema, st.C.Owner);
-        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable);
+        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.TableParameter);
         _x.VariableWriter = name => parameters.ToList().FindIndex(p => p.Name.TrimStart('@').Equals(name.TrimStart('@'), StringComparison.OrdinalIgnoreCase)) is var k and >= 0
             ? new PgKeyword("$" + (k + 1))
             : throw DynamicUntranslatable(source, $"reading {name}, which the dynamic SQL does not declare");
         _x.ProceduralGlobal = null;
         _x.ProceduralFunction = null;
         _queries.TableVariable = null;
+        _queries.TableParameter = null;
         _queries.CursorVariable = null;
         try
         {
@@ -289,7 +290,7 @@ public sealed partial class ProceduralTranslator
         }
         finally
         {
-            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable) = saved;
+            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.TableParameter) = saved;
             // The markers stand for names and values not known until run time: no warnings about them.
             st.C.Diagnostics.AddRange(inner.Diagnostics.Where(d => !d.Message.Contains(MarkerPrefix, StringComparison.Ordinal)));
             st.C.CompatFunctions.UnionWith(inner.CompatFunctions);
