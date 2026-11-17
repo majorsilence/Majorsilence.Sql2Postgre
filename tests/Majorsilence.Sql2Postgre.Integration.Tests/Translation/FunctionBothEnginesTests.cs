@@ -297,6 +297,13 @@ public class FunctionBothEnginesTests
     [TestCase("DATEADD(month, 1, '2024-01-31')")]
     [TestCase("CONVERT(date, '20240229', 112)")]
     [TestCase("CONVERT(date, '29/02/2024', 103)")]
+    [TestCase("CONVERT(datetime, '2000-06-01', 101)")]
+    [TestCase("CONVERT(datetime, '06/01/2000', 101)")]
+    [TestCase("CONVERT(datetime, '2000-06-01 10:20:30', 103)")]
+    [TestCase("CONVERT(smalldatetime, '2000-6-13', 110)")]
+    [TestCase("CONVERT(date, '2000-06-01T10:20:30', 103)")]
+    [TestCase("CONVERT(datetime2, '2000-06-01T10:20:30', 101)")]
+    [TestCase("CONVERT(date, '20000601', 101)")]
     [TestCase("CAST(12.5 AS int)")]
     [TestCase("CAST($3.75 AS int)")]
     public Task Constants(string expression) =>

@@ -386,6 +386,8 @@ public sealed partial class QueryTranslator
 
     private PgAssignment Assignment(SetClause set, DmlTarget target, ExpressionContext c)
     {
+        if (set is FunctionCallSetClause { MutatorFunction.FunctionName.Value: var mutator } && mutator.Equals("modify", StringComparison.OrdinalIgnoreCase))
+            throw ExpressionTranslator.Untranslatable(set, "the xml modify() method (PostgreSQL's xml type has no update functions: build the new document instead)", DiagnosticCodes.XmlModify);
         if (set is not AssignmentSetClause a || a.Column is null)
             throw ExpressionTranslator.Untranslatable(set, "this SET clause");
         if (a.Variable is not null)

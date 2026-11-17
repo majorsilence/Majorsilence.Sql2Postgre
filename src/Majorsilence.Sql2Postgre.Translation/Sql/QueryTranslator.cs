@@ -245,7 +245,7 @@ public sealed partial class QueryTranslator
                     _names.Alias(v.Alias?.Value ?? "v"), v.Columns.Select(col => _names.Alias(col.Value)).ToList());
             case SchemaObjectFunctionTableReference f:
                 if (SemanticModel.IsXmlNodesCall(f.SchemaObject))
-                    throw ExpressionTranslator.Untranslatable(f, "the xml nodes() method");
+                    return _x.XmlNodes(f, c);
                 var routine = _model.ResolveRoutine(f.SchemaObject, c.Schema) ?? throw ExpressionTranslator.Untranslatable(f, "a table-valued function not in this database");
                 var arguments = _model.Routine(routine) is { } info ? _x.RoutineArguments(f.Parameters, info, c) : f.Parameters.Select(p => _x.Scalar(p, c)).ToList();
                 return new PgFunctionRef(_names.Routine(routine).Qualified, arguments,

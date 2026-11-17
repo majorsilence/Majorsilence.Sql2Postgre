@@ -1,0 +1,48 @@
+CREATE TABLE dbo.Candidate (CandidateId int NOT NULL PRIMARY KEY, Resume xml NULL, Contact xml NULL);
+GO
+CREATE TABLE dbo.Model (ModelId int NOT NULL PRIMARY KEY, Instructions xml NULL);
+GO
+CREATE VIEW dbo.vCandidate AS
+SELECT c.CandidateId
+    ,[Resume].ref.value(N'declare default element namespace "urn:resume";
+        (/Resume/Name/Name.First)[1]', 'nvarchar(30)') AS [Name.First]
+    ,[Resume].ref.value(N'declare default element namespace "urn:resume";
+        (Address/Addr.Type)[1]', 'nvarchar(30)') AS [Addr.Type]
+    ,[Resume].ref.[value](N'declare default element namespace "urn:resume"; Years[1]', 'integer') AS Years
+FROM dbo.Candidate c
+CROSS APPLY c.Resume.nodes(N'declare default element namespace "urn:resume"; /Resume') AS Resume(ref);
+GO
+CREATE VIEW dbo.vContact AS
+SELECT CandidateId
+    ,[ContactInfo].ref.value(N'declare namespace ci="urn:ci"; declare namespace act="urn:act";
+        (act:telephoneNumber)[1]/act:number', 'nvarchar(50)') AS Phone
+    ,LTRIM(RTRIM([ContactInfo].ref.value(N'declare namespace act="urn:act";
+        (act:eMail/act:SpecialInstructions/text())[1]', 'nvarchar(max)'))) AS Note
+FROM dbo.Candidate
+OUTER APPLY Contact.nodes('declare namespace ci="urn:ci"; /ci:AdditionalContactInfo') AS ContactInfo(ref)
+WHERE Contact IS NOT NULL;
+GO
+CREATE VIEW dbo.vSteps AS
+SELECT ModelId
+    ,[Instructions].value(N'declare default element namespace "urn:m"; (/root/text())[1]', 'nvarchar(max)') AS Intro
+    ,[Loc].ref.value('@LocationID[1]', 'int') AS LocationID
+    ,[Loc].ref.value('@LaborHours[1]', 'decimal(9, 4)') AS LaborHours
+    ,[Steps].ref.value('string(.)[1]', 'nvarchar(1024)') AS Step
+FROM dbo.Model
+CROSS APPLY [Instructions].nodes(N'declare default element namespace "urn:m"; /root/Location') Loc(ref)
+CROSS APPLY [Loc].ref.nodes('declare default element namespace "urn:m"; step') Steps(ref);
+GO
+CREATE PROCEDURE dbo.Search @phone nvarchar(20) AS
+BEGIN
+    SELECT CandidateId, Resume.query('declare default element namespace "urn:resume"; /Resume/Address') AS Addresses
+    FROM dbo.Candidate
+    WHERE Resume.exist('declare default element namespace "urn:resume"; /Resume/Address[Addr.Type = "Home" and Years > 2]') = 1
+        AND Contact.exist('declare namespace act="urn:act"; //act:number') <> 0;
+END;
+GO
+CREATE PROCEDURE dbo.Touch @id int AS
+BEGIN
+    UPDATE dbo.Candidate SET Resume.modify('insert <Seen/> as first into (/Resume)[1]') WHERE CandidateId = @id;
+    SELECT Resume.value('sql:variable("@id")', 'int') AS Echo FROM dbo.Candidate;
+END;
+GO

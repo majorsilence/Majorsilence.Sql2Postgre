@@ -251,6 +251,8 @@ public sealed partial class SemanticModel
 
     private SqlServerType? Function(FunctionCall f, Scope scope, string? contextSchema)
     {
+        if (XmlMethodTarget(f, scope, contextSchema) is not null)
+            return XmlMethodType(f, contextSchema);
         if (f.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: { Count: 1 } parts })
         {
             var routine = Routine(new ObjectName(parts[0].Value, f.FunctionName.Value));
@@ -261,6 +263,45 @@ public sealed partial class SemanticModel
         string name = f.FunctionName.Value.ToUpperInvariant();
         var args = f.Parameters.Select(p => TypeOf(p, scope, contextSchema)).ToList();
         return TypeRules.BuiltinReturnType(name, args);
+    }
+
+    /// <summary>
+    /// The column or expression an xml method (<c>value</c>, <c>query</c>, <c>exist</c>,
+    /// <c>modify</c>) is called on, when <paramref name="f"/> is one and its target is typed xml;
+    /// otherwise null. A resolved column also says whether it is a <c>nodes()</c> row.
+    /// </summary>
+    public XmlTarget? XmlMethodTarget(FunctionCall f, Scope scope, string? contextSchema)
+    {
+        if (f.FunctionName.Value.ToLowerInvariant() is not ("value" or "query" or "exist" or "modify"))
+            return null;
+        switch (f.CallTarget)
+        {
+            case MultiPartIdentifierCallTarget mp:
+                var parts = mp.MultiPartIdentifier.Identifiers.Select(i => i.Value).ToList();
+                return scope.ResolveColumn(parts) is { Column.Type.Name: "xml" } resolved
+                    ? new XmlTarget(new ColumnReferenceExpression { MultiPartIdentifier = mp.MultiPartIdentifier }, resolved.Binding.Relation.XmlNodes)
+                    : null;
+            case ExpressionCallTarget e when TypeOf(e.Expression, scope, contextSchema)?.Name == "xml":
+                return new XmlTarget(e.Expression, false);
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>What an xml method returns: <c>value</c> its second argument's type, <c>exist</c> bit, <c>query</c> xml.</summary>
+    private SqlServerType? XmlMethodType(FunctionCall f, string? contextSchema) => f.FunctionName.Value.ToLowerInvariant() switch
+    {
+        "exist" => new SqlServerType("bit"),
+        "query" => new SqlServerType("xml"),
+        "value" when f.Parameters is [_, StringLiteral type] && ParseDataType(type.Value) is { } dataType => TypeOf(dataType, contextSchema),
+        _ => null,
+    };
+
+    /// <summary>A data type written as text (an xml <c>value()</c> method's second argument).</summary>
+    public static DataTypeReference? ParseDataType(string text)
+    {
+        var dataType = new TSql160Parser(initialQuotedIdentifiers: true).ParseScalarDataType(new StringReader(text), out var errors);
+        return errors.Count == 0 ? dataType : null;
     }
 
     private SqlServerType? ResolveSequenceType(SchemaObjectName name, string? contextSchema) =>
@@ -314,6 +355,10 @@ public sealed partial class SemanticModel
                 var first = v.RowValues.FirstOrDefault()?.ColumnValues ?? [];
                 scope.Bind(new Binding(v.Alias?.Value ?? "", new RelationInfo(null, ObjectKind.Table,
                     v.Columns.Select((c, i) => new ColumnInfo(c.Value, i < first.Count ? TypeOf(first[i], scope, contextSchema) : null)).ToList())));
+                break;
+            case SchemaObjectFunctionTableReference f when IsXmlNodesCall(f.SchemaObject):
+                scope.Bind(new Binding(f.Alias?.Value ?? "nodes",
+                    new RelationInfo(null, ObjectKind.Function, f.Columns.Select(col => new ColumnInfo(col.Value, new SqlServerType("xml"))).ToList()) { XmlNodes = true }));
                 break;
             case SchemaObjectFunctionTableReference f:
                 var routine = ResolveRoutine(f.SchemaObject, contextSchema) is { } rn ? Routine(rn) : null;
@@ -553,12 +598,12 @@ public sealed partial class SemanticModel
 public sealed partial class SemanticModel
 {
     /// <summary>
-    /// <c>CROSS APPLY t.doc.nodes('…')</c>: the xml <c>nodes()</c> method on a column, which
-    /// ScriptDom reads as a three-part function name in FROM.
+    /// <c>CROSS APPLY t.doc.nodes('…')</c> or <c>doc.nodes('…')</c>: the xml <c>nodes()</c> method
+    /// on a column, which ScriptDom reads as a function name in FROM.
     /// </summary>
     public static bool IsXmlNodesCall(SchemaObjectName name) =>
         string.Equals(name.BaseIdentifier.Value, "nodes", StringComparison.OrdinalIgnoreCase)
-        && name.SchemaIdentifier is not null && name.DatabaseIdentifier is not null;
+        && name.SchemaIdentifier is not null;
 }
 
 /// <summary>Compares object names as SQL Server does under its usual collations: case-insensitively.</summary>

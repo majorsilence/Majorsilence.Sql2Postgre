@@ -78,9 +78,10 @@ public sealed partial class ExpressionTranslator
             string pattern = StylePattern(style, targetType)
                 ?? throw Untranslatable(convert, $"CONVERT style {style}", DiagnosticCodes.ConvertStyleUnsupported);
             var value = Text(convert.Parameter, c);
-            return targetType.Name == "date"
+            PgExpr styled = targetType.Name == "date"
                 ? new PgFunctionCall("to_date", [value, PgLiteral.String(pattern)])
                 : new PgCast(new PgFunctionCall("to_timestamp", [value, PgLiteral.String(pattern)]), target);
+            return IsoUnderStyle(value, style, pattern, targetType, target, styled);
         }
 
         // money and float to text: 1 adds thousands separators, 2 four decimal places; 0 is the default.
@@ -89,6 +90,33 @@ public sealed partial class ExpressionTranslator
                 PgLiteral.String(style == 1 ? "FM999,999,999,999,990.00" : "FM999999999999990.0000")]), target);
 
         throw Untranslatable(convert, $"CONVERT from {sourceType?.ToString() ?? "an unknown type"} to {targetType} with style {style}", DiagnosticCodes.ConvertStyleUnsupported);
+    }
+
+    /// <summary>
+    /// SQL Server also reads some year-first strings under a style that is not year-first, as
+    /// established on SQL Server 2022: <c>yyyymmdd</c> always; for datetime and smalldatetime,
+    /// <c>yyyy-a-b</c> (with a time or not) as year, then month and day in the style's order (so
+    /// <c>2000-06-01</c> is 6 January under 103); for date and datetime2, ISO 8601 with a
+    /// <c>T</c>. Each is tried before the style's own layout. The casts go through text, so a
+    /// literal in a branch not taken is not converted when the query is planned.
+    /// </summary>
+    private static PgExpr IsoUnderStyle(PgExpr value, int style, string pattern, SqlServerType targetType, string target, PgExpr styled)
+    {
+        if (pattern.StartsWith("YYYY", StringComparison.Ordinal) || pattern.StartsWith("HH", StringComparison.Ordinal))
+            return styled;
+        PgWhen When(string regex, PgExpr result) => new(new PgBinary("~", value, PgLiteral.String(regex)), result);
+        PgExpr Parse(string layout) => targetType.Name == "date"
+            ? new PgFunctionCall("to_date", [value, PgLiteral.String(layout)])
+            : new PgCast(new PgFunctionCall("to_timestamp", [value, PgLiteral.String(layout)]), target);
+        var whens = new List<PgWhen> { When("^[0-9]{8}$", Parse("YYYYMMDD")) };
+        if (targetType.Name is "datetime" or "smalldatetime")
+        {
+            bool dayFirst = style is 3 or 103 or 4 or 104 or 5 or 105;
+            whens.Add(When("^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}( |$)", Parse(dayFirst ? "YYYY-DD-MM HH24:MI:SS.MS" : "YYYY-MM-DD HH24:MI:SS.MS")));
+        }
+        else if (targetType.Name is "date" or "datetime2")
+            whens.Add(When("^[0-9]{4}-[0-9]{2}-[0-9]{2}T", new PgCast(new PgCast(value, "text"), target)));
+        return new PgCase(null, whens, styled);
     }
 
     /// <summary>FORMAT with a custom date/time pattern (.NET format strings) or N/F number formats, in the invariant or en-US culture.</summary>

@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.3 — xml methods (value, exist, query over XMLTABLE; nodes() in CROSS/OUTER APPLY; XQuery prolog namespaces and default element namespace to XPath 1.0 prefixes; modify() S2P3040, XQuery beyond XPath 1.0 S2P3041), plus CONVERT reading year-first strings under other date styles as SQL Server does; 1 golden file, 7 xml both-engines cases, 5 new CONVERT cases. Corpus: 0 apply / copy / verify failures on all six databases; 8 new AdventureWorks agreement queries over its XML views, all at 100; AdventureWorks views 20 converted, 0 Manual (was 8 Manual). AdventureWorks' S2P3001 left is hierarchyid (WP 4.4), CONTAINSTABLE (WP 4.7) and a UDF in a computed column.
 - WP 4.2 — system-versioned temporal tables (period and history in both readers; period and history row triggers; FOR SYSTEM_TIME in all five forms over both tables; SYSTEM_VERSIONING and PERIOD switches in routines; S2P2020, S2P4014, S2P5075); 1 golden file and a both-engines run of updates, deletes, every FOR SYSTEM_TIME form and a load around switched-off versioning. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases. WideWorldImporters: 17 temporal tables converted, 37 FOR SYSTEM_TIME reads translated, S2P5070 85 → 17 (DROP TRIGGER of dynamically made triggers), Manual procedures 31 → 24.
 - WP 4.1 — DDL inside routines (index DDL, NOCHECK/CHECK CONSTRAINT, ADD/DROP of columns and constraints, ALTER COLUMN, DROP PROCEDURE/FUNCTION → DROP ROUTINE; S2P5071–S2P5074); 1 golden file and a both-engines run of three procedures, each run twice. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; the compile scan now fails on S2P9001 and breaks S2P5070 down by statement. S2P5070: WideWorldImportersDW 37 → 0, WideWorldImporters 105 → 85. The 85 left are 68 temporal-table statements (WP 4.2) and 17 DROP TRIGGER of triggers made by dynamic SQL. Manual procedures are unchanged, because their other errors remain: dynamic DDL in WideWorldImporters, and catalog functions in WideWorldImportersDW (WP 4.10).
 - WP A.6 — Entity Framework Core (UseNpgsql, column types, default and computed SQL, identity, SQL Server-only calls removed, naming loop in OnModelCreating, EF.Functions and migrations reported, project file package swap); 4 golden files and a both-engines DbContext run. Stage A complete: the C# and VB samples give the same output on PostgreSQL after conversion.
@@ -401,3 +402,23 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   GENERATED ALWAYS column fails at CREATE PROCEDURE. Load procedures split them, and write the
   period with dynamic SQL. `SYSTEM_VERSIONING = ON` with `DATA_CONSISTENCY_CHECK` rejects a
   period start earlier than the history's latest end.
+- WP 4.3 departs from the plan in these places:
+  - Everything goes through `XMLTABLE`, not `xpath()`. `value()` is a column of the target type,
+    which gives the string value of the node (entities decoded, mixed content joined) and NULL
+    when it is missing, as SQL Server does. A `nodes()` row is read from `'/*'` so relative paths
+    start at the element. `xpath()` would read every path from the document node and return the
+    node's markup rather than its value.
+  - XML indexes stay S2P2003 (not created); no expression index is derived from the paths.
+  - An absolute path under a `nodes()` row reads from that element as the root. This is correct
+    for nodes of the root element (all of AdventureWorks), not for deeper ones.
+- Established with SQL Server 2022 and PostgreSQL 18:
+  - On untyped xml, SQL Server requires a static singleton in `value()`, so `(a)[1]/b` fails;
+    with a schema collection, as AdventureWorks has, it passes.
+  - PostgreSQL rejects `XMLNAMESPACES(DEFAULT …)`, and errors in XMLTABLE when a non-xml column
+    path returns more than one node.
+  - PostgreSQL converts a CAST of a literal while planning, so even a CASE branch that is not
+    taken fails on a bad literal. Casting through text avoids it.
+  - From text with a date style, SQL Server reads `yyyymmdd` always. For datetime and
+    smalldatetime it reads `yyyy-a-b` in the style's month/day order (`2000-06-01` is 6 January
+    under 103). For date and datetime2 it reads ISO 8601 with `T`, and rejects `yyyy-mm-dd`
+    under styles 1, 101, 103, 104 and 110.

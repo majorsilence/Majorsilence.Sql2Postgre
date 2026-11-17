@@ -93,8 +93,18 @@ public static partial class PgWriter
         PgFunctionRef fn => $"{(fn.Lateral ? "LATERAL " : "")}{fn.Name}({string.Join(", ", fn.Arguments.Select(Expression))})"
                             + AliasClause(fn.Alias) + (fn.Columns.Count > 0 ? $" ({Columns(fn.Columns)})" : ""),
         PgJoin j => $"{FromItem(j.Left)} {j.Kind} {JoinRight(j.Right)}" + (j.On is null ? "" : $" ON {Expression(j.On)}"),
+        PgXmlTable x => XmlTable(x) + AliasClause(x.Alias),
         _ => throw new ArgumentException(f.GetType().Name),
     };
+
+    private static string XmlTable(PgXmlTable x)
+    {
+        string namespaces = x.Namespaces.Count == 0 ? ""
+            : $"XMLNAMESPACES({string.Join(", ", x.Namespaces.Select(n => $"{Str(n.Uri)} AS \"{n.Prefix.Replace("\"", "\"\"")}\""))}), ";
+        string columns = string.Join(", ", x.Columns.Select(c =>
+            $"{Q(c.Name)} {c.Type} PATH {Str(c.Path)}" + (c.Default is null ? "" : $" DEFAULT {Expression(c.Default)}")));
+        return $"XMLTABLE({namespaces}{Str(x.RowPath)} PASSING ({Expression(x.Document)}) COLUMNS {columns})";
+    }
 
     /// <summary>A join's right side is parenthesized when it is itself a join.</summary>
     private static string JoinRight(PgFromItem right) => right is PgJoin ? $"({FromItem(right)})" : FromItem(right);

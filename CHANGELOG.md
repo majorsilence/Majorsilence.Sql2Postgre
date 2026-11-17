@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **xml methods are translated** over `XMLTABLE` (WP 4.3):
+  - `value()`, `exist()` and `query()` in expressions, and `nodes()` in `CROSS`/`OUTER APPLY`.
+  - Paths are turned into XPath 1.0. `declare namespace` becomes `XMLNAMESPACES`, and a default
+    element namespace becomes a prefix on unprefixed element names.
+  - `modify()` (S2P3040) and XQuery beyond XPath 1.0 (S2P3041) are reported.
+  - Eight AdventureWorks XML views are new result-agreement queries.
+- `CONVERT` from text with a date style reads year-first strings as SQL Server does: `yyyymmdd`;
+  `yyyy-m-d` for datetime in the style's month/day order; and ISO 8601 with `T` for date and
+  datetime2.
 - **System-versioned temporal tables** (WP 4.2):
   - Both readers record a table's `PERIOD FOR SYSTEM_TIME` and history table.
   - The schema gets two row triggers per table: one sets the period columns, the other copies

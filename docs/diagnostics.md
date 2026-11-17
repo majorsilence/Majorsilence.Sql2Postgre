@@ -294,6 +294,14 @@ and time styles 1–5, 10–12, 20–25, 101–105, 108, 110–112, 114, 120, 12
 (to `to_char` / `to_date` / `to_timestamp`), and money styles 1 and 2. Write the conversion by
 hand with `to_char`.
 
+From text, SQL Server also reads some year-first strings under a style that is not year-first,
+and the translation does the same (established on SQL Server 2022):
+
+- `yyyymmdd`, always;
+- for datetime and smalldatetime, `yyyy-a-b` (with a time or not) as year, then month and day in
+  the style's order, so `2000-06-01` is 6 January under 103;
+- for date and datetime2, ISO 8601 with a `T`.
+
 ### S2P3004 FormatUnsupported (Error)
 
 `FORMAT` with a culture other than en-US, a standard format letter (`'d'`, `'C'`, …) or a custom
@@ -364,6 +372,34 @@ The translation needs an `mssql_compat` helper (for `DATEDIFF`, `CHARINDEX`, `IS
 
 A spatial method (`STDistance`, `STIntersects`, `geography::Point`, …). Mapping these to PostGIS
 `ST_*` functions is planned for Stage 4.
+
+### S2P3040 XmlModify (Error)
+
+The xml `modify()` method (`insert`, `replace value of`, `delete`), in `UPDATE … SET
+x.modify(…)` or `SET @x.modify(…)`. PostgreSQL's xml type has no update functions. Build the new
+document instead, in the application or with `xmlelement`/`xmlconcat`, and assign it. For a
+value inside it, store that value in a column of its own.
+
+### S2P3041 XQueryUnsupported (Error)
+
+An xml method's path uses XQuery that XPath 1.0 lacks, which is all PostgreSQL evaluates. That
+covers FLWOR (`for`, `let`, `return`), variables, `sql:column`/`sql:variable`, `data()`,
+`xs:` casts, constructors, conditionals, and a path that is not a literal.
+
+The rest is translated, over `XMLTABLE`:
+
+- `value(path, type)` is a column of that type;
+- `exist(path)` is `boolean(path)`, as a bit;
+- `query(path)` is an xml column, empty when nothing matches;
+- `nodes(path)` in `CROSS`/`OUTER APPLY` is an XMLTABLE in FROM, one xml row per node.
+
+A `nodes()` row is an element, so paths under it start there, as in SQL Server. An absolute path
+under a `nodes()` row reads from that element as the root: it works for nodes taken from the
+document's root element.
+
+The prolog's `declare namespace` become `XMLNAMESPACES`. PostgreSQL has no default namespace, so
+`declare default element namespace` gives every unprefixed element name a prefix of its own.
+`string(.)[1]`, XQuery's singleton marker after a function, loses its `[1]`.
 
 ## S2P4xxx — queries and DML
 

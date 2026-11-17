@@ -19,6 +19,8 @@ public sealed partial class ExpressionTranslator
         if (f.CallTarget is ExpressionCallTarget { Expression: ScalarSubquery sq } && f.FunctionName.Value.Equals("value", StringComparison.OrdinalIgnoreCase)
             && XmlValueSubquery is not null)
             return XmlValueSubquery(sq.QueryExpression, c);
+        if (model.XmlMethodTarget(f, c.Scope, c.Schema) is { } xml)
+            return XmlMethod(f, xml, c);
         if (f.CallTarget is not null)
             throw MethodCall(f);
 

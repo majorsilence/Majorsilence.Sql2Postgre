@@ -194,6 +194,12 @@ public static class DiagnosticCodes
     /// <summary>A spatial method (STDistance, …), which needs the PostGIS mapping of Stage 4.</summary>
     public const string SpatialMethod = "S2P3030";
 
+    /// <summary>The xml modify() method: PostgreSQL's xml type has no update functions.</summary>
+    public const string XmlModify = "S2P3040";
+
+    /// <summary>An xml method's XQuery goes beyond XPath 1.0, which is all PostgreSQL evaluates.</summary>
+    public const string XQueryUnsupported = "S2P3041";
+
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
 

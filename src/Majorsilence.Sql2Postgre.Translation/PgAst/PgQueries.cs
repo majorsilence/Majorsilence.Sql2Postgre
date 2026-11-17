@@ -63,6 +63,16 @@ public sealed record PgTableRef(PgName Name, string? Alias = null) : PgFromItem;
 
 public sealed record PgSubqueryRef(PgQuery Query, string Alias, IReadOnlyList<string> Columns, bool Lateral = false) : PgFromItem;
 
+/// <summary>A column of XMLTABLE: <c>name type PATH 'path' [DEFAULT value]</c>.</summary>
+public sealed record PgXmlTableColumn(string Name, string Type, string Path, PgExpr? Default = null);
+
+/// <summary>
+/// <c>XMLTABLE([XMLNAMESPACES('uri' AS prefix, …),] 'row path' PASSING (document) COLUMNS …) [AS alias]</c>.
+/// Like other table functions in FROM, it may use the FROM items before it.
+/// </summary>
+public sealed record PgXmlTable(IReadOnlyList<(string Prefix, string Uri)> Namespaces, string RowPath, PgExpr Document,
+    IReadOnlyList<PgXmlTableColumn> Columns, string? Alias = null) : PgFromItem;
+
 public sealed record PgFunctionRef(string Name, IReadOnlyList<PgExpr> Arguments, string? Alias, IReadOnlyList<string> Columns, bool Lateral = false) : PgFromItem;
 
 /// <param name="Kind"><c>JOIN</c>, <c>LEFT JOIN</c>, <c>RIGHT JOIN</c>, <c>FULL JOIN</c>, <c>CROSS JOIN</c>.</param>

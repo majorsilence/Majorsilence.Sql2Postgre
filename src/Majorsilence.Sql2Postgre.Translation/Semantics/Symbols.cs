@@ -11,9 +11,15 @@ public sealed record ColumnInfo(string Name, SqlServerType? Type);
 /// </summary>
 public sealed record RelationInfo(ObjectName? Name, ObjectKind Kind, IReadOnlyList<ColumnInfo> Columns)
 {
+    /// <summary>The rows of an xml <c>nodes()</c> call: its column is an element, not a document.</summary>
+    public bool XmlNodes { get; init; }
+
     public ColumnInfo? Column(string name) =>
         Columns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
 }
+
+/// <summary>The target of an xml method: the expression, and whether it is a <c>nodes()</c> row (an element) rather than a document.</summary>
+public sealed record XmlTarget(Microsoft.SqlServer.TransactSql.ScriptDom.ScalarExpression Expression, bool IsNode);
 
 /// <param name="Name">The name without its <c>@</c>.</param>
 public sealed record ParameterInfo(string Name, SqlServerType Type, bool IsOutput, bool HasDefault);
