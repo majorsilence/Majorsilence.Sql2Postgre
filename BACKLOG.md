@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.2 — system-versioned temporal tables (period and history in both readers; period and history row triggers; FOR SYSTEM_TIME in all five forms over both tables; SYSTEM_VERSIONING and PERIOD switches in routines; S2P2020, S2P4014, S2P5075); 1 golden file and a both-engines run of updates, deletes, every FOR SYSTEM_TIME form and a load around switched-off versioning. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases. WideWorldImporters: 17 temporal tables converted, 37 FOR SYSTEM_TIME reads translated, S2P5070 85 → 17 (DROP TRIGGER of dynamically made triggers), Manual procedures 31 → 24.
 - WP 4.1 — DDL inside routines (index DDL, NOCHECK/CHECK CONSTRAINT, ADD/DROP of columns and constraints, ALTER COLUMN, DROP PROCEDURE/FUNCTION → DROP ROUTINE; S2P5071–S2P5074); 1 golden file and a both-engines run of three procedures, each run twice. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; the compile scan now fails on S2P9001 and breaks S2P5070 down by statement. S2P5070: WideWorldImportersDW 37 → 0, WideWorldImporters 105 → 85. The 85 left are 68 temporal-table statements (WP 4.2) and 17 DROP TRIGGER of triggers made by dynamic SQL. Manual procedures are unchanged, because their other errors remain: dynamic DDL in WideWorldImporters, and catalog functions in WideWorldImportersDW (WP 4.10).
 - WP A.6 — Entity Framework Core (UseNpgsql, column types, default and computed SQL, identity, SQL Server-only calls removed, naming loop in OnModelCreating, EF.Functions and migrations reported, project file package swap); 4 golden files and a both-engines DbContext run. Stage A complete: the C# and VB samples give the same output on PostgreSQL after conversion.
 - WP A.5 — Dapper and Dapper.Contrib (`[Table]` names, S2P8030/S2P8031); 2 golden files and a both-engines run of Dapper queries, a procedure call and Contrib CRUD.
@@ -382,3 +383,21 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   - Left as S2P5070: the temporal-table statements (`SET (SYSTEM_VERSIONING …)`, `ADD`/`DROP
     PERIOD`, WP 4.2), and `DROP TRIGGER` of triggers the model does not have (WideWorldImporters
     creates them with dynamic SQL, so their tables are not known).
+- WP 4.2 departs from the plan in these places:
+  - Two triggers rather than one: `<table>_period` (BEFORE INSERT OR UPDATE) sets the period, and
+    `<table>_history` (AFTER UPDATE OR DELETE) copies old rows. SQL Server switches the two
+    separately (`SYSTEM_VERSIONING` and the period), and WideWorldImporters' load procedures
+    switch both. The history copy is AFTER, so a row another BEFORE trigger cancels leaves no
+    history.
+  - `SYSTEM_VERSIONING = OFF` disables only the history trigger, and `DROP PERIOD` the period
+    trigger. The plan had one trigger disabled for both.
+  - The period start is the transaction start in UTC (`now() AT TIME ZONE 'UTC'`), and the end
+    of time is `…23:59:59.999999` at the column's precision, so PostgreSQL does not round it
+    into the year 10000.
+  - Not done: `HIDDEN` period columns (they show in `SELECT *`), the data consistency check, and
+    a script's history table that SQL Server names itself (reported).
+- Established with SQL Server 2022: a procedure is compiled whole before it runs. So
+  `DROP PERIOD` and `ADD PERIOD` cannot share one procedure, and a static write to a
+  GENERATED ALWAYS column fails at CREATE PROCEDURE. Load procedures split them, and write the
+  period with dynamic SQL. `SYSTEM_VERSIONING = ON` with `DATA_CONSISTENCY_CHECK` rejects a
+  period start earlier than the history's latest end.

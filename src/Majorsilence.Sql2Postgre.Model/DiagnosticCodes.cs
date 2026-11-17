@@ -128,6 +128,9 @@ public static class DiagnosticCodes
     /// <summary>WITH SCHEMABINDING (and VIEW_METADATA) have no PostgreSQL counterpart and are dropped.</summary>
     public const string ViewOptionDropped = "S2P2016";
 
+    /// <summary>A system-versioned temporal table: a trigger sets its period columns and keeps its history.</summary>
+    public const string SystemVersioning = "S2P2020";
+
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
 
@@ -220,6 +223,9 @@ public static class DiagnosticCodes
 
     /// <summary>TOP 100 PERCENT … ORDER BY in a view is dropped (SQL Server ignores that order too).</summary>
     public const string ViewOrderIgnored = "S2P4012";
+
+    /// <summary>FOR SYSTEM_TIME reads the current and the history table together.</summary>
+    public const string SystemTimeQuery = "S2P4014";
 
     /// <summary>An OUTPUT … INTO form that is not translated (OUTPUT INTO alongside a plain OUTPUT).</summary>
     public const string OutputInto = "S2P4013";
@@ -336,6 +342,9 @@ public static class DiagnosticCodes
 
     /// <summary>A routine changes the schema at run time (columns, constraints, routines).</summary>
     public const string SchemaChangeInRoutine = "S2P5074";
+
+    /// <summary>SYSTEM_VERSIONING switched off or on, or the period dropped or added, in a routine.</summary>
+    public const string SystemVersioningInRoutine = "S2P5075";
 
     // ---- 6xxx triggers ----
 

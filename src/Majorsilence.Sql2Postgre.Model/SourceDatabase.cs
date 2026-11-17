@@ -65,10 +65,17 @@ public sealed record CheckConstraint(string? Name, string Expression, bool IsDis
 public sealed record TableIndex(string Name, IReadOnlyList<IndexColumn> Keys, IReadOnlyList<string> Included,
     bool IsUnique, bool IsClustered, string? FilterExpression, string Type = "rowstore");
 
+/// <summary>
+/// A table's <c>PERIOD FOR SYSTEM_TIME</c>: the row start and end columns SQL Server sets, and
+/// the history table old rows go to while <c>SYSTEM_VERSIONING = ON</c> (null while it is off).
+/// </summary>
+public sealed record SystemTimePeriod(string StartColumn, string EndColumn, ObjectName? HistoryTable);
+
+/// <param name="Period">The table's system-time period, when it has one.</param>
 public sealed record Table(ObjectName Name, IReadOnlyList<Column> Columns,
     PrimaryKey? PrimaryKey, IReadOnlyList<UniqueConstraint> Uniques,
     IReadOnlyList<ForeignKey> ForeignKeys, IReadOnlyList<CheckConstraint> Checks,
-    IReadOnlyList<TableIndex> Indexes, long? ApproximateRowCount = null);
+    IReadOnlyList<TableIndex> Indexes, long? ApproximateRowCount = null, SystemTimePeriod? Period = null);
 
 /// <param name="CurrentValue">The last value the sequence handed out; null when it has never been used.</param>
 public sealed record Sequence(ObjectName Name, SqlServerType Type, long Start, long Increment,

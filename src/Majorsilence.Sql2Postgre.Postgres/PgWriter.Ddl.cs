@@ -37,6 +37,7 @@ public static partial class PgWriter
         PgDropColumn d => $"ALTER TABLE {d.Table.Qualified} DROP COLUMN {(d.IfExists ? "IF EXISTS " : "")}{Q(d.Column)};\n",
         PgAlterColumn a => AlterColumn(a),
         PgSetDefault d => $"ALTER TABLE {d.Table.Qualified} ALTER COLUMN {Q(d.Column)} {(d.Default is null ? "DROP DEFAULT" : "SET DEFAULT " + Expression(d.Default))};\n",
+        PgEnableTrigger e => $"ALTER TABLE {e.Table.Qualified} {(e.Enable ? "ENABLE" : "DISABLE")} TRIGGER {Q(e.Trigger)};\n",
         PgDropRoutine d => $"DROP ROUTINE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),

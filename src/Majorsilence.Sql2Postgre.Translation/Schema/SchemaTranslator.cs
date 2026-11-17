@@ -85,6 +85,7 @@ public sealed partial class SchemaTranslator
             objects.AddRange(GuardMany(t.Name, () => Constraints(t)));
             objects.AddRange(GuardMany(t.Name, () => Indexes(t)));
             objects.AddRange(GuardMany(t.Name, () => ForeignKeys(t)));
+            objects.AddRange(GuardMany(t.Name, () => Versioning(t, model)));
         }
         var procedural = new ProceduralTranslator(queries);
         var triggerCounts = TriggerCounts(modules, model);

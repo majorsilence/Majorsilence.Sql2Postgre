@@ -104,6 +104,7 @@ public static partial class SqlServerScriptReader
         public List<ForeignKey> ForeignKeys { get; } = [];
         public List<CheckConstraint> Checks { get; } = [];
         public List<TableIndex> Indexes { get; } = [];
+        public SystemTimePeriod? Period { get; set; }
     }
 
     private sealed class ReaderState
@@ -143,6 +144,9 @@ public static partial class SqlServerScriptReader
                     break;
                 case AlterTableConstraintModificationStatement mod:
                     AlterEnforcement(mod);
+                    break;
+                case AlterTableSetStatement set:
+                    AlterSet(set);
                     break;
                 case CreateIndexStatement ix:
                     AddIndex(ix);
@@ -247,6 +251,15 @@ public static partial class SqlServerScriptReader
                     index.IncludeColumns.Select(ColumnName).ToList(), index.Unique,
                     index.IndexType?.IndexTypeKind is IndexTypeKind.Clustered or IndexTypeKind.ClusteredColumnStore,
                     index.FilterPredicate is null ? null : TextOf(index.FilterPredicate)));
+            if (definition.SystemTimePeriod is { } period)
+            {
+                var versioning = ct.Options.OfType<SystemVersioningTableOption>().FirstOrDefault(o => o.OptionState == OptionState.On);
+                table.Period = new SystemTimePeriod(period.StartTimeColumn.Value, period.EndTimeColumn.Value,
+                    versioning?.HistoryTable is { } history ? NameOf(history) : null);
+                if (versioning is not null && versioning.HistoryTable is null)
+                    Diagnostics.Add(new Diagnostic(DiagnosticCodes.SystemVersioning, Severity.Warning, table.Name,
+                        $"{table.Name} is system-versioned without HISTORY_TABLE: SQL Server names the history table itself, so a script does not have it. Its history is not kept."));
+            }
             _tables[table.Name] = table;
         }
 
@@ -318,6 +331,17 @@ public static partial class SqlServerScriptReader
                 table.Columns.Add(ReadColumn(column, table.Columns.Count + 1, inPrimaryKey: false));
             foreach (var constraint in add.Definition.TableConstraints)
                 AddConstraint(table, constraint, [], trusted);
+            if (add.Definition.SystemTimePeriod is { } period)
+                table.Period = new SystemTimePeriod(period.StartTimeColumn.Value, period.EndTimeColumn.Value, table.Period?.HistoryTable);
+        }
+
+        /// <summary><c>ALTER TABLE … SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE = h) | OFF)</c> on a table with a period.</summary>
+        private void AlterSet(AlterTableSetStatement set)
+        {
+            if (!_tables.TryGetValue(NameOf(set.SchemaObjectName), out var table) || table.Period is null)
+                return;
+            foreach (var option in set.Options.OfType<SystemVersioningTableOption>())
+                table.Period = table.Period with { HistoryTable = option.OptionState == OptionState.On && option.HistoryTable is { } h ? NameOf(h) : null };
         }
 
         /// <summary><c>ALTER TABLE … NOCHECK CONSTRAINT</c> disables a foreign key or check, and SQL Server then no longer trusts it.</summary>
@@ -379,7 +403,7 @@ public static partial class SqlServerScriptReader
             var tables = _tables.Values.Select(t => new Table(t.Name,
                     t.Columns.Select(ResolveAlias).ToList(), t.PrimaryKey, t.Uniques.ToList(),
                     t.ForeignKeys.ToList(), t.Checks.ToList(),
-                    t.Indexes.OrderBy(i => i.Name, StringComparer.Ordinal).ToList()))
+                    t.Indexes.OrderBy(i => i.Name, StringComparer.Ordinal).ToList(), Period: t.Period))
                 .OrderBy(t => t.Name.Schema, StringComparer.Ordinal).ThenBy(t => t.Name.Name, StringComparer.Ordinal)
                 .ToList();
             var userTypes = _userTypes.Values.Select(u => u with { TableColumns = u.TableColumns.Select(ResolveAlias).ToList() })

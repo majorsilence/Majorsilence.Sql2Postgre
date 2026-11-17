@@ -277,8 +277,6 @@ public sealed partial class QueryTranslator
         if (n.TableHints.Count > 0)
             c.Report(DiagnosticCodes.HintDropped, Severity.Info,
                 $"Table hints ({string.Join(", ", n.TableHints.Select(h => h.HintKind))}) are dropped; PostgreSQL has no equivalent (NOLOCK's dirty reads do not exist there).");
-        if (n.TemporalClause is not null)
-            throw ExpressionTranslator.Untranslatable(n, "FOR SYSTEM_TIME (temporal tables)");
         string written = n.SchemaObject.BaseIdentifier.Value;
         string? alias = n.Alias is null ? null : _names.Alias(n.Alias.Value);
         if (n.SchemaObject.SchemaIdentifier is null && PseudoTable?.Invoke(written, alias) is { } pseudo)
@@ -293,7 +291,63 @@ public sealed partial class QueryTranslator
         var name = _model.ResolveRelation(n.SchemaObject, c.Schema)!;
         if (_model.Relation(name) is null)
             c.Report(DiagnosticCodes.UnresolvedColumn, Severity.Warning, $"{name} is not a table or view this database has; it is written as {_names.Relation(name).Qualified}.");
+        if (n.TemporalClause is { } temporal)
+            return SystemTime(n, temporal, name, alias, c);
         return new PgTableRef(_names.Relation(name), alias);
+    }
+
+    /// <summary>
+    /// <c>t FOR SYSTEM_TIME …</c>: the rows of the table and of its history table whose period
+    /// matches, as SQL Server defines each form (AS OF, FROM … TO, BETWEEN … AND, CONTAINED IN,
+    /// ALL), under the table's own name or alias.
+    /// </summary>
+    private PgFromItem SystemTime(NamedTableReference n, TemporalClause temporal, ObjectName name, string? alias, ExpressionContext c)
+    {
+        if (_model.Table(name) is not { Period: { } period } table)
+            throw ExpressionTranslator.Untranslatable(n, "FOR SYSTEM_TIME on a table without a system-time period");
+        var from = temporal.StartTime is null ? null : _x.Scalar(temporal.StartTime, c);
+        var to = temporal.EndTime is null ? null : _x.Scalar(temporal.EndTime, c);
+        PgExpr Filter(ObjectName relation)
+        {
+            var start = new PgColumnRef(_names.Column(relation, period.StartColumn));
+            var end = new PgColumnRef(_names.Column(relation, period.EndColumn));
+            return temporal.TemporalClauseType switch
+            {
+                TemporalClauseType.AsOf => new PgBinary("AND", new PgBinary("<=", start, from!), new PgBinary(">", end, from!)),
+                TemporalClauseType.FromTo => new PgBinary("AND", new PgBinary("<", start, to!), new PgBinary(">", end, from!)),
+                TemporalClauseType.Between => new PgBinary("AND", new PgBinary("<=", start, to!), new PgBinary(">", end, from!)),
+                TemporalClauseType.ContainedIn => new PgBinary("AND", new PgBinary(">=", start, from!), new PgBinary("<=", end, to!)),
+                _ => PgLiteral.True,
+            };
+        }
+        PgSelect Rows(ObjectName relation, Table source)
+        {
+            var where = Filter(relation);
+            return new PgSelect
+            {
+                Targets = table.Columns.Select(col =>
+                {
+                    string output = _names.Column(name, col.Name);
+                    if (!source.Columns.Any(h => h.Name.Equals(col.Name, StringComparison.OrdinalIgnoreCase)))
+                        return new PgTarget(PgLiteral.Null, output);
+                    string column = _names.Column(relation, col.Name);
+                    return new PgTarget(new PgColumnRef(column), column == output ? null : output);
+                }).ToList(),
+                From = [new PgTableRef(_names.Relation(relation))],
+                Where = ReferenceEquals(where, PgLiteral.True) ? null : where,
+            };
+        }
+        PgQuery query = Rows(name, table);
+        if (period.HistoryTable is { } historyName && _model.Table(historyName) is { } history)
+        {
+            query = new PgSetOperation("UNION ALL", query, Rows(historyName, history));
+            c.Report(DiagnosticCodes.SystemTimeQuery, Severity.Info,
+                $"FOR SYSTEM_TIME on {name} reads {name} and its history table {historyName}, filtered on {period.StartColumn} and {period.EndColumn} as SQL Server does.");
+        }
+        else
+            c.Report(DiagnosticCodes.SystemTimeQuery, Severity.Warning,
+                $"FOR SYSTEM_TIME on {name}, which has no history table in the source: only its current rows are read.");
+        return new PgSubqueryRef(query, alias ?? _names.Relation(name).Name, []);
     }
 
     /// <summary>

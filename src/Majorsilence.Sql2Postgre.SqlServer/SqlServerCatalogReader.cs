@@ -70,6 +70,8 @@ public static class SqlServerCatalogReader
             int id = r.GetInt32(0);
             var name = new ObjectName(r.GetString(1), r.GetString(2));
             long? rows = r.IsDBNull(3) ? null : r.GetInt64(3);
+            var period = r.IsDBNull(4) ? null : new SystemTimePeriod(r.GetString(4), r.GetString(5),
+                r.IsDBNull(6) ? null : new ObjectName(r.GetString(6), r.GetString(7)));
 
             PrimaryKey? pk = null;
             var uniques = new List<UniqueConstraint>();
@@ -93,7 +95,7 @@ public static class SqlServerCatalogReader
 
             return new Table(name, columns[id].OrderBy(c => c.Ordinal).ToList(), pk, uniques,
                 foreignKeys[id].ToList(), checks[id].ToList(),
-                tableIndexes.OrderBy(i => i.Name, StringComparer.Ordinal).ToList(), rows);
+                tableIndexes.OrderBy(i => i.Name, StringComparer.Ordinal).ToList(), rows, period);
         }, ct);
 
         var sequences = await QueryAsync(conn, CatalogQueries.Sequences, r => new Sequence(

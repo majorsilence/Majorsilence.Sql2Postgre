@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **System-versioned temporal tables** (WP 4.2):
+  - Both readers record a table's `PERIOD FOR SYSTEM_TIME` and history table.
+  - The schema gets two row triggers per table: one sets the period columns, the other copies
+    old rows into the history table (S2P2020).
+  - `FOR SYSTEM_TIME AS OF | FROM … TO | BETWEEN | CONTAINED IN | ALL` reads both tables with
+    SQL Server's period rules (S2P4014).
+  - In routines, `SET (SYSTEM_VERSIONING = OFF | ON)` and `DROP | ADD PERIOD` disable and enable
+    those triggers (S2P5075).
 - **DDL inside routines is translated** for the forms load procedures use (WP 4.1):
   - `CREATE INDEX`, `DROP INDEX`, and `ALTER INDEX … REBUILD|REORGANIZE|DISABLE`. REBUILD creates
     a dropped (disabled) index again from its definition (S2P5071, S2P5072).

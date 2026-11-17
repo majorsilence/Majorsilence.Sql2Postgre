@@ -27,8 +27,13 @@ internal static class CatalogQueries
 
     public const string Tables = """
         SELECT t.object_id, SCHEMA_NAME(t.schema_id) AS schema_name, t.name,
-               (SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1)) AS row_count
+               (SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1)) AS row_count,
+               ps.name AS period_start, pe.name AS period_end,
+               OBJECT_SCHEMA_NAME(t.history_table_id) AS history_schema, OBJECT_NAME(t.history_table_id) AS history_name
         FROM sys.tables t
+        LEFT JOIN sys.periods sp ON sp.object_id = t.object_id
+        LEFT JOIN sys.columns ps ON ps.object_id = sp.object_id AND ps.column_id = sp.start_column_id
+        LEFT JOIN sys.columns pe ON pe.object_id = sp.object_id AND pe.column_id = sp.end_column_id
         WHERE t.is_ms_shipped = 0
         ORDER BY schema_name, t.name;
         """;

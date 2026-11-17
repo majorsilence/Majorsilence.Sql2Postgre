@@ -109,6 +109,9 @@ public sealed record PgAlterColumn(PgName Table, string Column, string Type, boo
 /// <summary><c>ALTER TABLE t ALTER COLUMN c SET DEFAULT expr</c>, or <c>DROP DEFAULT</c> when <paramref name="Default"/> is null.</summary>
 public sealed record PgSetDefault(PgName Table, string Column, PgExpr? Default) : PgStatement;
 
+/// <summary><c>ALTER TABLE t {ENABLE | DISABLE} TRIGGER name</c>.</summary>
+public sealed record PgEnableTrigger(PgName Table, string Trigger, bool Enable) : PgStatement;
+
 /// <summary><c>DROP ROUTINE [IF EXISTS] name</c>: a procedure or a function (sql2pg never overloads a name).</summary>
 public sealed record PgDropRoutine(PgName Name, bool IfExists) : PgStatement;
 

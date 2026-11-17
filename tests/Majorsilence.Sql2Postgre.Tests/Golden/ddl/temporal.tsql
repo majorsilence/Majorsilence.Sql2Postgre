@@ -1,0 +1,36 @@
+CREATE TABLE dbo.CustomerHistory (CustomerId int NOT NULL, Name nvarchar(50) NOT NULL, Credit decimal(10, 2) NOT NULL,
+    ValidFrom datetime2(7) NOT NULL, ValidTo datetime2(7) NOT NULL);
+GO
+CREATE TABLE dbo.Customer (CustomerId int NOT NULL CONSTRAINT PK_Customer PRIMARY KEY, Name nvarchar(50) NOT NULL, Credit decimal(10, 2) NOT NULL,
+    ValidFrom datetime2(7) GENERATED ALWAYS AS ROW START NOT NULL,
+    ValidTo datetime2(7) GENERATED ALWAYS AS ROW END NOT NULL,
+    PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo))
+WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.CustomerHistory));
+GO
+CREATE TABLE dbo.Rate (RateId int NOT NULL PRIMARY KEY, Amount decimal(10, 4) NOT NULL,
+    StartsAt datetime2(0) GENERATED ALWAYS AS ROW START NOT NULL,
+    EndsAt datetime2(0) GENERATED ALWAYS AS ROW END NOT NULL,
+    PERIOD FOR SYSTEM_TIME (StartsAt, EndsAt));
+GO
+CREATE VIEW dbo.CustomerAsOf2020 AS
+SELECT c.CustomerId, c.Name, c.Credit FROM dbo.Customer FOR SYSTEM_TIME AS OF '2020-01-01' AS c;
+GO
+CREATE PROCEDURE dbo.CustomerHistoryFor @id int, @from datetime2, @to datetime2 AS
+BEGIN
+    SELECT Name, Credit, ValidFrom FROM dbo.Customer FOR SYSTEM_TIME FROM @from TO @to WHERE CustomerId = @id ORDER BY ValidFrom;
+    SELECT COUNT(*) AS versions FROM dbo.Customer FOR SYSTEM_TIME BETWEEN @from AND @to;
+    SELECT COUNT(*) AS closed FROM dbo.Customer FOR SYSTEM_TIME CONTAINED IN (@from, @to);
+    SELECT Customer.Name FROM dbo.Customer FOR SYSTEM_TIME ALL WHERE Customer.CustomerId = @id;
+    SELECT RateId FROM dbo.Rate FOR SYSTEM_TIME AS OF @to;
+END;
+GO
+CREATE PROCEDURE dbo.LoadCustomers AS
+BEGIN
+    ALTER TABLE dbo.Customer SET (SYSTEM_VERSIONING = OFF);
+    ALTER TABLE dbo.Customer DROP PERIOD FOR SYSTEM_TIME;
+    UPDATE dbo.Customer SET Credit = Credit + 1, ValidFrom = '2021-01-01';
+    ALTER TABLE dbo.Customer ADD PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo);
+    ALTER TABLE dbo.Customer SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.CustomerHistory, DATA_CONSISTENCY_CHECK = ON));
+    ALTER TABLE dbo.Rate SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.RateHistory));
+END;
+GO

@@ -253,6 +253,25 @@ the tables change; PostgreSQL stores a materialized view's rows when it is creat
 they read (a table a view uses cannot be dropped without `CASCADE`), which is what
 SCHEMABINDING asks for.
 
+### S2P2020 SystemVersioning (Info)
+
+The table has a `PERIOD FOR SYSTEM_TIME`. PostgreSQL has no temporal tables, so two row
+triggers do SQL Server's work:
+
+- `<table>_period` (`BEFORE INSERT OR UPDATE`) sets the period start to the transaction's start
+  time in UTC (`now() AT TIME ZONE 'UTC'`, as SQL Server stamps it). It sets the period end to
+  `9999-12-31 23:59:59.999999`, the end of time at the column's precision (PostgreSQL keeps
+  microseconds).
+- `<table>_history` (`AFTER UPDATE OR DELETE`, only with `SYSTEM_VERSIONING = ON`) copies the
+  old row into the history table, its period ended at that time.
+
+The history table is an ordinary table, and the data copy keeps both tables' period values.
+Unlike SQL Server, PostgreSQL lets code write the period columns and the history table; the
+period trigger overwrites what is written to the current table. Without `SYSTEM_VERSIONING`,
+or when the history table is not in the source, only the period trigger is created. A script
+that versions a table without naming `HISTORY_TABLE` gets this code as a Warning: the table
+SQL Server creates is not in the script.
+
 ## S2P3xxx — expressions and built-in functions
 
 ### S2P3001 UnsupportedExpression (Error)
@@ -408,6 +427,23 @@ A view's `TOP 100 PERCENT … ORDER BY` is dropped; SQL Server does not honour t
 A statement has both `OUTPUT … INTO` and a plain `OUTPUT`. `OUTPUT … INTO` alone is translated:
 the statement becomes a data-modifying CTE with `RETURNING`, and an `INSERT` writes its rows to
 the table, temp table or table variable.
+
+### S2P4014 SystemTimeQuery (Info)
+
+`FROM t FOR SYSTEM_TIME …` becomes a subquery under the table's name or alias. It reads the
+table and its history table (`UNION ALL`), each filtered as SQL Server defines the form, with
+start and end the period columns:
+
+| Form | Rows whose period |
+|---|---|
+| `AS OF t` | `start <= t AND end > t` |
+| `FROM a TO b` | `start < b AND end > a` |
+| `BETWEEN a AND b` | `start <= b AND end > a` |
+| `CONTAINED IN (a, b)` | `start >= a AND end <= b` |
+| `ALL` | every row |
+
+It is a Warning when the table has no history table in the source: only the current rows are
+read. Times are UTC, as in SQL Server.
 
 ## S2P5xxx — procedural code
 
@@ -762,7 +798,7 @@ means. If it is not, split the TRY.
 
 A procedure, function or trigger runs DDL that is not translated. That covers:
 
-- `ALTER TABLE … SET (…)`, `ADD`/`DROP PERIOD FOR SYSTEM_TIME`, and `SWITCH`;
+- `ALTER TABLE … SET (…)` other than `SYSTEM_VERSIONING`, and `SWITCH`;
 - `CREATE`/`DROP` of a table, view or trigger;
 - `ALTER INDEX … DISABLE` of an index the source model does not have;
 - `NOCHECK`/`CHECK CONSTRAINT` of a constraint the routine neither added nor the model has;
@@ -827,6 +863,19 @@ The routine changes the schema at run time:
 
 The converted schema, and the code converted against it, do not see these changes until the
 routine runs. Statements in other routines that use an added column may need a second look.
+
+### S2P5075 SystemVersioningInRoutine (Info)
+
+A routine switches a temporal table's parts off or on, as load procedures do around a load.
+Each becomes `ALTER TABLE … DISABLE`/`ENABLE TRIGGER` on the triggers of S2P2020:
+
+- `ALTER TABLE t SET (SYSTEM_VERSIONING = OFF | ON (HISTORY_TABLE = h))` switches the history
+  trigger. The `DATA_CONSISTENCY_CHECK` is not run.
+- `ALTER TABLE t DROP | ADD PERIOD FOR SYSTEM_TIME` switches the period trigger. With it off,
+  code may write the period columns, as SQL Server allows once the period is dropped.
+
+Switching on versioning into a history table other than the source's, or on a table without a
+period in the source, stays S2P5070.
 
 ## S2P6xxx — triggers
 

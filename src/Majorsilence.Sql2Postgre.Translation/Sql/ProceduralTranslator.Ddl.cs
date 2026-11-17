@@ -26,8 +26,13 @@ public sealed partial class ProceduralTranslator
         DropIndexStatement d => DropIndex(d, st),
         AlterIndexStatement a => AlterIndex(a, st),
         AlterTableConstraintModificationStatement m => SwitchConstraint(m, st),
+        AlterTableAddTableElementStatement { Definition.SystemTimePeriod: not null } a when a.Definition.ColumnDefinitions.Count == 0 && a.Definition.TableConstraints.Count == 0
+            => TogglePeriod(a.SchemaObjectName, enable: true, st),
         AlterTableAddTableElementStatement a => AddTableElements(a, st),
+        AlterTableDropTableElementStatement d when d.AlterTableDropTableElements.All(e => e.TableElementType == TableElementType.Period)
+            => TogglePeriod(d.SchemaObjectName, enable: false, st),
         AlterTableDropTableElementStatement d => DropTableElements(d, st),
+        AlterTableSetStatement set when set.Options.Count > 0 && set.Options.All(o => o is SystemVersioningTableOption) => SetVersioning(set, st),
         AlterTableAlterColumnStatement a => AlterColumn(a, st),
         DropProcedureStatement or DropFunctionStatement => DropRoutines((DropObjectsStatement)s, st),
         _ => null,
@@ -406,6 +411,41 @@ public sealed partial class ProceduralTranslator
         st.C.Report(DiagnosticCodes.SchemaChangeInRoutine, Severity.Warning,
             $"The routine changes column {a.ColumnIdentifier.Value} of {table} to {mapped.PgType} at run time.");
         return [new PgSqlStatement(new PgAlterColumn(pg, _names.Column(table, a.ColumnIdentifier.Value), mapped.PgType, notNull))];
+    }
+
+    // ---- temporal tables ----
+
+    /// <summary>
+    /// <c>ADD</c>/<c>DROP PERIOD FOR SYSTEM_TIME</c>: the trigger that sets the period columns is
+    /// enabled or disabled (with the period dropped, SQL Server leaves the columns to the code).
+    /// </summary>
+    private List<PgPlStatement>? TogglePeriod(SchemaObjectName written, bool enable, BodyState st)
+    {
+        var (table, pg, model) = RealTable(written, st);
+        if (model?.Period is null)
+            return null;
+        st.C.Report(DiagnosticCodes.SystemVersioningInRoutine, Severity.Info,
+            $"{(enable ? "ADD" : "DROP")} PERIOD FOR SYSTEM_TIME on {table} {(enable ? "enables" : "disables")} the trigger that sets its period columns.");
+        return [new PgSqlStatement(new PgEnableTrigger(pg, _names.Trigger(table, Schema.SchemaTranslator.PeriodTrigger(table.Name)), enable))];
+    }
+
+    /// <summary>
+    /// <c>SET (SYSTEM_VERSIONING = OFF | ON (HISTORY_TABLE = h))</c>: the trigger that copies old
+    /// rows into the history table is disabled or enabled.
+    /// </summary>
+    private List<PgPlStatement>? SetVersioning(AlterTableSetStatement set, BodyState st)
+    {
+        var (table, pg, model) = RealTable(set.SchemaObjectName, st);
+        if (model?.Period?.HistoryTable is not { } history)
+            return null;
+        var option = set.Options.OfType<SystemVersioningTableOption>().Last();
+        bool on = option.OptionState == OptionState.On;
+        if (on && option.HistoryTable is { } named && !RealTable(named, st).Name.Equals(history))
+            return null;
+        st.C.Report(DiagnosticCodes.SystemVersioningInRoutine, Severity.Info,
+            $"SYSTEM_VERSIONING = {(on ? "ON" : "OFF")} on {table} {(on ? "enables" : "disables")} the trigger that copies old rows into {history}"
+            + (on && option.ConsistencyCheckEnabled == OptionState.On ? "; the data consistency check is not run" : "") + ".");
+        return [new PgSqlStatement(new PgEnableTrigger(pg, _names.Trigger(table, Schema.SchemaTranslator.HistoryTrigger(table.Name)), on))];
     }
 
     // ---- routines ----
