@@ -957,6 +957,26 @@ The translated SQL calls `mssql_compat` helpers (for example `charindex`, `dated
 schema` creates only the helpers the schema needs. Make sure the database has these too, or
 rewrite the expression.
 
+### S2P8020 ProcedureCursors (Error)
+
+The code calls, as a stored procedure, a procedure converted with refcursor result sets
+(S2P5021). Its rows do not come back as a reader. Call it inside a transaction, then run
+`FETCH ALL FROM <cursor>` for each cursor parameter and read each with its own data reader.
+Pass the cursor names (`result_set_1 => 'c1'`) to make that easier.
+
+### S2P8021 ProcedureShapeUnknown (Warning)
+
+The converter cannot tell how this stored procedure call should look after conversion:
+
+- without `--source`, or for a procedure not in the source database, it does not know whether
+  the procedure became a function (read with `SELECT * FROM f(…)`) or a procedure (CALL); only
+  its name is converted;
+- the parameters are not passed where the converter can see them (built in a loop, or in another
+  method).
+
+Npgsql names a CALL's arguments after the parameters exactly, so they must be named as the
+converted procedure's are.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

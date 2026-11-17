@@ -386,6 +386,12 @@ public static class DiagnosticCodes
     /// <summary>Translated SQL in code calls mssql_compat helpers, which must exist in the database.</summary>
     public const string CompatHelperInCode = "S2P8013";
 
+    /// <summary>A stored procedure call whose procedure returns refcursors: the caller must fetch them.</summary>
+    public const string ProcedureCursors = "S2P8020";
+
+    /// <summary>A stored procedure call whose converted form is not known here (no --source, or parameters not visible).</summary>
+    public const string ProcedureShapeUnknown = "S2P8021";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 

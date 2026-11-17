@@ -10,7 +10,7 @@ class Loader
         using var bulk = new SqlBulkCopy(connection) { DestinationTableName = "dbo.item" };
         bulk.WriteToServer(rows);
 
-        var command = new NpgsqlCommand("dbo.import_items", connection) { CommandType = CommandType.StoredProcedure };
+        var command = new NpgsqlCommand("public.import_items", connection) { CommandType = CommandType.StoredProcedure };
         command.Parameters.Add(new NpgsqlParameter("@items", SqlDbType.Structured) { Value = rows });
         connection.InfoMessage += (_, e) => System.Console.WriteLine(e.Message);
         using var reader = command.ExecuteReader();

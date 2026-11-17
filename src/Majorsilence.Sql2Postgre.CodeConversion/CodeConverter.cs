@@ -58,7 +58,7 @@ public sealed class CodeConverter(CodeConversionOptions options, IReadOnlyList<I
     private readonly IReadOnlyList<ICodeRule> _rules = rules ?? DefaultRules();
 
     /// <summary>The rules, in the order they run.</summary>
-    public static IReadOnlyList<ICodeRule> DefaultRules() => [new Rules.AdoNetRule(), new Rules.SqlInCodeRule()];
+    public static IReadOnlyList<ICodeRule> DefaultRules() => [new Rules.AdoNetRule(), new Rules.SqlInCodeRule(), new Rules.StoredProcedureRule()];
 
     public CodeConversionResult Convert(IEnumerable<(string RelativePath, string Text)> files) =>
         new(files.Select(f => ConvertFile(f.RelativePath, f.Text)).ToList());

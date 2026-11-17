@@ -1,0 +1,37 @@
+using System.Data;
+using Dapper;
+using Npgsql;
+using NpgsqlTypes;
+
+public sealed class Orders(NpgsqlConnection connection)
+{
+    private const string AddOrder = "shop.add_order";
+
+    public long Add(int customerId)
+    {
+        using var command = new NpgsqlCommand(AddOrder, connection) { CommandType = CommandType.StoredProcedure };
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        var id = command.Parameters.Add("@order_id", NpgsqlDbType.Bigint);
+        id.Direction = ParameterDirection.Output;
+        command.ExecuteNonQuery();
+        return (long)id.Value;
+    }
+
+    public void Archive(int customerId)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = "public.archive_customer";
+        command.CommandType = CommandType.StoredProcedure;
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        command.ExecuteNonQuery();
+    }
+
+    public long AddWithDapper(int customerId)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("@customer_id", customerId);
+        parameters.Add("@order_id", dbType: DbType.Int64, direction: ParameterDirection.Output);
+        connection.Execute("shop.add_order", parameters, commandType: CommandType.StoredProcedure);
+        return parameters.Get<long>("@order_id");
+    }
+}

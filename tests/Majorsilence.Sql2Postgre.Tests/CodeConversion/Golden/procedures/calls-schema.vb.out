@@ -1,0 +1,21 @@
+Imports System.Data
+Imports Npgsql
+Imports NpgsqlTypes
+
+Public NotInheritable Class Orders
+    Private ReadOnly _connection As NpgsqlConnection
+
+    Public Sub New(connection As NpgsqlConnection)
+        _connection = connection
+    End Sub
+
+    Public Function Add(customerId As Integer) As Long
+        Using command As New NpgsqlCommand("shop.add_order", _connection) With {.CommandType = CommandType.StoredProcedure}
+            command.Parameters.AddWithValue("@customer_id", customerId)
+            Dim id = command.Parameters.Add("@order_id", NpgsqlDbType.Bigint)
+            id.Direction = ParameterDirection.Output
+            command.ExecuteNonQuery()
+            Return CLng(id.Value)
+        End Using
+    End Function
+End Class

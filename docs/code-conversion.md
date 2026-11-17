@@ -40,7 +40,7 @@ The rules are added work package by work package (Stage A in the
 | Edit engine, input discovery, `sql2pg code` | A.1 (done) |
 | ADO.NET types, `SqlDbType`, exceptions, connection strings | A.2 (done) |
 | SQL strings in code (ADO.NET, Dapper, EF Core raw SQL) | A.3 (done) |
-| Stored procedure calls | A.4 |
+| Stored procedure calls | A.4 (done) |
 | Dapper and Dapper.Contrib | A.5 |
 | Entity Framework Core | A.6 |
 
@@ -123,3 +123,25 @@ SQL found in these places is translated from T-SQL and written back where it was
     f(…)` for a procedure converted to a function (that needs `--source`).
   - Procedural T-SQL in a command is reported (S2P8012), as are `mssql_compat` helpers the SQL
     needs (S2P8013).
+
+## Stored procedure calls
+
+These are found in two places. In ADO.NET, a command whose `CommandType` is
+`CommandType.StoredProcedure`, set in an initializer or by assignment, with its name from the
+constructor or `CommandText`. In Dapper, a call with `commandType: CommandType.StoredProcedure`.
+
+- **The name** becomes the converted procedure's (`[dbo].[GetOrders]` → `public.getorders`).
+- **Parameter names** become the converted procedure's parameter names. This applies to
+  `Parameters.Add("@Name", …)`, `new SqlParameter("@Name", …)`, `DynamicParameters.Add` and
+  anonymous objects. Npgsql names a CALL's arguments after the parameters exactly, in quotes.
+- **What the call becomes** depends on the procedure's converted form, which needs `--source`:
+  - A procedure converted to a function (one result set and nothing else) is read with
+    `SELECT * FROM f(name => @name, …)`, and `CommandType.StoredProcedure` becomes
+    `CommandType.Text`.
+  - A procedure stays `CommandType.StoredProcedure`, which Npgsql runs as `CALL`.
+    `Direction = Output` parameters work as they are. Npgsql leaves them out of the CALL, the
+    converted INOUT parameter defaults to NULL, and Npgsql reads its value back. A
+    `ReturnValue` parameter is reported: the status code comes back in the INOUT parameter
+    `return_code`.
+  - A procedure that returns refcursors is reported (S2P8020).
+- **Without the schema,** only the name is converted (S2P8021).

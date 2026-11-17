@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`sql2pg code` converts stored procedure calls** (ADO.NET `CommandType.StoredProcedure`,
+  Dapper `commandType:`).
+  - The procedure's name and the names of the parameters passed become the converted ones.
+  - A procedure converted to a function is read with `SELECT * FROM f(…)`.
+  - A procedure is CALLed by Npgsql, with Output parameters as they are.
+  - Refcursor procedures and calls whose form is unknown are reported (S2P8020, S2P8021).
+  - Calls in C# and VB give the same results on the migrated database. (WP A.4)
 - **`sql2pg code` translates SQL in code.**
   - It covers ADO.NET command text, Dapper's query and execute methods, and EF Core's raw SQL.
   - The text is followed back to literals, constants and once-assigned locals, translated from
