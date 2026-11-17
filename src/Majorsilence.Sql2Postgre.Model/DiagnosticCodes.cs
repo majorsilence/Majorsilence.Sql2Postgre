@@ -277,7 +277,7 @@ public static class DiagnosticCodes
     /// <summary>@@TRANCOUNT: PostgreSQL has no transaction nesting count.</summary>
     public const string TranCount = "S2P5025";
 
-    /// <summary>BEGIN TRANSACTION inside a routine is dropped: the routine runs in its caller's transaction.</summary>
+    /// <summary>BEGIN TRANSACTION inside a routine becomes COMMIT (the work before it was autocommitted), or inside TRY a COMMIT before the TRY block.</summary>
     public const string BeginTransactionDropped = "S2P5026";
 
     /// <summary>EXEC of a procedure that is not in the source database.</summary>
@@ -294,6 +294,21 @@ public static class DiagnosticCodes
 
     /// <summary>A FOREIGN KEY on a temp table is dropped, as SQL Server itself ignores it.</summary>
     public const string TempTableForeignKey = "S2P5033";
+
+    /// <summary>ERROR_LINE() is NULL and ERROR_STATE() is 1: PostgreSQL errors have neither.</summary>
+    public const string ErrorLineState = "S2P5040";
+
+    /// <summary>XACT_STATE() or @@TRANCOUNT in CATCH is a constant: whether a BEGIN TRAN may have run.</summary>
+    public const string TransactionState = "S2P5041";
+
+    /// <summary>COMMIT, ROLLBACK or a call of a procedure that ends a transaction inside TRY: PL/pgSQL cannot end a transaction inside a block with an exception handler.</summary>
+    public const string TransactionInTry = "S2P5042";
+
+    /// <summary>An ERROR_*() function outside CATCH is NULL.</summary>
+    public const string ErrorFunctionOutsideCatch = "S2P5043";
+
+    /// <summary>A TRY changes data outside a transaction and runs more statements: PostgreSQL undoes the changes when a later statement fails, SQL Server keeps them.</summary>
+    public const string TryUndoesWrites = "S2P5044";
 
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";

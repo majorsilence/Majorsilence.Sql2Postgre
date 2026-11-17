@@ -123,6 +123,19 @@ public class ScriptTranslatorTests
     }
 
     [Test]
+    public void TryCatchBatchIsADoBlockWithAHandler()
+    {
+        var r = T("BEGIN TRY\n    UPDATE shop.customer SET name = name WHERE customer_id = 1;\nEND TRY\nBEGIN CATCH\n    PRINT ERROR_MESSAGE();\n    THROW;\nEND CATCH;");
+        Assert.Multiple(() =>
+        {
+            Assert.That(r.Sql, Does.StartWith("DO $$\n#variable_conflict use_column\nDECLARE\n    sql2pg_error_message text;\nBEGIN\n    BEGIN\n"));
+            Assert.That(r.Sql, Does.Contain("    EXCEPTION\n        WHEN OTHERS THEN\n            GET STACKED DIAGNOSTICS sql2pg_error_message = MESSAGE_TEXT;\n"
+                                            + "            RAISE NOTICE '%', COALESCE(sql2pg_error_message, '');\n            RAISE;\n    END;\n"));
+            Assert.That(r.Diagnostics.Where(d => d.Severity != Severity.Info), Is.Empty);
+        });
+    }
+
+    [Test]
     public void DdlStaysAsAComment()
     {
         var r = T("CREATE TABLE dbo.x (id int);");

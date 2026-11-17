@@ -67,10 +67,10 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-A procedural statement that is not translated yet: `TRY … CATCH`, cursors, dynamic SQL
-(`EXEC (string)`, `sp_executesql`), DDL on real tables, and the other statements Stage 3 is
-still adding. Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a
-procedure, result sets, transaction control, temp tables and table variables are translated.
+A procedural statement that is not translated yet: cursors, dynamic SQL (`EXEC (string)`,
+`sp_executesql`), DDL on real tables, and the other statements Stage 3 is still adding.
+Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a procedure, result
+sets, transaction control, `TRY … CATCH`, temp tables and table variables are translated.
 `ALTER TABLE` on a temp table and computed columns in one also get this code. In a procedure, a result set inside a loop,
 rows returned by DML with `OUTPUT`, and any statement other than a result set under
 `SET ROWCOUNT n` also get this code. The statement is kept as a comment.
@@ -527,17 +527,24 @@ statements become `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`.
 
 ### S2P5025 TranCount (Error)
 
-`@@TRANCOUNT` counts nested `BEGIN TRANSACTION`s. PostgreSQL has one transaction and no count, and
-`BEGIN TRANSACTION` in a routine is dropped (S2P5026), so the test has no translation. The
-statement using it is kept as a comment.
+`@@TRANCOUNT` or `XACT_STATE()` outside a `CATCH` block. `@@TRANCOUNT` counts nested
+`BEGIN TRANSACTION`s, and PostgreSQL has one transaction and no count. A routine always runs
+inside a transaction, so the test has no translation. The statement using it is kept as a
+comment. Inside `CATCH` both are translated (S2P5041).
 
 ### S2P5026 BeginTransactionDropped (Info)
 
-`BEGIN TRANSACTION` inside a procedure or a `DO` block is dropped: the code already runs inside
-its caller's transaction. `COMMIT` and `ROLLBACK` become PL/pgSQL's `COMMIT` and `ROLLBACK`, which
-end that whole transaction. They work when the procedure is called with `CALL` outside an
-explicit transaction block, and fail ("invalid transaction termination") inside one. A procedure
-that commits is never converted to a function.
+`BEGIN TRANSACTION` inside a procedure or a `DO` block becomes `COMMIT`. When an application
+calls the procedure outside a transaction, SQL Server has already committed each statement
+before `BEGIN TRANSACTION` on its own, and `COMMIT` keeps that work as well.
+A new transaction then starts. Inside `TRY` the `COMMIT` goes just before the `TRY` block
+(PL/pgSQL cannot end a transaction inside a block with an exception handler).
+
+`COMMIT` and `ROLLBACK` become PL/pgSQL's `COMMIT` and `ROLLBACK`. They work when the procedure
+is called with `CALL` outside an explicit transaction block, and fail ("invalid transaction
+termination") inside one. A procedure that ends a transaction, or calls one that does, is never
+converted to a function. A second `BEGIN TRANSACTION` nested inside the first commits the outer
+transaction's work so far, which SQL Server would not.
 
 ### S2P5027 UnknownProcedure (Error)
 
@@ -566,6 +573,44 @@ Both become PostgreSQL temporary tables, which belong to the session:
 - Creating a temporary table makes a function `VOLATILE`. It cannot run in a read-only
   transaction or on a hot standby.
 
+### TRY … CATCH
+
+`BEGIN TRY … END TRY BEGIN CATCH … END CATCH` becomes a block with an exception handler:
+`BEGIN … EXCEPTION WHEN OTHERS THEN … END;`.
+
+- When a statement in the TRY fails, PostgreSQL undoes everything the TRY did and runs the
+  handler. The SQL Server code usually does the same with `ROLLBACK` in `CATCH`. See S2P5044 for
+  where the two differ.
+- The handler starts with `GET STACKED DIAGNOSTICS` for the `ERROR_*()` functions the CATCH block
+  uses. `ERROR_MESSAGE()` is the message, which for errors PostgreSQL raises is PostgreSQL's
+  wording. A nested CATCH block has its own variables, so `ERROR_*()` after it reads the outer
+  error again, as in SQL Server.
+- `ERROR_NUMBER()` maps the SQLSTATE to SQL Server's number:
+
+  | Error | SQLSTATE | Number |
+  |---|---|---|
+  | Unique or primary key violation | 23505 | 2627 |
+  | Foreign key violation | 23503 | 547 |
+  | Check violation | 23514 | 547 |
+  | NULL into a NOT NULL column | 23502 | 515 |
+  | Division by zero | 22012 | 8134 |
+  | Arithmetic overflow | 22003 | 8115 |
+  | String data would be truncated | 22001 | 8152 |
+  | Conversion failed | 22P02 | 245 |
+  | Date/time conversion failed | 22007 | 241 |
+  | Date/time out of range | 22008 | 242 |
+  | Deadlock or serialization failure | 40P01, 40001 | 1205 |
+
+  `THROW n, …` keeps its number. `RAISERROR` with a message, and anything else, is 50000.
+- `ERROR_SEVERITY()` is 16. `ERROR_PROCEDURE()` is the procedure's schema-qualified name, as
+  SQL Server 2017 and later return it.
+- `THROW;` re-raises the error as it was (`RAISE;`).
+- In a TRY, `BEGIN TRAN` commits the work before the TRY block, and a `COMMIT` ending the TRY
+  runs right after the block. `COMMIT` and `ROLLBACK` in the handler stay as they are. With these,
+  the usual patterns end their transactions as SQL Server does:
+  - `BEGIN TRY BEGIN TRAN … COMMIT END TRY BEGIN CATCH IF XACT_STATE() <> 0 ROLLBACK; THROW; END CATCH`
+  - `BEGIN TRAN; BEGIN TRY … COMMIT END TRY BEGIN CATCH ROLLBACK … END CATCH`
+
 ### S2P5030 GlobalTempTable (Error)
 
 A global temporary table (`##t`) is shared by every session. PostgreSQL's temporary tables
@@ -591,6 +636,43 @@ statements fail or read the wrong rows. Rename one of the two tables.
 
 A `FOREIGN KEY` on a temp table is dropped. SQL Server does not enforce foreign keys on
 temporary tables either (it skips them with a warning).
+
+### S2P5040 ErrorLineState (Info)
+
+`ERROR_LINE()` is NULL, because PostgreSQL reports the line in the error's context text, not as
+a number. `ERROR_STATE()` is 1, because PostgreSQL errors have no state number.
+
+### S2P5041 TransactionState (Info)
+
+`XACT_STATE()` or `@@TRANCOUNT` in a `CATCH` block is a constant:
+
+- -1 (`XACT_STATE()`) or 1 (`@@TRANCOUNT`) when a `BEGIN TRAN` may have run, in the TRY or
+  before it. A `ROLLBACK` under the test then undoes the work since that `BEGIN TRAN`. The TRY's
+  own work is already undone.
+- 0 when no `BEGIN TRAN` comes before. The test is then false, as in SQL Server, and earlier
+  work is not rolled back.
+
+### S2P5042 TransactionInTry (Error)
+
+`COMMIT` or `ROLLBACK` inside `TRY`, other than a `COMMIT` that ends it, or `EXEC` of a procedure
+that ends a transaction. PL/pgSQL cannot end a transaction inside a block with an exception
+handler ("cannot commit while a subtransaction is active", "invalid transaction termination").
+Move the transaction control out of the TRY, for example ending the TRY with the `COMMIT`.
+
+### S2P5043 ErrorFunctionOutsideCatch (Warning)
+
+An `ERROR_*()` function outside a `CATCH` block is NULL. That is what SQL Server returns when no
+error is being handled. But an error-logging procedure called from a `CATCH` block (AdventureWorks'
+`uspLogError`) reads the caller's error this way, and in PostgreSQL it sees NULL. Pass the
+error number and message to such a procedure as parameters.
+
+### S2P5044 TryUndoesWrites (Warning)
+
+A TRY changes data, outside a transaction, and has more statements after that. If a later
+statement fails, SQL Server keeps the changes already made, because each was committed on its
+own, and only the failing statement is undone. PostgreSQL's exception block undoes everything
+the TRY did. Wrap the TRY's work in `BEGIN TRAN … COMMIT` if all-or-nothing is what the code
+means. If it is not, split the TRY.
 
 ## S2P7xxx — data copy and verification
 

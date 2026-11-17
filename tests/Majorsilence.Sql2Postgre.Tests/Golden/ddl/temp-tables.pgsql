@@ -71,6 +71,7 @@ BEGIN
     IF CAST(CAST(to_regclass('pg_temp.names') AS oid) AS integer) IS NOT NULL THEN
         DROP TABLE names;
     END IF;
+    COMMIT;
     INSERT INTO tv_copy_names_log (note)
     VALUES ('copied');
     ROLLBACK;

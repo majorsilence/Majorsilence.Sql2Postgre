@@ -82,6 +82,7 @@ public sealed partial class ProceduralTranslator
         public HashSet<PgExpr> VariableRefs { get; } = new(ReferenceEqualityComparer.Instance);
         public bool Prologue { get; set; } = true;
         public int LoopDepth { get; set; }
+        /// <summary>How deep in the TRY part of TRY … CATCH the current statement is (no COMMIT or ROLLBACK there).</summary>
         public int TryDepth { get; set; }
         public bool ReadsRowCount { get; init; }
         public bool ReadsIdentity { get; init; }
@@ -118,6 +119,12 @@ public sealed partial class ProceduralTranslator
 
         /// <summary>The identity column of each temp table and table variable that has one, by written name.</summary>
         public Dictionary<string, string> IdentityColumns { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The CATCH blocks the current statement is in, innermost on top.</summary>
+        public Stack<ErrorFrame> ErrorFrames { get; } = new();
+
+        /// <summary>A BEGIN TRAN has been translated (so a CATCH after it may have a transaction to roll back).</summary>
+        public bool TransactionBegun { get; set; }
     }
 
     /// <summary>Translates a body's statements to one outer block with every declaration hoisted to it.</summary>
@@ -295,6 +302,8 @@ public sealed partial class ProceduralTranslator
                 return ResultSet(select, () => ((PgQueryStatement)_queries.Statement(select, c)).Query, st);
             case ExecuteStatement e:
                 return Execute(e, st);
+            case TryCatchStatement tc:
+                return TryCatch(tc, st);
             case TransactionStatement t:
                 return Transaction(t, st);
             case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement:
@@ -726,8 +735,7 @@ public sealed partial class ProceduralTranslator
             case "@@IDENTITY":
                 return Helper(IdentityVariable, "numeric(38,0)", st);
             case "@@TRANCOUNT":
-                throw new UntranslatableException(DiagnosticCodes.TranCount,
-                    "@@TRANCOUNT has no PostgreSQL equivalent: there is one transaction, not a nesting count.");
+                return TransactionState(c, st, "@@TRANCOUNT", "1");
             default:
                 return null;
         }
@@ -736,6 +744,8 @@ public sealed partial class ProceduralTranslator
     private PgExpr? Function(string name, FunctionCall f, ExpressionContext c, BodyState st) => name switch
     {
         "SCOPE_IDENTITY" when f.Parameters.Count == 0 => Helper(IdentityVariable, "numeric(38,0)", st),
+        "ERROR_MESSAGE" or "ERROR_NUMBER" or "ERROR_SEVERITY" or "ERROR_STATE" or "ERROR_LINE" or "ERROR_PROCEDURE" or "XACT_STATE"
+            when f.Parameters.Count == 0 => ErrorFunction(name, c, st),
         _ => null,
     };
 

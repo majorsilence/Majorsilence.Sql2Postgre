@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **TRY … CATCH is converted.**
+  - It becomes a block with an `EXCEPTION WHEN OTHERS` handler. The handler fills
+    `ERROR_MESSAGE()` and `ERROR_NUMBER()` with `GET STACKED DIAGNOSTICS`. `ERROR_NUMBER()` maps
+    common SQLSTATEs to SQL Server's numbers (2627, 547, 515, 8134, 245 and others) and keeps
+    `THROW`'s own number.
+  - `ERROR_SEVERITY()` is 16, `ERROR_PROCEDURE()` is the schema-qualified name,
+    `ERROR_LINE()` is NULL and `ERROR_STATE()` is 1 (S2P5040). Outside CATCH, `ERROR_*()` is
+    NULL. This reports S2P5043, a Warning: an error-logging procedure that reads its caller's
+    error sees NULL.
+  - `XACT_STATE()` and `@@TRANCOUNT` in CATCH are constants: whether a `BEGIN TRAN` may have run
+    (S2P5041).
+  - A `BEGIN TRAN` inside TRY commits the work before the block, and a `COMMIT` ending the TRY
+    runs after it. `ROLLBACK` and `COMMIT` in CATCH are kept. The usual
+    `BEGIN TRAN … COMMIT … CATCH … ROLLBACK; THROW` procedures convert and end their
+    transactions as SQL Server does.
+  - Other transaction control inside TRY, or a call of a procedure that ends a transaction,
+    reports S2P5042. A TRY that changes data outside a transaction and then runs more
+    statements reports S2P5044: PostgreSQL undoes all of it on an error, and SQL Server keeps
+    what was already done.
+  - Changed: `BEGIN TRAN` in a procedure now becomes `COMMIT` rather than being dropped (S2P5026).
+    SQL Server had already committed the work before it, so a later `ROLLBACK` must not undo
+    that work.
+  - A procedure that calls one that ends a transaction is no longer converted to a function.
+  - Error numbers, nested handlers and the transaction patterns run on both engines with the
+    same results and the same committed data. (WP 3.6)
 - **Temp tables and table variables are converted.**
   - `CREATE TABLE #t` and `SELECT … INTO #t` create a PostgreSQL temporary table `t`. Columns,
     keys, `CHECK` constraints and indexes are kept, and `CREATE INDEX` and `DROP TABLE` on a temp

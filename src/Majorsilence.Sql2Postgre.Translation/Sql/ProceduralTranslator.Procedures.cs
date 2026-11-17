@@ -37,6 +37,9 @@ public sealed record ProcedureShape(ObjectName Name, PgName PgName, bool IsFunct
     /// <summary>The number of result sets the procedure returns.</summary>
     public int ResultSetCount { get; init; }
 
+    /// <summary>The procedure ends a transaction (BEGIN TRAN, COMMIT or ROLLBACK, itself or in a procedure it calls): it must be CALLed, outside an exception block.</summary>
+    public bool Commits { get; init; }
+
     /// <summary>The temp tables (<c>#t</c>) the procedure creates.</summary>
     internal IReadOnlySet<string> TempTables { get; init; } = new HashSet<string>();
 }
@@ -113,6 +116,7 @@ public sealed partial class ProceduralTranslator
                         sites.Add(new ResultSetSite(s, 1, inLoop, null, false));
                         break;
                     case ExecuteStatement e when CalleeName(e.ExecuteSpecification, name.Schema) is { } callee && Shape(callee) is { } shape:
+                        commits |= shape.Commits;
                         if (shape.IsFunction)
                             sites.Add(new ResultSetSite(s, 1, inLoop, shape.Columns, false));
                         else if (shape.Cursors.Count > 0)
@@ -121,7 +125,7 @@ public sealed partial class ProceduralTranslator
                     case ReturnStatement { Expression: not null }:
                         returnsCode = true;
                         break;
-                    case CommitTransactionStatement or RollbackTransactionStatement:
+                    case BeginTransactionStatement or CommitTransactionStatement or RollbackTransactionStatement:
                         commits = true;
                         break;
                     case BeginEndBlockStatement b:
@@ -182,6 +186,7 @@ public sealed partial class ProceduralTranslator
             ResultSets = resultSets,
             ResultSetCount = total,
             TempTables = tempTables,
+            Commits = commits,
         };
     }
 
@@ -289,6 +294,10 @@ public sealed partial class ProceduralTranslator
         var c = st.C;
         var spec = e.ExecuteSpecification;
         var callee = Callee(spec, e, c);
+        if (callee.Commits && st.TryDepth > 0)
+            throw ExpressionTranslator.Untranslatable(e,
+                $"EXEC of {callee.Name}, which ends a transaction, inside TRY (PL/pgSQL cannot end a transaction inside a block with an exception handler)",
+                DiagnosticCodes.TransactionInTry);
         if (callee.TempTables.FirstOrDefault(st.CreatedTempTables.Contains) is { } shared)
             c.Report(DiagnosticCodes.TempTableReplaced, Severity.Warning,
                 $"{callee.Name} creates its own {shared}, as this routine does: in SQL Server each has its own, in PostgreSQL the callee's replaces this one's and is dropped when the callee ends.");
@@ -500,9 +509,20 @@ public sealed partial class ProceduralTranslator
             case BeginTransactionStatement begin:
                 if (begin.Name?.Value is { } named)
                     st.TransactionNames.Add(named);
+                st.TransactionBegun = true;
+                if (st.TryDepth > 0)
+                {
+                    c.Report(DiagnosticCodes.BeginTransactionDropped, Severity.Info,
+                        "BEGIN TRANSACTION in TRY: the work before the TRY block is committed, and the TRY's work is one transaction with what follows it.");
+                    return [];
+                }
                 c.Report(DiagnosticCodes.BeginTransactionDropped, Severity.Info,
-                    "BEGIN TRANSACTION is dropped: the code runs in its caller's transaction, which COMMIT or ROLLBACK in it ends.");
-                return [];
+                    "BEGIN TRANSACTION becomes COMMIT: the work before it is committed, as SQL Server's autocommit had done, and a new transaction starts.");
+                return [new PgTransactionControl(true)];
+            case CommitTransactionStatement or RollbackTransactionStatement when st.TryDepth > 0:
+                throw ExpressionTranslator.Untranslatable(t,
+                    "COMMIT or ROLLBACK inside TRY, other than a COMMIT ending it (PL/pgSQL cannot end a transaction inside a block with an exception handler)",
+                    DiagnosticCodes.TransactionInTry);
             case CommitTransactionStatement:
                 return [new PgTransactionControl(true)];
             case RollbackTransactionStatement rollback when rollback.Name?.Value is not { } rolledBack || st.TransactionNames.Contains(rolledBack):

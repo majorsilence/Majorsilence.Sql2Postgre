@@ -1,0 +1,80 @@
+CREATE TABLE dbo.item (id int IDENTITY NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL UNIQUE, price decimal(10, 2) NOT NULL);
+GO
+CREATE TABLE dbo.error_log (id int IDENTITY NOT NULL PRIMARY KEY, number int, message nvarchar(4000), procedure_name sysname NULL);
+GO
+CREATE PROCEDURE dbo.add_item @name nvarchar(50), @price decimal(10, 2) AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        BEGIN TRAN;
+        INSERT INTO dbo.item (name, price) VALUES (@name, @price);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK TRAN;
+        PRINT N'Unable to add ' + @name;
+        THROW;
+    END CATCH;
+END;
+GO
+CREATE PROCEDURE dbo.reprice @name nvarchar(50), @price decimal(10, 2) AS
+BEGIN
+    BEGIN TRAN;
+    BEGIN TRY
+        UPDATE dbo.item SET price = @price WHERE name = @name;
+        IF @price < 0
+            THROW 50010, N'negative price', 1;
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRAN;
+        INSERT INTO dbo.error_log (number, message, procedure_name) VALUES (ERROR_NUMBER(), ERROR_MESSAGE(), ERROR_PROCEDURE());
+        RETURN -1;
+    END CATCH;
+    RETURN 0;
+END;
+GO
+CREATE PROCEDURE dbo.safe_divide @a int, @b int AS
+BEGIN
+    DECLARE @result int, @message nvarchar(4000) = ERROR_MESSAGE();
+    BEGIN TRY
+        SET @result = @a / @b;
+    END TRY
+    BEGIN CATCH
+        BEGIN TRY
+            SET @result = @a / NULLIF(@b, 0);
+        END TRY
+        BEGIN CATCH
+            SET @message = ERROR_MESSAGE();
+        END CATCH;
+        SET @message = ERROR_MESSAGE() + N' (line ' + CAST(ERROR_LINE() AS nvarchar(10)) + N', state ' + CAST(ERROR_STATE() AS nvarchar(10))
+            + N', severity ' + CAST(ERROR_SEVERITY() AS nvarchar(10)) + N')';
+    END CATCH;
+    SELECT @result AS result, @message AS message;
+END;
+GO
+CREATE PROCEDURE dbo.half_committed AS
+BEGIN
+    BEGIN TRY
+        BEGIN TRAN;
+        INSERT INTO dbo.item (name, price) VALUES (N'a', 1);
+        COMMIT;
+        INSERT INTO dbo.item (name, price) VALUES (N'b', 2);
+    END TRY
+    BEGIN CATCH
+    END CATCH;
+END;
+GO
+CREATE PROCEDURE dbo.two_writes AS
+BEGIN
+    BEGIN TRY
+        INSERT INTO dbo.item (name, price) VALUES (N'c', 3);
+        INSERT INTO dbo.item (name, price) VALUES (N'c', 3);
+    END TRY
+    BEGIN CATCH
+        PRINT N'second insert failed';
+    END CATCH;
+END;
+GO

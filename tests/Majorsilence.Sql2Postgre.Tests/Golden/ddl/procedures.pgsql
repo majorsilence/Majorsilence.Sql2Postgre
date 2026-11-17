@@ -111,6 +111,7 @@ DECLARE
     sql2pg_arg1 integer;
     sql2pg_arg2 integer;
 BEGIN
+    COMMIT;
     CALL public.add_item(name => restock.name, price => 5, id => v_id, return_code => v_rc);
     IF v_rc <> 0 THEN
         ROLLBACK;

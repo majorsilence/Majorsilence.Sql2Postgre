@@ -33,6 +33,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.3 — functions (scalar, inline TVF, multi-statement TVF); corpus compile scan 0 apply failures on all six databases with functions converted.
 - WP 3.4 — procedures (CREATE PROCEDURE or set-returning function, refcursor result sets, INOUT OUTPUT parameters and return_code, EXEC → CALL, INSERT … EXEC, transactions); 11 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: Northwind 7/0, pubs 4/0, WideWorldImportersDW 14/10, WideWorldImporters 10/32, AdventureWorks 2/8. Manual is mostly S2P0206, from TRY/CATCH, cursors, temp tables and dynamic SQL (WP 3.5–3.8).
 - WP 3.5 — temp tables and table variables (temporary tables dropped when the routine ends, table variables per routine, OUTPUT … INTO, TRUNCATE, OBJECT_ID on temp tables); 11 both-engines cases, each run twice in one session. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: WideWorldImportersDW 16/8 (was 14/10); WideWorldImporters 10/32 and AdventureWorks 2/8 unchanged, as each of those procedures also has TRY/CATCH, cursors or dynamic SQL. WideWorldImporters' S2P0206 count fell from 230 to 207.
+- WP 3.6 — TRY … CATCH (exception blocks, ERROR_*() from stacked diagnostics with SQL Server error numbers, transaction patterns in TRY/CATCH, BEGIN TRAN → COMMIT); 9 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: AdventureWorks 3/7 (was 2/8), WideWorldImportersDW 17/7 (was 16/8), WideWorldImporters 10/32 (its TRY blocks are translated, but the procedures still have dynamic SQL and cursors).
 
 ## Measured
 
@@ -191,5 +192,42 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
     function fails in a read-only transaction or on a standby.
 - Seen while testing WP 3.5, from WP 3.4: `BEGIN TRAN` is dropped, so a `ROLLBACK` in a
   procedure called outside a transaction also undoes what the procedure did before
-  `BEGIN TRAN`. SQL Server had already committed that work. Decide this together with
-  TRY/CATCH (WP 3.6), where `COMMIT` before `BEGIN TRAN` is one option.
+  `BEGIN TRAN`. SQL Server had already committed that work. Resolved in WP 3.6: `BEGIN TRAN`
+  is now `COMMIT`.
+- WP 3.6 departs from the plan in these places:
+  - The error helpers are `sql2pg_error_message`, `sql2pg_error_number` and so on (`_2`, `_3`
+    for nested CATCH blocks), not `v_error_*`, which a T-SQL `@error_message` would collide
+    with. ERROR_STATE() is 1, as THROW's state is not carried.
+  - ERROR_PROCEDURE() is the schema-qualified name: SQL Server 2022 returns `dbo.p`.
+  - The plan made every COMMIT/ROLLBACK in a TRY an error (S2P5042). The common patterns are
+    translated instead:
+    - `BEGIN TRAN` in a TRY commits before the block.
+    - A `COMMIT` ending the TRY runs after the block.
+    - The handler keeps its `ROLLBACK`.
+    - `XACT_STATE()` and `@@TRANCOUNT` in CATCH are constants that say whether a `BEGIN TRAN`
+      may have run.
+  - `BEGIN TRAN` becomes `COMMIT` everywhere in a routine (it was dropped in WP 3.4).
+  - Two codes are added: S2P5043 (ERROR_*() outside CATCH) and S2P5044 (a TRY that changes data
+    outside a transaction, which PostgreSQL undoes whole).
+- Established on PostgreSQL 18:
+  - `COMMIT` inside a block with an exception handler fails ("cannot commit while a
+    subtransaction is active"), and so does a CALL of a committing procedure from one ("invalid
+    transaction termination").
+  - `COMMIT` and `ROLLBACK` inside the handler itself work, and `RAISE;` after a `ROLLBACK` in
+    the handler still re-raises the error.
+  - Local variables keep the values the TRY gave them when the block rolls back.
+  - `GET STACKED DIAGNOSTICS … PG_EXCEPTION_DETAIL` is an empty string for errors without a
+    detail.
+- Established on SQL Server 2022: ERROR_NUMBER() is 8134 for division by zero, 2627 for a unique
+  violation, 547 for a check violation, 245 for a failed conversion and 50000 for RAISERROR with
+  a message. ERROR_PROCEDURE() is schema-qualified.
+- Not translated yet in TRY … CATCH:
+  - COMMIT/ROLLBACK in the middle of a TRY, or EXEC of a committing procedure inside one
+    (S2P5042).
+  - A TRY that changes data outside a transaction loses the changes that SQL Server would keep
+    (S2P5044, Warning only).
+  - ERROR_*() in a procedure called from a caller's CATCH is NULL (S2P5043, Warning).
+    AdventureWorks' uspLogError and uspPrintError do this. Passing the error on through
+    transaction-local settings (`set_config('sql2pg.error_number', …, true)` in each handler) would
+    fix it.
+  - The message text of errors PostgreSQL raises (PostgreSQL's wording).
