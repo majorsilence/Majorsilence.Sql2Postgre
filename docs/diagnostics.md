@@ -67,10 +67,13 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-A procedural statement that is not translated yet: cursors, dynamic SQL (`EXEC (string)`,
+A procedural statement that is not translated yet: dynamic SQL (`EXEC (string)`,
 `sp_executesql`), DDL on real tables, and the other statements Stage 3 is still adding.
 Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a procedure, result
-sets, transaction control, `TRY … CATCH`, temp tables and table variables are translated.
+sets, transaction control, `TRY … CATCH`, cursors, temp tables and table variables are
+translated. `FETCH` without `INTO` (which returns the row as a result set), a cursor used
+without being declared in the same code, and `WHERE CURRENT OF` with joined tables also get
+this code.
 `ALTER TABLE` on a temp table and computed columns in one also get this code. In a procedure, a result set inside a loop,
 rows returned by DML with `OUTPUT`, and any statement other than a result set under
 `SET ROWCOUNT n` also get this code. The statement is kept as a comment.
@@ -611,6 +614,31 @@ Both become PostgreSQL temporary tables, which belong to the session:
   - `BEGIN TRY BEGIN TRAN … COMMIT END TRY BEGIN CATCH IF XACT_STATE() <> 0 ROLLBACK; THROW; END CATCH`
   - `BEGIN TRAN; BEGIN TRY … COMMIT END TRY BEGIN CATCH ROLLBACK … END CATCH`
 
+### Cursors
+
+- **The usual loop.** `DECLARE c CURSOR FOR …; OPEN c; FETCH NEXT FROM c INTO @a, @b;
+  WHILE @@FETCH_STATUS = 0 BEGIN … FETCH NEXT FROM c INTO @a, @b; END; CLOSE c; DEALLOCATE c;`
+  becomes `FOR … IN <query> LOOP … END LOOP;`. The cursor must be used nowhere else (no other
+  `FETCH`, no `WHERE CURRENT OF`), and the loop must have no `CONTINUE`. In T-SQL a `CONTINUE`
+  would skip the `FETCH`.
+- **Any other use** of a cursor is a `refcursor` variable named `cur_<name>`:
+  - `OPEN` opens it with the cursor's query. Variables in the query are read at that point, as
+    in T-SQL.
+  - It is `SCROLL` when the cursor is declared `SCROLL`, `STATIC`, `KEYSET` or `DYNAMIC`, or
+    when a `FETCH` moves other than forward. `FETCH NEXT`, `PRIOR`, `FIRST`, `LAST`, `ABSOLUTE`
+    and `RELATIVE` are kept.
+  - `CLOSE` is kept, and `DEALLOCATE` produces nothing.
+  - Cursor variables (`DECLARE @c CURSOR; SET @c = CURSOR FOR …`) work the same way.
+- **FETCH and FOR loops read into helper variables.** The T-SQL variables take the row only when
+  there is one. PL/pgSQL would set them to NULL past the end of the rows; T-SQL leaves them as
+  they were.
+- **@@FETCH_STATUS** is 0 or -1, set by each `FETCH`.
+- **WHERE CURRENT OF c** is kept, and the cursor's query gets `FOR UPDATE`, which PostgreSQL
+  needs to locate the row.
+- **Changes made while a cursor is open.** A PostgreSQL cursor reads the rows as they were when
+  it was opened. A T-SQL `DYNAMIC` cursor, which is the default, also sees rows that change or
+  appear while it is open.
+
 ### S2P5030 GlobalTempTable (Error)
 
 A global temporary table (`##t`) is shared by every session. PostgreSQL's temporary tables
@@ -665,6 +693,12 @@ An `ERROR_*()` function outside a `CATCH` block is NULL. That is what SQL Server
 error is being handled. But an error-logging procedure called from a `CATCH` block (AdventureWorks'
 `uspLogError`) reads the caller's error this way, and in PostgreSQL it sees NULL. Pass the
 error number and message to such a procedure as parameters.
+
+### S2P5050 GlobalCursor (Error)
+
+A cursor declared `GLOBAL`, or used as `OPEN GLOBAL c`. A global cursor outlives the code that
+declares it: another batch or procedure on the connection can fetch from it. A PL/pgSQL cursor
+belongs to the routine that opens it. Declare it `LOCAL`, or return the rows another way.
 
 ### S2P5044 TryUndoesWrites (Warning)
 

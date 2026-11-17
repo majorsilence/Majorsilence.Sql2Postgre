@@ -310,6 +310,9 @@ public static class DiagnosticCodes
     /// <summary>A TRY changes data outside a transaction and runs more statements: PostgreSQL undoes the changes when a later statement fails, SQL Server keeps them.</summary>
     public const string TryUndoesWrites = "S2P5044";
 
+    /// <summary>A GLOBAL cursor, which outlives the code that declares it.</summary>
+    public const string GlobalCursor = "S2P5050";
+
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";
 

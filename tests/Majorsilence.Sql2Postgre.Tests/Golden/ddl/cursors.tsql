@@ -1,0 +1,74 @@
+CREATE TABLE dbo.item (id int IDENTITY NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL, price decimal(10, 2) NOT NULL);
+GO
+CREATE PROCEDURE dbo.price_list AS
+BEGIN
+    DECLARE @name nvarchar(50), @price decimal(10, 2), @list nvarchar(max) = N'';
+    DECLARE items CURSOR LOCAL FAST_FORWARD FOR
+        SELECT name, price FROM dbo.item ORDER BY name;
+    OPEN items;
+    FETCH NEXT FROM items INTO @name, @price;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        SET @list = @list + @name + N'=' + CAST(@price AS nvarchar(20)) + N';';
+        FETCH NEXT FROM items INTO @name, @price;
+    END;
+    CLOSE items;
+    DEALLOCATE items;
+    SELECT @list AS list, @name AS last_name;
+END;
+GO
+CREATE PROCEDURE dbo.ends AS
+BEGIN
+    DECLARE @id int, @first int, @last int, @second_last int, @status int;
+    DECLARE ids CURSOR SCROLL FOR SELECT id FROM dbo.item ORDER BY id;
+    OPEN ids;
+    FETCH FIRST FROM ids INTO @first;
+    FETCH LAST FROM ids INTO @last;
+    FETCH PRIOR FROM ids INTO @second_last;
+    FETCH ABSOLUTE 100 FROM ids INTO @id;
+    SET @status = @@FETCH_STATUS;
+    CLOSE ids;
+    DEALLOCATE ids;
+    SELECT @first AS first_id, @last AS last_id, @second_last AS second_last, @id AS id, @status AS status;
+END;
+GO
+CREATE PROCEDURE dbo.discount @percent int AS
+BEGIN
+    DECLARE @price decimal(10, 2);
+    DECLARE c CURSOR LOCAL FOR SELECT price FROM dbo.item WHERE price > 10;
+    OPEN c;
+    WHILE 1 = 1
+    BEGIN
+        FETCH NEXT FROM c INTO @price;
+        IF @@FETCH_STATUS <> 0
+            BREAK;
+        UPDATE dbo.item SET price = @price * (100 - @percent) / 100 WHERE CURRENT OF c;
+    END;
+    CLOSE c;
+    DEALLOCATE c;
+END;
+GO
+CREATE PROCEDURE dbo.count_with_variable AS
+BEGIN
+    DECLARE @c CURSOR, @id int, @n int = 0;
+    SET @c = CURSOR LOCAL FORWARD_ONLY FOR SELECT id FROM dbo.item;
+    OPEN @c;
+    FETCH NEXT FROM @c INTO @id;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        SET @n += 1;
+        FETCH NEXT FROM @c INTO @id;
+    END;
+    CLOSE @c;
+    DEALLOCATE @c;
+    SELECT @n AS n;
+END;
+GO
+CREATE PROCEDURE dbo.global_cursor AS
+BEGIN
+    DECLARE g CURSOR GLOBAL FOR SELECT id FROM dbo.item;
+    OPEN g;
+    CLOSE g;
+    DEALLOCATE g;
+END;
+GO

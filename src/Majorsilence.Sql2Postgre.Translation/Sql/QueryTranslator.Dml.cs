@@ -153,6 +153,22 @@ public sealed partial class QueryTranslator
         return new PgInsert(table.Name, columns, rows) { With = [.. ctes, new PgCte("sql2pg_output", names, new PgModifyingQuery(inner))] };
     }
 
+    /// <summary>
+    /// The PostgreSQL cursor variable for a T-SQL cursor, or null when it is not one the procedural
+    /// translator declared (set by it).
+    /// </summary>
+    public Func<CursorId, string?>? CursorVariable { get; set; }
+
+    /// <summary>WHERE CURRENT OF cursor: the row the cursor is on.</summary>
+    private PgExpr CurrentOfCursor(WhereClause where, CursorId cursor, PgExpr? joins)
+    {
+        if (CursorVariable?.Invoke(cursor) is not { } variable)
+            throw ExpressionTranslator.Untranslatable(where, "WHERE CURRENT OF a cursor not declared in this code", DiagnosticCodes.ProceduralGlobal);
+        if (joins is not null)
+            throw ExpressionTranslator.Untranslatable(where, "WHERE CURRENT OF with joined tables", DiagnosticCodes.ProceduralStatement);
+        return new PgKeyword("CURRENT OF " + NameMapper.Quote(variable));
+    }
+
     // ---- TRUNCATE ----
 
     /// <summary>TRUNCATE TABLE also restarts the table's identity, as SQL Server's does.</summary>
@@ -336,9 +352,9 @@ public sealed partial class QueryTranslator
         var (alias, from, joins, scope) = TargetAndFrom(target, spec.FromClause, cc);
         var uc = cc.With(scope);
         var set = spec.SetClauses.Select(s => Assignment(s, target, uc)).ToList();
-        var where = And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, uc) : null]);
-        if (spec.WhereClause?.Cursor is not null)
-            throw ExpressionTranslator.Untranslatable(spec.WhereClause, "WHERE CURRENT OF (cursors are procedural code)", DiagnosticCodes.ProceduralGlobal);
+        var where = spec.WhereClause?.Cursor is { } cursor
+            ? CurrentOfCursor(spec.WhereClause, cursor, joins)
+            : And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, uc) : null]);
         return OutputInto(new PgUpdate(target.Name, alias, set)
         {
             With = ctes, From = from, Where = where,
@@ -406,12 +422,12 @@ public sealed partial class QueryTranslator
             target = ResolveAliasTarget(spec.Target, spec.FromClause, cc) ?? target;
         var (alias, from, joins, scope) = TargetAndFrom(target, spec.FromClause, cc);
         var dc = cc.With(scope);
-        if (spec.WhereClause?.Cursor is not null)
-            throw ExpressionTranslator.Untranslatable(spec.WhereClause, "WHERE CURRENT OF (cursors are procedural code)", DiagnosticCodes.ProceduralGlobal);
         return OutputInto(new PgDelete(target.Name, alias)
         {
             With = ctes, Using = from,
-            Where = And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, dc) : null]),
+            Where = spec.WhereClause?.Cursor is { } cursor
+                ? CurrentOfCursor(spec.WhereClause, cursor, joins)
+                : And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, dc) : null]),
             Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, dc, scope),
         }, spec.OutputIntoClause, cc);
     }

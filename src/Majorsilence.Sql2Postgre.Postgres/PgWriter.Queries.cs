@@ -45,6 +45,8 @@ public static partial class PgWriter
         if (s.Having is not null)
             sb.Append(nl).Append("HAVING ").Append(Expression(s.Having));
         AppendTail(sb, s.OrderBy, s.Limit, s.Offset, s.WithTies, nl);
+        if (s.ForUpdate)
+            sb.Append(nl).Append("FOR UPDATE");
         return sb.ToString();
     }
 

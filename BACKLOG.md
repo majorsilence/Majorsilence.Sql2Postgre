@@ -34,6 +34,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.4 — procedures (CREATE PROCEDURE or set-returning function, refcursor result sets, INOUT OUTPUT parameters and return_code, EXEC → CALL, INSERT … EXEC, transactions); 11 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: Northwind 7/0, pubs 4/0, WideWorldImportersDW 14/10, WideWorldImporters 10/32, AdventureWorks 2/8. Manual is mostly S2P0206, from TRY/CATCH, cursors, temp tables and dynamic SQL (WP 3.5–3.8).
 - WP 3.5 — temp tables and table variables (temporary tables dropped when the routine ends, table variables per routine, OUTPUT … INTO, TRUNCATE, OBJECT_ID on temp tables); 11 both-engines cases, each run twice in one session. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: WideWorldImportersDW 16/8 (was 14/10); WideWorldImporters 10/32 and AdventureWorks 2/8 unchanged, as each of those procedures also has TRY/CATCH, cursors or dynamic SQL. WideWorldImporters' S2P0206 count fell from 230 to 207.
 - WP 3.6 — TRY … CATCH (exception blocks, ERROR_*() from stacked diagnostics with SQL Server error numbers, transaction patterns in TRY/CATCH, BEGIN TRAN → COMMIT); 9 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: AdventureWorks 3/7 (was 2/8), WideWorldImportersDW 17/7 (was 16/8), WideWorldImporters 10/32 (its TRY blocks are translated, but the procedures still have dynamic SQL and cursors).
+- WP 3.7 — cursors (FOR loop for the OPEN/FETCH/WHILE pattern, refcursor variables otherwise, scrolling, @@FETCH_STATUS, WHERE CURRENT OF, cursor variables); 5 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters' S2P0206 count fell from 214 to 154; its 32 Manual procedures all still contain dynamic SQL (WP 3.8).
 
 ## Measured
 
@@ -231,3 +232,22 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
     transaction-local settings (`set_config('sql2pg.error_number', …, true)` in each handler) would
     fix it.
   - The message text of errors PostgreSQL raises (PostgreSQL's wording).
+- WP 3.7 departs from the plan in these places:
+  - The FOR loop reads into helper variables (`sql2pg_fetch1`, …) and copies them into the T-SQL
+    variables, rather than reading `r.a` from a record.
+  - FETCH reads into the same helpers, and assigns the T-SQL variables only when a row came back.
+  - Cursors are unbound `refcursor` variables `cur_<name>`, opened with the query, not
+    `DECLARE c CURSOR FOR` in the declaration section. PostgreSQL then names each portal itself,
+    so the same cursor name in nested procedures does not clash.
+  - S2P5050 is reported only for cursors declared `GLOBAL` explicitly. SQL Server's own default
+    is GLOBAL, through the database option, but undeclared cursors are used locally in practice.
+- Established on PostgreSQL 18:
+  - A FOR loop over no rows, and a FETCH past the last row, set their target variables to NULL.
+  - `WHERE CURRENT OF` works with a refcursor variable.
+  - A refcursor variable can be opened again after CLOSE.
+- Not translated yet for cursors:
+  - `FETCH` without `INTO`, which returns the row as a result set.
+  - `@@CURSOR_ROWS` and `CURSOR_STATUS()`.
+  - Cursor OUTPUT parameters (`CURSOR VARYING OUTPUT`).
+  - `DEALLOCATE` without `CLOSE` before a cursor is opened again.
+  - The sensitivity of DYNAMIC and KEYSET cursors (PostgreSQL's see the rows as at OPEN).

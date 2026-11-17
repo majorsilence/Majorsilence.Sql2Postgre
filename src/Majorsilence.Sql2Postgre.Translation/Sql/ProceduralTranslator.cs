@@ -125,6 +125,17 @@ public sealed partial class ProceduralTranslator
 
         /// <summary>A BEGIN TRAN has been translated (so a CATCH after it may have a transaction to roll back).</summary>
         public bool TransactionBegun { get; set; }
+
+        /// <summary>The cursors declared so far, by name (<c>@c</c> for a cursor variable).</summary>
+        public Dictionary<string, CursorInfo> Cursors { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>How the body uses each cursor (FETCH count, scrolling, WHERE CURRENT OF).</summary>
+        public Dictionary<string, CursorUse> CursorUses { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public bool ReadsFetchStatus { get; init; }
+
+        /// <summary>Helper variables FETCH reads into, by type.</summary>
+        public Dictionary<string, List<string>> FetchHelpers { get; } = new(StringComparer.Ordinal);
     }
 
     /// <summary>Translates a body's statements to one outer block with every declaration hoisted to it.</summary>
@@ -132,10 +143,16 @@ public sealed partial class ProceduralTranslator
     public PgPlBody Body(IList<TSqlStatement> statements, BodySignature signature, ExpressionContext context)
     {
         var finder = new GlobalFinder();
+        var cursors = new CursorFinder();
         foreach (var s in statements)
+        {
             s.Accept(finder);
+            s.Accept(cursors);
+        }
         var st = new BodyState(signature, context)
         {
+            CursorUses = cursors.Uses,
+            ReadsFetchStatus = finder.FetchStatus,
             ReadsRowCount = finder.RowCount,
             ReadsIdentity = finder.Identity,
             HasTry = finder.Try,
@@ -188,18 +205,19 @@ public sealed partial class ProceduralTranslator
     {
         foreach (var p in st.Signature.Parameters)
             st.C.Scope.DefineVariable(p.SourceName, p.Type);
-        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable);
+        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable);
         _x.VariableWriter = name => VariableRef(name, st);
         _x.ProceduralGlobal = (name, c) => Global(name, c, st);
         _x.ProceduralFunction = (name, f, c) => Function(name, f, c, st);
         _queries.TableVariable = name => st.TableVariables.GetValueOrDefault(name);
+        _queries.CursorVariable = id => st.Cursors.GetValueOrDefault(CursorKey(id))?.Variable;
         try
         {
             return translate();
         }
         finally
         {
-            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable) = saved;
+            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable) = saved;
         }
     }
 
@@ -234,8 +252,14 @@ public sealed partial class ProceduralTranslator
         {
             var s = statements[i];
             // Session options produce no code, so DECLAREs after SET NOCOUNT ON still open the body.
-            if (topLevel && s is not (DeclareVariableStatement or DeclareTableVariableStatement or PredicateSetStatement or SetCommandStatement))
+            if (topLevel && s is not (DeclareVariableStatement or DeclareTableVariableStatement or DeclareCursorStatement or PredicateSetStatement or SetCommandStatement))
                 st.Prologue = false;
+            if (TryCursorLoop(statements, i, st) is { } loop)
+            {
+                result.AddRange(loop);
+                i += 2;
+                continue;
+            }
             var next = i + 1 < statements.Count ? statements[i + 1] : null;
             result.AddRange(Statement(s, next, st));
             if (IsDml(s) && next is not null)
@@ -304,6 +328,17 @@ public sealed partial class ProceduralTranslator
                 return Execute(e, st);
             case TryCatchStatement tc:
                 return TryCatch(tc, st);
+            case DeclareCursorStatement d:
+                return DeclareCursor(d.Name.Value, d.CursorDefinition, d, st);
+            case OpenCursorStatement open:
+                return OpenCursor(open, st);
+            case FetchCursorStatement fetch:
+                return Fetch(fetch, st);
+            case CloseCursorStatement close:
+                return CloseCursor(close, st);
+            case DeallocateCursorStatement:
+                // CLOSE has already ended the cursor; PL/pgSQL has nothing to free.
+                return [];
             case TransactionStatement t:
                 return Transaction(t, st);
             case SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement:
@@ -420,7 +455,7 @@ public sealed partial class ProceduralTranslator
             string name = e.VariableName.Value.TrimStart('@');
             if (e.DataType is SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Cursor })
             {
-                result.Add(Untranslated(e, DiagnosticCodes.ProceduralStatement, "A cursor variable is not translated yet.", st));
+                CursorVariable(e.VariableName.Value, st);
                 continue;
             }
             var type = _model.TypeOf(e.DataType, c.Schema);
@@ -499,7 +534,7 @@ public sealed partial class ProceduralTranslator
     private IEnumerable<PgPlStatement> SetVariable(SetVariableStatement set, BodyState st)
     {
         if (set.CursorDefinition is not null)
-            throw ExpressionTranslator.Untranslatable(set, "SET @cursor = CURSOR …", DiagnosticCodes.ProceduralStatement);
+            return DeclareCursor(set.Variable.Name, set.CursorDefinition, set, st);
         if (set.FunctionCallExists || set.Identifier is not null)
             throw ExpressionTranslator.Untranslatable(set, "a method call on a variable (SET @x.method(…))");
         var (target, type, dataType) = Target(set.Variable, st);
@@ -734,6 +769,8 @@ public sealed partial class ProceduralTranslator
                 return new PgLiteral("0");
             case "@@IDENTITY":
                 return Helper(IdentityVariable, "numeric(38,0)", st);
+            case "@@FETCH_STATUS":
+                return Helper(FetchStatusVariable, "integer", st);
             case "@@TRANCOUNT":
                 return TransactionState(c, st, "@@TRANCOUNT", "1");
             default:
@@ -755,11 +792,13 @@ public sealed partial class ProceduralTranslator
         public bool RowCount { get; private set; }
         public bool Identity { get; private set; }
         public bool Try { get; private set; }
+        public bool FetchStatus { get; private set; }
 
         public override void Visit(GlobalVariableExpression node)
         {
             string name = node.Name.ToUpperInvariant();
             RowCount |= name == "@@ROWCOUNT";
+            FetchStatus |= name == "@@FETCH_STATUS";
             Identity |= name == "@@IDENTITY";
         }
 

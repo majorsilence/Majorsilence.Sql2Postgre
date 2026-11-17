@@ -66,6 +66,9 @@ public sealed record PgContinue(string? Label = null, PgExpr? When = null) : PgP
 /// <param name="Query">The query; null when <see cref="Execute"/> is set.</param>
 public sealed record PgForQuery(string Target, PgQuery? Query, IReadOnlyList<PgPlStatement> Statements, string? Label = null) : PgPlStatement
 {
+    /// <summary>Several scalar targets (<c>FOR a, b IN …</c>) instead of <see cref="Target"/>.</summary>
+    public IReadOnlyList<string> Targets { get; init; } = [];
+
     public PgExpr? Execute { get; init; }
     public IReadOnlyList<PgExpr> Using { get; init; } = [];
 }

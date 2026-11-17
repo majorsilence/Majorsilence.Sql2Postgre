@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Cursors are converted.**
+  - The usual `OPEN`, `FETCH NEXT … INTO`, `WHILE @@FETCH_STATUS = 0` loop becomes
+    `FOR … IN query LOOP`.
+  - Other cursors are `refcursor` variables, opened with their query at `OPEN`, with every
+    `FETCH` direction, `@@FETCH_STATUS`, `CLOSE`, and `WHERE CURRENT OF` (the query gets
+    `FOR UPDATE`).
+  - Cursor variables (`SET @c = CURSOR FOR …`) are converted too.
+  - FETCH past the last row leaves the variables as they were, as in T-SQL.
+  - `GLOBAL` cursors report S2P5050.
+  - The loop, scrolling, `WHERE CURRENT OF`, cursor variables and nested cursors run on both
+    engines with the same results. (WP 3.7)
 - **TRY … CATCH is converted.**
   - It becomes a block with an `EXCEPTION WHEN OTHERS` handler. The handler fills
     `ERROR_MESSAGE()` and `ERROR_NUMBER()` with `GET STACKED DIAGNOSTICS`. `ERROR_NUMBER()` maps

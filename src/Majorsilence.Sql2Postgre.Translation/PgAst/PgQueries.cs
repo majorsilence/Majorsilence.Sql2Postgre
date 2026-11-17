@@ -37,6 +37,9 @@ public sealed record PgSelect : PgQuery
 
     /// <summary>FETCH FIRST <see cref="Limit"/> ROWS WITH TIES instead of LIMIT.</summary>
     public bool WithTies { get; init; }
+
+    /// <summary><c>FOR UPDATE</c> (a cursor whose rows are changed with WHERE CURRENT OF).</summary>
+    public bool ForUpdate { get; init; }
 }
 
 /// <param name="Operator"><c>UNION</c>, <c>UNION ALL</c>, <c>EXCEPT</c>, <c>INTERSECT</c>.</param>

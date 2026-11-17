@@ -69,7 +69,7 @@ public static partial class PgWriter
         PgLoop l => LabelLine(l.Label) + "LOOP\n" + Nested(l.Statements, targetVersion) + EndLoop(l.Label),
         PgExit e => "EXIT" + LabelRef(e.Label) + (e.When is null ? "" : $" WHEN {Expression(e.When)}") + ";\n",
         PgContinue c => "CONTINUE" + LabelRef(c.Label) + (c.When is null ? "" : $" WHEN {Expression(c.When)}") + ";\n",
-        PgForQuery f => LabelLine(f.Label) + $"FOR {Q(f.Target)} IN {DynamicOrQuery(f.Query, f.Execute, f.Using)}\nLOOP\n"
+        PgForQuery f => LabelLine(f.Label) + $"FOR {(f.Targets.Count > 0 ? string.Join(", ", f.Targets.Select(Q)) : Q(f.Target))} IN {DynamicOrQuery(f.Query, f.Execute, f.Using)}\nLOOP\n"
                         + Nested(f.Statements, targetVersion) + EndLoop(f.Label),
         PgForRange f => LabelLine(f.Label) + $"FOR {Q(f.Variable)} IN {(f.Reverse ? "REVERSE " : "")}{Expression(f.Low)} .. {Expression(f.High)}"
                         + (f.Step is null ? "" : $" BY {Expression(f.Step)}") + " LOOP\n" + Nested(f.Statements, targetVersion) + EndLoop(f.Label),
