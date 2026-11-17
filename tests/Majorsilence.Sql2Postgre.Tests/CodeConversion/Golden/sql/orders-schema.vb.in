@@ -1,0 +1,39 @@
+Imports System.Data
+Imports Dapper
+Imports Microsoft.Data.SqlClient
+
+Public NotInheritable Class OrderStore
+    Private Const ActiveCustomers As String = "SELECT TOP 10 customer_id, name FROM shop.customer WHERE is_active = 1 ORDER BY name"
+    Private ReadOnly _connectionString As String
+
+    Public Sub New(connectionString As String)
+        _connectionString = connectionString
+    End Sub
+
+    Public Function Active() As IEnumerable(Of String)
+        Using connection As New SqlConnection(_connectionString)
+            Return connection.Query(Of String)(ActiveCustomers)
+        End Using
+    End Function
+
+    Public Function Count() As Integer
+        Using connection As New SqlConnection(_connectionString)
+            connection.Open()
+            Using command As New SqlCommand("SELECT COUNT(*) FROM shop.customer WHERE ISNULL(email, '') <> ''", connection)
+                Return CInt(command.ExecuteScalar())
+            End Using
+        End Using
+    End Function
+
+    Public Function Add(customerId As Integer, total As Decimal) As Long
+        Using connection As New SqlConnection(_connectionString)
+            connection.Open()
+            Dim command = connection.CreateCommand()
+            command.CommandText = "INSERT INTO shop.[order] (customer_id, order_date, total) " &
+                                  "VALUES (@customerId, GETDATE(), @total); SELECT SCOPE_IDENTITY()"
+            command.Parameters.AddWithValue("@customerId", customerId)
+            command.Parameters.AddWithValue("@total", total)
+            Return CLng(command.ExecuteScalar())
+        End Using
+    End Function
+End Class

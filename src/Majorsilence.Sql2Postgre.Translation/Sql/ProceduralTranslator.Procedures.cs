@@ -435,10 +435,11 @@ public sealed partial class ProceduralTranslator
     }
 
     /// <summary>Whether an EXEC can run as a plain statement in a script (no variables involved).</summary>
-    public static bool IsPlainCall(ExecuteStatement e) =>
+    /// <param name="parameters">Command text: a variable argument is a command parameter, so it counts as a value too.</param>
+    public static bool IsPlainCall(ExecuteStatement e, bool parameters = false) =>
         !IsDynamic(e.ExecuteSpecification)
         && e.ExecuteSpecification is { Variable: null, LinkedServer: null, ExecutableEntity: ExecutableProcedureReference { ProcedureReference.ProcedureReference: not null } p }
-        && p.Parameters.All(a => !a.IsOutput && a.ParameterValue is Literal or UnaryExpression { Expression: Literal });
+        && p.Parameters.All(a => !a.IsOutput && (a.ParameterValue is Literal or UnaryExpression { Expression: Literal } || parameters && a.ParameterValue is VariableReference));
 
     /// <summary>INSERT … EXEC of a procedure converted to a function: <c>INSERT … SELECT * FROM f(…)</c>.</summary>
     private PgQuery? ExecuteSource(ExecuteInsertSource source, ExpressionContext c)

@@ -39,7 +39,7 @@ The rules are added work package by work package (Stage A in the
 |---|---|
 | Edit engine, input discovery, `sql2pg code` | A.1 (done) |
 | ADO.NET types, `SqlDbType`, exceptions, connection strings | A.2 (done) |
-| SQL strings in code (ADO.NET, Dapper, EF Core raw SQL) | A.3 |
+| SQL strings in code (ADO.NET, Dapper, EF Core raw SQL) | A.3 (done) |
 | Stored procedure calls | A.4 |
 | Dapper and Dapper.Contrib | A.5 |
 | Entity Framework Core | A.6 |
@@ -90,3 +90,36 @@ types in full:
   Connection strings in `appsettings.json` and `web.config` are not converted yet.
 - **Reported:** `SqlBulkCopy` (S2P8004), table-valued parameters (S2P8003), `SqlTypes` (S2P8007),
   and SqlClient-only features (S2P8008).
+
+## SQL in code
+
+SQL found in these places is translated from T-SQL and written back where it was:
+
+| Where | What |
+|---|---|
+| ADO.NET | `new SqlCommand(sql, …)`, `new SqlDataAdapter(sql, …)`, `command.CommandText = sql` (also in an object initializer) |
+| Dapper (files that import `Dapper`) | `Query`, `QueryFirst…`, `QuerySingle…`, `QueryMultiple`, `Execute`, `ExecuteScalar`, `ExecuteReader` and their `Async` forms: the first argument, or `sql:` |
+| EF Core | `FromSqlRaw`, `ExecuteSqlRaw(Async)`, `SqlQueryRaw` (with `{0}` placeholders); `FromSql`, `FromSqlInterpolated`, `ExecuteSql(Async)`, `ExecuteSqlInterpolated(Async)`, `SqlQuery` (interpolated) |
+
+- **Where the text comes from.** It can be a string literal, a concatenation of literals, a
+  `const` or `static readonly` field, or a local assigned only where it is declared. When it
+  comes from a declaration, the declaration's value is rewritten, once. Text built at run time is
+  reported (S2P8010) and left alone. A bare name (`"dbo.GetOrders"`) is a stored procedure, which
+  WP A.4 covers.
+- **How it is written back.** In the literal's own form (regular, verbatim, raw), on one line when
+  the original was on one line. SQL that translates to the same text is not touched. If the
+  translation has an error, the site is left as it was and the error is reported at its line.
+- **Parameters.** `@name` stays `@name`, which Npgsql binds by name. EF Core's `{0}` placeholders
+  and the holes of an interpolated `FromSql` are kept as they were.
+- **Changes for application code** (beyond the T-SQL translation of queries, see
+  [diagnostics.md](diagnostics.md)):
+  - `INSERT …; SELECT SCOPE_IDENTITY()` (or `@@IDENTITY`, cast or not) becomes one
+    `INSERT … RETURNING` of the identity column, as numeric (what SCOPE_IDENTITY returns) under
+    the code's own cast. This needs `--source`; without it the value comes from `lastval()`
+    (S2P8011).
+  - A top-level `COUNT` or `SUM` that SQL Server types as `int` is cast to integer. PostgreSQL's
+    are bigint, which `(int)command.ExecuteScalar()` cannot unbox.
+  - `EXEC proc @a, @b` with parameters becomes `CALL proc(a => @a, b => @b)`, or `SELECT * FROM
+    f(…)` for a procedure converted to a function (that needs `--source`).
+  - Procedural T-SQL in a command is reported (S2P8012), as are `mssql_compat` helpers the SQL
+    needs (S2P8013).

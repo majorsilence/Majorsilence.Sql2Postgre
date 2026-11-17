@@ -374,6 +374,18 @@ public static class DiagnosticCodes
     /// <summary>A SqlClient feature with no Npgsql counterpart (query notifications, InfoMessage, XML readers, …).</summary>
     public const string SqlClientOnly = "S2P8008";
 
+    /// <summary>SQL built at run time (concatenation with values that are not constants): it cannot be translated where it is written.</summary>
+    public const string SqlBuiltAtRunTime = "S2P8010";
+
+    /// <summary>SCOPE_IDENTITY() after an INSERT reads lastval(): the identity column is not known without --source.</summary>
+    public const string IdentityFromLastval = "S2P8011";
+
+    /// <summary>Procedural T-SQL (variables, control flow) in a command.</summary>
+    public const string ProceduralSqlInCommand = "S2P8012";
+
+    /// <summary>Translated SQL in code calls mssql_compat helpers, which must exist in the database.</summary>
+    public const string CompatHelperInCode = "S2P8013";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 

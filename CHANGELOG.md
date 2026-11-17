@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`sql2pg code` translates SQL in code.**
+  - It covers ADO.NET command text, Dapper's query and execute methods, and EF Core's raw SQL.
+  - The text is followed back to literals, constants and once-assigned locals, translated from
+    T-SQL with parameters kept, and written back in the literal's own form. EF's `{0}`
+    placeholders and `FromSql` interpolation holes are kept.
+  - `INSERT …; SELECT SCOPE_IDENTITY()` becomes `INSERT … RETURNING`.
+  - `int` COUNT and SUM results are cast to integer.
+  - `EXEC` with parameters becomes CALL or a function call.
+  - SQL built at run time and procedural SQL are reported (S2P8010–S2P8013).
+  - A program with T-SQL in its commands gives the same output on the migrated database after
+    conversion. (WP A.3)
 - **`sql2pg code` converts ADO.NET.**
   - SqlClient namespaces and types become Npgsql's, and `SqlDbType` becomes `NpgsqlDbType`
     following the type mapper.

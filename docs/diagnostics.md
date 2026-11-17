@@ -929,6 +929,34 @@ A SqlClient feature with no Npgsql counterpart:
 - `SqlDbType.Udt`.
 - Connection statistics.
 
+### S2P8010 SqlBuiltAtRunTime (Error)
+
+SQL passed to a command, Dapper or EF Core is built at run time: concatenated with a variable,
+`string.Format`, an interpolated string outside EF Core's `FromSql`, or a variable assigned more
+than once. Translation needs the text where it is written. Translate the pieces by hand, or build
+the SQL from constants and pass values as parameters. Names that must vary (a sort column) need a
+fixed list of allowed names in the code.
+
+### S2P8011 IdentityFromLastval (Warning)
+
+`INSERT …; SELECT SCOPE_IDENTITY()` is translated without the schema, so the identity column is
+not known. The value comes from `lastval()`, the last value any sequence gave in the session,
+which is SQL Server's `@@IDENTITY` rather than `SCOPE_IDENTITY()`: a trigger that inserts
+elsewhere changes it. Run `sql2pg code` with `--source`, and the INSERT returns its identity
+column (`INSERT … RETURNING`).
+
+### S2P8012 ProceduralSqlInCommand (Error)
+
+A command's SQL declares variables or uses control flow (`DECLARE`, `IF`, `WHILE`, `BEGIN … END`).
+A PostgreSQL command is one or more plain statements. Move the logic into a function or
+procedure and call it, or into the application code.
+
+### S2P8013 CompatHelperInCode (Warning)
+
+The translated SQL calls `mssql_compat` helpers (for example `charindex`, `datediff`). `sql2pg
+schema` creates only the helpers the schema needs. Make sure the database has these too, or
+rewrite the expression.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

@@ -1,0 +1,81 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using Dapper;
+using Npgsql;
+using Microsoft.EntityFrameworkCore;
+
+namespace Shop.Data;
+
+public sealed record Customer(int CustomerId, string Name);
+
+public sealed class OrderStore(string connectionString, ShopContext db)
+{
+    private const string ActiveCustomers = "SELECT customer_id, name FROM shop.customer WHERE is_active = true ORDER BY name NULLS FIRST LIMIT 10";
+
+    private static readonly string CustomerById =
+        "SELECT customer_id, name " +
+        "FROM shop.customer " +
+        "WHERE customer_id = @id";
+
+    public IEnumerable<Customer> Active()
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        return connection.Query<Customer>(ActiveCustomers);
+    }
+
+    public Customer? ById(int id)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        return connection.QuerySingleOrDefault<Customer>(sql: CustomerById, new { id });
+    }
+
+    public int Count()
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+        using var command = new NpgsqlCommand("SELECT CAST(count(*) AS integer) FROM shop.customer WHERE COALESCE(email, '') <> ''", connection);
+        return (int)command.ExecuteScalar();
+    }
+
+    public long Add(int customerId, decimal total)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = @"INSERT INTO shop.""order"" (customer_id, order_date, total)
+VALUES (@customerId, localtimestamp, @total)
+RETURNING CAST(trunc(CAST(order_id AS numeric)) AS bigint);";
+        command.Parameters.AddWithValue("@customerId", customerId);
+        command.Parameters.AddWithValue("@total", total);
+        return (long)command.ExecuteScalar();
+    }
+
+    public void Rename(int id, string name)
+    {
+        string sql = "UPDATE shop.customer SET name = @name, email = NULL WHERE customer_id = @id";
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Execute(sql, new { id, name });
+    }
+
+    public List<Customer> Search(string text) =>
+        db.Customers.FromSqlRaw("SELECT * FROM shop.customer WHERE mssql_compat.charindex({0}, name) > 0", text).ToList();
+
+    public List<Customer> Named(string name) =>
+        db.Customers.FromSql($"SELECT * FROM shop.customer WHERE name = {name} AND length(rtrim(name)) > 0").ToList();
+
+    public int Deactivate(DateTime before) =>
+        db.Database.ExecuteSqlRaw("UPDATE shop.customer SET is_active = false WHERE created_at < {0}", before);
+
+    public IEnumerable<Customer> Sorted(string column)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        return connection.Query<Customer>("SELECT customer_id, name FROM shop.customer ORDER BY " + column);
+    }
+}
+
+public sealed class ShopContext : DbContext
+{
+    public DbSet<Customer> Customers => Set<Customer>();
+}

@@ -1,0 +1,82 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using Dapper;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+
+namespace Shop.Data;
+
+public sealed record Customer(int CustomerId, string Name);
+
+public sealed class OrderStore(string connectionString, ShopContext db)
+{
+    private const string ActiveCustomers = "SELECT TOP 10 customer_id, name FROM shop.customer WHERE is_active = 1 ORDER BY name";
+
+    private static readonly string CustomerById =
+        "SELECT customer_id, name " +
+        "FROM shop.customer " +
+        "WHERE customer_id = @id";
+
+    public IEnumerable<Customer> Active()
+    {
+        using var connection = new SqlConnection(connectionString);
+        return connection.Query<Customer>(ActiveCustomers);
+    }
+
+    public Customer? ById(int id)
+    {
+        using var connection = new SqlConnection(connectionString);
+        return connection.QuerySingleOrDefault<Customer>(sql: CustomerById, new { id });
+    }
+
+    public int Count()
+    {
+        using var connection = new SqlConnection(connectionString);
+        connection.Open();
+        using var command = new SqlCommand("SELECT COUNT(*) FROM shop.customer WHERE ISNULL(email, '') <> ''", connection);
+        return (int)command.ExecuteScalar();
+    }
+
+    public long Add(int customerId, decimal total)
+    {
+        using var connection = new SqlConnection(connectionString);
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            INSERT INTO shop.[order] (customer_id, order_date, total)
+            VALUES (@customerId, GETDATE(), @total);
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);";
+        command.Parameters.AddWithValue("@customerId", customerId);
+        command.Parameters.AddWithValue("@total", total);
+        return (long)command.ExecuteScalar();
+    }
+
+    public void Rename(int id, string name)
+    {
+        string sql = "UPDATE shop.customer SET name = @name, email = NULL WHERE customer_id = @id";
+        using var connection = new SqlConnection(connectionString);
+        connection.Execute(sql, new { id, name });
+    }
+
+    public List<Customer> Search(string text) =>
+        db.Customers.FromSqlRaw("SELECT * FROM shop.customer WHERE CHARINDEX({0}, name) > 0", text).ToList();
+
+    public List<Customer> Named(string name) =>
+        db.Customers.FromSql($"SELECT * FROM shop.customer WHERE name = {name} AND LEN(name) > 0").ToList();
+
+    public int Deactivate(DateTime before) =>
+        db.Database.ExecuteSqlRaw("UPDATE shop.customer SET is_active = 0 WHERE created_at < {0}", before);
+
+    public IEnumerable<Customer> Sorted(string column)
+    {
+        using var connection = new SqlConnection(connectionString);
+        return connection.Query<Customer>("SELECT customer_id, name FROM shop.customer ORDER BY " + column);
+    }
+}
+
+public sealed class ShopContext : DbContext
+{
+    public DbSet<Customer> Customers => Set<Customer>();
+}

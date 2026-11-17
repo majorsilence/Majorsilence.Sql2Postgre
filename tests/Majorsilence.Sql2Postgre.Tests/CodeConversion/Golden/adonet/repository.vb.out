@@ -16,7 +16,7 @@ Namespace Shop.Data
             Dim result As New List(Of String)
             Using connection As New NpgsqlConnection(_connectionString)
                 connection.Open()
-                Using command As New NpgsqlCommand("SELECT name FROM customer WHERE customer_id >= @id", connection)
+                Using command As New NpgsqlCommand("SELECT name FROM public.customer WHERE customer_id >= @id", connection)
                     command.Parameters.Add(New NpgsqlParameter("@id", NpgsqlDbType.Integer) With {.Value = minimumId})
                     Using reader As NpgsqlDataReader = command.ExecuteReader()
                         While reader.Read()
@@ -32,7 +32,7 @@ Namespace Shop.Data
             Using connection As New NpgsqlConnection(_connectionString)
                 connection.Open()
                 Dim command = connection.CreateCommand()
-                command.CommandText = "INSERT INTO customer (customer_code, name) VALUES (@code, @name)"
+                command.CommandText = "INSERT INTO public.customer (customer_code, name) VALUES (@code, @name)"
                 command.Parameters.Add("@code", NpgsqlDbType.Varchar, 20).Value = code
                 command.Parameters.Add(New NpgsqlParameter With {.ParameterName = "@name", .NpgsqlDbType = NpgsqlDbType.Varchar, .Value = name})
                 Try
