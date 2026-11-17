@@ -1,0 +1,24 @@
+using Dapper.Contrib.Extensions;
+
+[Table("sales.\"order header\"")]
+public sealed class OrderHeader
+{
+    [Key]
+    public int OrderId { get; set; }
+    public string CustomerName { get; set; } = "";
+    [Computed]
+    public decimal Total { get; set; }
+}
+
+[Table("public.audit")]
+public sealed class audit
+{
+    [ExplicitKey]
+    public string id { get; set; } = "";
+    public string note { get; set; } = "";
+}
+
+public static class Setup
+{
+    public static void UseSqlServerDialect() => SqlMapperExtensions.GetDatabaseType = _ => "sqlconnection";
+}

@@ -392,6 +392,12 @@ public static class DiagnosticCodes
     /// <summary>A stored procedure call whose converted form is not known here (no --source, or parameters not visible).</summary>
     public const string ProcedureShapeUnknown = "S2P8021";
 
+    /// <summary>Dapper.Contrib quotes column names, which must then match the converted columns exactly.</summary>
+    public const string DapperContribColumns = "S2P8030";
+
+    /// <summary>A Dapper.Contrib adapter hook (GetDatabaseType, ISqlAdapter).</summary>
+    public const string DapperContribAdapter = "S2P8031";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 

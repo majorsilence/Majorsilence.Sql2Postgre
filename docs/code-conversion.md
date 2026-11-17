@@ -41,7 +41,7 @@ The rules are added work package by work package (Stage A in the
 | ADO.NET types, `SqlDbType`, exceptions, connection strings | A.2 (done) |
 | SQL strings in code (ADO.NET, Dapper, EF Core raw SQL) | A.3 (done) |
 | Stored procedure calls | A.4 (done) |
-| Dapper and Dapper.Contrib | A.5 |
+| Dapper and Dapper.Contrib | A.5 (done) |
 | Entity Framework Core | A.6 |
 
 ## ADO.NET
@@ -145,3 +145,17 @@ constructor or `CommandText`. In Dapper, a call with `commandType: CommandType.S
     `return_code`.
   - A procedure that returns refcursors is reported (S2P8020).
 - **Without the schema,** only the name is converted (S2P8021).
+
+## Dapper and Dapper.Contrib
+
+- **Dapper.** Calls are SQL sites (see SQL in code) and stored procedure calls (see above).
+  Nothing else changes: Dapper maps columns to properties ignoring case, so lower-case column
+  names fill PascalCase properties.
+- **Dapper.Contrib.** In files that import `Dapper.Contrib.Extensions`:
+  - `[Table("dbo.Item")]` and `[Table("[Sales].[Order Header]")]` become the converted names
+    (`public.item`, `sales."order header"`). Contrib writes the name into its SQL as it is.
+  - `[Key]` and `[ExplicitKey]` work with Npgsql. Contrib's PostgreSQL adapter returns the key
+    with `RETURNING`.
+  - Contrib's PostgreSQL adapter quotes property names in `Insert`, `Update` and `Delete`, so an
+    entity whose property names differ from the converted column names is reported (S2P8030).
+    `Get` and `GetAll` work either way.

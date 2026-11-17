@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`sql2pg code` and Dapper.Contrib.**
+  - `[Table]` names become the converted table names.
+  - Entities whose property names differ from the converted columns are reported (S2P8030):
+    Contrib's PostgreSQL adapter quotes them in Insert, Update and Delete.
+  - Dialect overrides are reported (S2P8031).
+  - Dapper queries, procedure calls and Contrib's Get, GetAll, Insert, Update and Delete run on
+    both engines with the same results. (WP A.5)
 - **`sql2pg code` converts stored procedure calls** (ADO.NET `CommandType.StoredProcedure`,
   Dapper `commandType:`).
   - The procedure's name and the names of the parameters passed become the converted ones.

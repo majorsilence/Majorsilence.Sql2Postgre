@@ -1,0 +1,8 @@
+Imports Dapper.Contrib.Extensions
+
+<Table("dbo.Customer")>
+Public NotInheritable Class Customer
+    <Key>
+    Public Property CustomerId As Integer
+    Public Property Name As String
+End Class

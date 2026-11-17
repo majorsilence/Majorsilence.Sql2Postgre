@@ -977,6 +977,21 @@ The converter cannot tell how this stored procedure call should look after conve
 Npgsql names a CALL's arguments after the parameters exactly, so they must be named as the
 converted procedure's are.
 
+### S2P8030 DapperContribColumns (Warning)
+
+A Dapper.Contrib entity has property names that differ from the converted column names (with
+`NameStyle` Lower, any property with capitals). Contrib's PostgreSQL adapter quotes property
+names in `Insert`, `Update` and `Delete` (`"Name"`), so they must equal the column names exactly;
+`Get` and `GetAll` do not quote them, and keep working. Contrib has no column mapping, so the
+converter cannot fix this by itself. Rename the properties, or write those statements with
+Dapper's `Execute` and plain SQL.
+
+### S2P8031 DapperContribAdapter (Info)
+
+The code sets `SqlMapperExtensions.GetDatabaseType` or implements `ISqlAdapter`. With Npgsql,
+Contrib picks its PostgreSQL adapter from the connection's type name (`npgsqlconnection`), so an
+override that picks SQL Server's dialect must go.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)
