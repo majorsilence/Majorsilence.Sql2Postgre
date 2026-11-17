@@ -69,6 +69,13 @@ public sealed partial class ProceduralTranslator
     /// <summary>A variable of the body.</summary>
     private sealed record Variable(string PgName, SqlServerType? Type, DataTypeReference? DataType, string PgType);
 
+    /// <summary>A statement list being translated and the index of its current statement.</summary>
+    private sealed class Frame(IList<TSqlStatement> list)
+    {
+        public IList<TSqlStatement> List { get; } = list;
+        public int Index { get; set; }
+    }
+
     /// <summary>Everything one body's translation accumulates.</summary>
     private sealed class BodyState(BodySignature signature, ExpressionContext context)
     {
@@ -133,6 +140,9 @@ public sealed partial class ProceduralTranslator
         public Dictionary<string, CursorUse> CursorUses { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
         public bool ReadsFetchStatus { get; init; }
+
+        /// <summary>The statement lists being translated, outermost first, each with the index of its current statement.</summary>
+        public List<Frame> Frames { get; } = [];
 
         /// <summary>Helper variables FETCH reads into, by type.</summary>
         public Dictionary<string, List<string>> FetchHelpers { get; } = new(StringComparer.Ordinal);
@@ -248,8 +258,24 @@ public sealed partial class ProceduralTranslator
     private List<PgPlStatement> List(IList<TSqlStatement> statements, BodyState st, bool topLevel = false)
     {
         var result = new List<PgPlStatement>();
+        var frame = new Frame(statements);
+        st.Frames.Add(frame);
+        try
+        {
+            ListInto(statements, st, topLevel, frame, result);
+        }
+        finally
+        {
+            st.Frames.Remove(frame);
+        }
+        return result;
+    }
+
+    private void ListInto(IList<TSqlStatement> statements, BodyState st, bool topLevel, Frame frame, List<PgPlStatement> result)
+    {
         for (int i = 0; i < statements.Count; i++)
         {
+            frame.Index = i;
             var s = statements[i];
             // Session options produce no code, so DECLAREs after SET NOCOUNT ON still open the body.
             if (topLevel && s is not (DeclareVariableStatement or DeclareTableVariableStatement or DeclareCursorStatement or PredicateSetStatement or SetCommandStatement))
@@ -265,7 +291,6 @@ public sealed partial class ProceduralTranslator
             if (IsDml(s) && next is not null)
                 st.StatementAfterDml = true;
         }
-        return result;
     }
 
     /// <summary>DML on a real table (a table variable's rows are the routine's own, and rarely fail).</summary>

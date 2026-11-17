@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Dynamic SQL is converted.**
+  - `EXEC (string)` and `sp_executesql` become `EXECUTE`. The text is translated as T-SQL; when
+    it is held in a variable, it is followed back to the SET or DECLARE that gave it its value.
+  - sp_executesql parameters are `$1`, `$2`, … with `USING`, and a `SELECT @out = …` into an
+    OUTPUT parameter is `EXECUTE … INTO`.
+  - Pieces from variables go through `format()`:
+    - `QUOTENAME(@t)` is a name (`%I`), mapped at run time as the converter maps names, schema
+      map included.
+    - A value between quotes is `%L`.
+    - Other text is spliced in as it is (`%s`, S2P5062).
+  - A dynamic SELECT's rows are the procedure's result set, through its refcursor.
+  - Dynamic SQL whose text is not known, or that holds DDL or control flow, reports S2P5060.
+  - The forms run on both engines with the same rows and OUTPUT values. (WP 3.8)
 - **Cursors are converted.**
   - The usual `OPEN`, `FETCH NEXT … INTO`, `WHILE @@FETCH_STATUS = 0` loop becomes
     `FOR … IN query LOOP`.

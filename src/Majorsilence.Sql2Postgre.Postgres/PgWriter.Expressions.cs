@@ -35,6 +35,7 @@ public static partial class PgWriter
         PgCast c => $"CAST({Expression(c.Operand)} AS {c.Type})",
         PgFunctionCall f => Function(f),
         PgTemplate t => Template(t),
+        PgDynamicSql d => DynamicSql(d),
         PgSubquery q => $"({Query(q.Query, inline: true)})",
         PgExists ex => $"{(ex.Negated ? "NOT " : "")}EXISTS ({Query(ex.Query, inline: true)})",
         PgInSubquery i => $"{Child(i.Operand, Binding.BetweenInLike, strict: true)} {(i.Negated ? "NOT " : "")}IN ({Query(i.Query, inline: true)})",
@@ -53,6 +54,20 @@ public static partial class PgWriter
         bool leftStrict = binding == Binding.Comparison;
         bool rightStrict = binding == Binding.Comparison || !associative;
         return $"{Child(b.Left, binding, leftStrict)} {b.Operator} {Child(b.Right, binding, rightStrict)}";
+    }
+
+    /// <summary>Dynamic SQL as a string literal, or format() when markers stand for run-time names and values.</summary>
+    private static string DynamicSql(PgDynamicSql d)
+    {
+        string sql = string.Join("\n", d.Statements.Select(s => Write(s, 18).TrimEnd('\n').TrimEnd(';')));
+        if (d.Arguments.Count == 0)
+            return PgLiteral.String(sql).Sql;
+        sql = sql.Replace("%", "%%");
+        // Positional (%2$L): the translation may move the pieces (TOP becomes LIMIT at the end).
+        var numbered = d.Arguments.Select((a, i) => (a.Marker, Spec: $"%{i + 1}${a.Spec}"));
+        foreach (var (marker, spec) in numbered.OrderByDescending(a => a.Marker.Length).ThenByDescending(a => a.Marker, StringComparer.Ordinal))
+            sql = sql.Replace(marker, spec);
+        return $"format({PgLiteral.String(sql).Sql}, {string.Join(", ", d.Arguments.Select(a => Expression(a.Value)))})";
     }
 
     private static string Template(PgTemplate t)

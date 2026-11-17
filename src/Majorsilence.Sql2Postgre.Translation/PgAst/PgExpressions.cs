@@ -82,3 +82,13 @@ public sealed record PgAtTimeZone(PgExpr Operand, PgExpr Zone) : PgExpr;
 /// always parenthesized, so the template never depends on precedence.
 /// </summary>
 public sealed record PgTemplate(string Template, IReadOnlyList<PgExpr> Arguments) : PgExpr;
+
+/// <summary>One argument of <see cref="PgDynamicSql"/>: what replaces <see cref="Marker"/> in the text.</summary>
+/// <param name="Spec"><c>I</c> (a name, quoted as needed), <c>L</c> (a value, quoted) or <c>s</c> (text as it is), as in format().</param>
+public sealed record PgFormatArgument(string Marker, char Spec, PgExpr Value);
+
+/// <summary>
+/// The command of a dynamic EXECUTE: the statements written as one string, or, when parts come
+/// from variables, <c>format('…%I…', args)</c> with each marker replaced by its format spec.
+/// </summary>
+public sealed record PgDynamicSql(IReadOnlyList<PgStatement> Statements, IReadOnlyList<PgFormatArgument> Arguments) : PgExpr;

@@ -35,6 +35,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.5 — temp tables and table variables (temporary tables dropped when the routine ends, table variables per routine, OUTPUT … INTO, TRUNCATE, OBJECT_ID on temp tables); 11 both-engines cases, each run twice in one session. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: WideWorldImportersDW 16/8 (was 14/10); WideWorldImporters 10/32 and AdventureWorks 2/8 unchanged, as each of those procedures also has TRY/CATCH, cursors or dynamic SQL. WideWorldImporters' S2P0206 count fell from 230 to 207.
 - WP 3.6 — TRY … CATCH (exception blocks, ERROR_*() from stacked diagnostics with SQL Server error numbers, transaction patterns in TRY/CATCH, BEGIN TRAN → COMMIT); 9 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: AdventureWorks 3/7 (was 2/8), WideWorldImportersDW 17/7 (was 16/8), WideWorldImporters 10/32 (its TRY blocks are translated, but the procedures still have dynamic SQL and cursors).
 - WP 3.7 — cursors (FOR loop for the OPEN/FETCH/WHILE pattern, refcursor variables otherwise, scrolling, @@FETCH_STATUS, WHERE CURRENT OF, cursor variables); 5 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters' S2P0206 count fell from 214 to 154; its 32 Manual procedures all still contain dynamic SQL (WP 3.8).
+- WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 
 ## Measured
 
@@ -251,3 +252,27 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   - Cursor OUTPUT parameters (`CURSOR VARYING OUTPUT`).
   - `DEALLOCATE` without `CLOSE` before a cursor is opened again.
   - The sensitivity of DYNAMIC and KEYSET cursors (PostgreSQL's see the rows as at OPEN).
+- WP 3.8 departs from the plan in these places:
+  - A string in a variable (`SET @sql = …; EXEC (@sql)`, the usual corpus form) is followed back
+    to the assignment that last set it. The plan looked only at the EXEC's own argument.
+  - Values between quotes use `%L`, and other spliced pieces `%s`, with positional specifiers
+    (`%2$L`). The translation can move pieces, for example `TOP` becomes `LIMIT` at the end.
+  - Names from QUOTENAME are mapped at run time: lower case and the schema map. NameStyle
+    SnakeCase reports S2P5060 for them.
+  - Rows from dynamic SQL are a result set (OPEN … FOR EXECUTE); a SELECT into OUTPUT parameters
+    is EXECUTE … INTO.
+  - Two codes are added: S2P5061 (a name mapped at run time, Info) and S2P5062 (text spliced as it
+    stands, Warning).
+- Established on PostgreSQL 18:
+  - `EXECUTE` with `USING` runs a string holding several statements.
+  - `format()` arguments can be numbered (`%1$I`).
+- Established on both engines: a value with a quote spliced between quotes breaks SQL Server's
+  dynamic SQL (a syntax error). PostgreSQL's `%L` quotes it and the query runs.
+- Not translated yet for dynamic SQL:
+  - DDL and control flow inside the string (most of WideWorldImporters' dynamic SQL builds
+    triggers, sequences and security policies).
+  - A string built with `+=` or in a loop.
+  - EXEC of a procedure inside the string.
+  - `EXEC (…) AT linked_server`.
+  - In `sql2pg translate`, a dynamic SELECT at the top of a script (it goes to a DO block, which
+    returns no rows).

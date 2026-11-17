@@ -77,10 +77,15 @@ public sealed partial class ProceduralTranslator
         var sites = new List<ResultSetSite>();
         var tempTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool returnsCode = false, commits = false;
-        void Walk(IEnumerable<TSqlStatement?> statements, bool inLoop)
+        var frames = new List<(IList<TSqlStatement> List, int Index)>();
+        void Walk(IList<TSqlStatement?> statements, bool inLoop)
         {
-            foreach (var s in statements)
+            var list = statements.Where(x => x is not null).Cast<TSqlStatement>().ToList();
+            frames.Add((list, 0));
+            for (int k = 0; k < list.Count; k++)
             {
+                frames[^1] = (list, k);
+                var s = list[k];
                 switch (s)
                 {
                     case null:
@@ -115,6 +120,10 @@ public sealed partial class ProceduralTranslator
                         or MergeStatement { MergeSpecification: { OutputClause: not null, OutputIntoClause: null } }:
                         sites.Add(new ResultSetSite(s, 1, inLoop, null, false));
                         break;
+                    case ExecuteStatement e when IsDynamic(e.ExecuteSpecification):
+                        if (DynamicReturnsRows(e, frames))
+                            sites.Add(new ResultSetSite(s, 1, inLoop, null, false));
+                        break;
                     case ExecuteStatement e when CalleeName(e.ExecuteSpecification, name.Schema) is { } callee && Shape(callee) is { } shape:
                         commits |= shape.Commits;
                         if (shape.IsFunction)
@@ -143,6 +152,7 @@ public sealed partial class ProceduralTranslator
                         break;
                 }
             }
+            frames.RemoveAt(frames.Count - 1);
         }
         Walk(p.StatementList?.Statements ?? [], false);
 
@@ -293,6 +303,8 @@ public sealed partial class ProceduralTranslator
     {
         var c = st.C;
         var spec = e.ExecuteSpecification;
+        if (IsDynamic(spec))
+            return Dynamic(e, st);
         var callee = Callee(spec, e, c);
         if (callee.Commits && st.TryDepth > 0)
             throw ExpressionTranslator.Untranslatable(e,
@@ -424,7 +436,8 @@ public sealed partial class ProceduralTranslator
 
     /// <summary>Whether an EXEC can run as a plain statement in a script (no variables involved).</summary>
     public static bool IsPlainCall(ExecuteStatement e) =>
-        e.ExecuteSpecification is { Variable: null, LinkedServer: null, ExecutableEntity: ExecutableProcedureReference { ProcedureReference.ProcedureReference: not null } p }
+        !IsDynamic(e.ExecuteSpecification)
+        && e.ExecuteSpecification is { Variable: null, LinkedServer: null, ExecutableEntity: ExecutableProcedureReference { ProcedureReference.ProcedureReference: not null } p }
         && p.Parameters.All(a => !a.IsOutput && a.ParameterValue is Literal or UnaryExpression { Expression: Literal });
 
     /// <summary>INSERT … EXEC of a procedure converted to a function: <c>INSERT … SELECT * FROM f(…)</c>.</summary>

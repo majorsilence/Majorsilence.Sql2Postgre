@@ -313,6 +313,15 @@ public static class DiagnosticCodes
     /// <summary>A GLOBAL cursor, which outlives the code that declares it.</summary>
     public const string GlobalCursor = "S2P5050";
 
+    /// <summary>Dynamic SQL that cannot be translated: its text is not known here, or it is not a query or DML.</summary>
+    public const string DynamicSqlUntranslatable = "S2P5060";
+
+    /// <summary>A name in dynamic SQL comes from a variable and is mapped at run time.</summary>
+    public const string DynamicIdentifier = "S2P5061";
+
+    /// <summary>Dynamic SQL splices text from a variable in as it stands.</summary>
+    public const string DynamicSqlSpliced = "S2P5062";
+
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";
 

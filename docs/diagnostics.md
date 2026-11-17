@@ -67,11 +67,10 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-A procedural statement that is not translated yet: dynamic SQL (`EXEC (string)`,
-`sp_executesql`), DDL on real tables, and the other statements Stage 3 is still adding.
-Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`, `THROW`, `EXEC` of a procedure, result
-sets, transaction control, `TRY … CATCH`, cursors, temp tables and table variables are
-translated. `FETCH` without `INTO` (which returns the row as a result set), a cursor used
+A procedural statement that is not translated yet: DDL on real tables, and the other
+statements Stage 3 is still adding. Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`,
+`THROW`, `EXEC` of a procedure, result sets, transaction control, `TRY … CATCH`, cursors,
+dynamic SQL (S2P5060 when it cannot be), temp tables and table variables are translated. `FETCH` without `INTO` (which returns the row as a result set), a cursor used
 without being declared in the same code, and `WHERE CURRENT OF` with joined tables also get
 this code.
 `ALTER TABLE` on a temp table and computed columns in one also get this code. In a procedure, a result set inside a loop,
@@ -699,6 +698,54 @@ error number and message to such a procedure as parameters.
 A cursor declared `GLOBAL`, or used as `OPEN GLOBAL c`. A global cursor outlives the code that
 declares it: another batch or procedure on the connection can fetch from it. A PL/pgSQL cursor
 belongs to the routine that opens it. Declare it `LOCAL`, or return the rows another way.
+
+### Dynamic SQL
+
+`EXEC (string)`, `EXECUTE (string)` and `EXEC sp_executesql` become PL/pgSQL `EXECUTE`.
+
+- **Where the text comes from.** It is the literal, or the string built from literal pieces. A
+  variable (`EXEC (@sql)`) is traced back to the `SET @sql = …` or `DECLARE @sql … = …` that last
+  gave it its value. Nothing else may assign the variable in between.
+- **How it is translated.** The text is parsed and translated as T-SQL. It may hold SELECT,
+  INSERT, UPDATE, DELETE, MERGE and TRUNCATE statements. The dynamic batch sees only its own
+  parameters, as in SQL Server.
+- **sp_executesql parameters.** `@p` becomes `$1`, `$2`, …, in the order of the parameter list.
+  The caller's values go in `USING`, converted to the declared types.
+  `SELECT @out = … ` into an OUTPUT parameter becomes `EXECUTE … INTO` the caller's variable.
+- **Pieces that are not literals.** They are filled in with `format()`:
+  - `QUOTENAME(x)` is a name (`%I`). It is mapped at run time as the converter maps names: lower
+    case, and the schema map for a schema (S2P5061).
+  - A piece between quotes (`'… = ''' + @v + ''''`) is a value (`%L`), which `format()` quotes. A
+    value containing a quote therefore works, where in SQL Server it broke the statement.
+  - Any other piece is spliced in as it is (`%s`). A number cast to text is fine. Other text is
+    used as it stands (S2P5062).
+- **Rows.** Rows from a dynamic SELECT are one of the procedure's result sets, returned through
+  its refcursor (`OPEN … FOR EXECUTE`).
+
+### S2P5060 DynamicSqlUntranslatable (Error)
+
+The dynamic SQL is kept as a comment, for one of these reasons:
+
+- Its text cannot be followed back to a literal. For example, it is a parameter, it is built
+  with `+=`, or it is assigned in a loop.
+- It does not parse.
+- It contains statements other than queries and DML: DDL, `DECLARE`, `IF`, `EXEC`.
+- It reads a variable it does not declare.
+- It assigns something other than an OUTPUT parameter.
+- A value is spliced into the middle of a string literal (`'%' + @v + '%'`).
+- It names objects at run time under `NameStyle = SnakeCase`.
+
+### S2P5061 DynamicIdentifier (Info)
+
+A name in dynamic SQL comes from a variable through `QUOTENAME`. It is mapped at run time with
+`lower()`, and, in schema position, the schema map (`dbo` → `public`). It must therefore name an
+object as the converter named it.
+
+### S2P5062 DynamicSqlSpliced (Warning)
+
+Text from a variable is spliced into dynamic SQL as it stands (`%s`). SQL Server would have run
+it as T-SQL. If it holds T-SQL syntax (a column list with `[brackets]`, `TOP`, `+` string
+concatenation), PostgreSQL gets it unchanged, so check what the variable can hold.
 
 ### S2P5044 TryUndoesWrites (Warning)
 

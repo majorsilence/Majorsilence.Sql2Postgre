@@ -1,0 +1,33 @@
+CREATE TABLE dbo.item (id int IDENTITY NOT NULL PRIMARY KEY, name nvarchar(50) NOT NULL, price decimal(10, 2) NOT NULL);
+GO
+CREATE PROCEDURE dbo.touch AS
+    EXEC (N'UPDATE dbo.item SET price = price WHERE name LIKE N''%a%''');
+GO
+CREATE PROCEDURE dbo.count_cheaper @max decimal(10, 2), @count int OUTPUT AS
+BEGIN
+    DECLARE @sql nvarchar(max) = N'SELECT @n = COUNT(*) FROM dbo.item WHERE price <= @limit';
+    EXEC sp_executesql @sql, N'@limit decimal(10, 2), @n int OUTPUT', @limit = @max, @n = @count OUTPUT;
+END;
+GO
+CREATE PROCEDURE dbo.count_rows @schema sysname, @table sysname, @count int OUTPUT AS
+BEGIN
+    DECLARE @sql nvarchar(max);
+    SET @sql = N'SELECT @n = COUNT(*) FROM ' + QUOTENAME(@schema) + N'.' + QUOTENAME(@table);
+    EXEC sp_executesql @sql, N'@n int OUTPUT', @n = @count OUTPUT;
+END;
+GO
+CREATE PROCEDURE dbo.find @name nvarchar(50), @top int AS
+BEGIN
+    DECLARE @sql nvarchar(max) = N'SELECT TOP (' + CAST(@top AS nvarchar(10)) + N') id, name FROM dbo.item WHERE name = ''' + @name + N''' ORDER BY id';
+    EXEC (@sql);
+END;
+GO
+CREATE PROCEDURE dbo.unknown_text @sql nvarchar(max) AS
+    EXEC (@sql);
+GO
+CREATE PROCEDURE dbo.dynamic_ddl @table sysname AS
+BEGIN
+    DECLARE @sql nvarchar(max) = N'DROP TABLE ' + QUOTENAME(@table);
+    EXEC (@sql);
+END;
+GO
