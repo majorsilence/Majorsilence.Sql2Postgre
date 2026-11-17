@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Plan: Stage A, a Roslyn-based converter for C# and VB.NET application code (ADO.NET, SQL in
+  code, stored procedure calls, Dapper, Dapper.Contrib, Entity Framework Core), as WPs A.1–A.6.
 - **Assessment v2.**
   - `sql2pg assess` estimates the effort, in points: Info 0, Warning 1, Error 5. Encrypted and
     CLR code, dynamic DDL, INSTEAD OF on tables, DDL triggers and external references weigh more.

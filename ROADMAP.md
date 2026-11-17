@@ -302,6 +302,16 @@ error handling, temp tables and table variables, cursors, literal dynamic SQL.
 **Exit:** corpus routines and triggers compile (manual-marked excluded), result agreement for
 procedure calls, every manual item carries a diagnostic code with documentation.
 
+### Stage A — application code (C# and VB.NET)
+
+`sql2pg code`: a Roslyn-based converter for the code that talks to the database. It covers
+ADO.NET (SqlClient types to Npgsql, `SqlDbType` to `NpgsqlDbType`, connection strings), SQL
+strings in code (translated by the same T-SQL translator), stored procedure calls (with the
+converted schema's shapes), Dapper and Dapper.Contrib, and Entity Framework Core (`UseNpgsql`,
+column types, default and computed SQL, naming). What it cannot change it reports.
+**Exit:** sample C# and VB programs give the same output on PostgreSQL after conversion as on SQL
+Server before it.
+
 ### Stage 4 — the long tail (ongoing)
 
 Chosen from the assessment histogram: `FOR XML`/`FOR JSON` variants, `PIVOT`, XML methods,

@@ -249,6 +249,7 @@ it means and what a person should do.
 | S2P5xxx | Procedural code |
 | S2P6xxx | Triggers |
 | S2P7xxx | Data copy and verification |
+| S2P8xxx | Application code (C#/VB.NET, Stage A) |
 | S2P9xxx | Internal errors (a bug: the converter threw) |
 
 ### Options
@@ -1070,6 +1071,150 @@ applies, or `Manual` with a specific code; no `S2P9001` anywhere in the corpus. 
 v0.3.**
 
 ---
+
+### Stage A — application code (C# and VB.NET, with Roslyn)
+
+**Goal:** the application side of a migration. `sql2pg code <path>` reads C# and VB.NET source
+(a file, a folder, a `.csproj`/`.vbproj` or a `.sln`/`.slnx`) and writes converted copies, so
+code that used SQL Server through ADO.NET, Dapper, Dapper.Contrib or Entity Framework Core uses
+PostgreSQL through Npgsql. It changes what must change and reports the rest with `S2P8xxx`
+codes. It never edits in place unless `--in-place` is given.
+
+Rules for the whole stage:
+
+- **Clean room**, as for the rest of the repository. The sources of truth are the provider APIs
+  as documented by their owners (Npgsql, EF Core and Dapper), and tests that compile and run the
+  converted code.
+- **Roslyn as a library.** Use `Microsoft.CodeAnalysis.CSharp` and `.VisualBasic`, syntax trees
+  and semantic models. When the project's references are not available, recognise names
+  syntactically (`SqlConnection` with a `Microsoft.Data.SqlClient` or `System.Data.SqlClient`
+  import).
+- **Language-neutral edits.** A finder produces a list of edits (span, replacement text, reason).
+  The engine applies them to the source text, so formatting and comments survive. Each edit is
+  written in the file's language, for example string literals in C# or VB form.
+- **Reuse the SQL translator.** SQL in code goes through `ScriptTranslator` in a new
+  *parameters* mode. In that mode an undeclared `@name` is a command parameter and stays
+  `@name`, which Npgsql binds by name. It does not start a DO block.
+- **Optional schema.** With `--source` (the same as `sql2pg schema`), the converter knows tables,
+  identity columns and each procedure's PostgreSQL shape (function, procedure, refcursors).
+  Without it, those rewrites are reported instead of made.
+
+#### WP A.1 — Project, edit engine and CLI (M)
+
+- New project `Majorsilence.Sql2Postgre.CodeConversion` (library) and its unit tests, plus the
+  verb `sql2pg code <path> --out <dir> [--in-place] [--source …] [--config …] [--json …]`.
+- Input discovery: `.cs`/`.vb` files under a folder (skipping `bin/` and `obj/`); the files a
+  `.csproj`/`.vbproj` compiles, by default glob; the projects of a `.sln`/`.slnx`.
+- `CodeEdit(Span, Replacement, Code, Message)`, a per-file `CodeConversionResult` (new text,
+  edits, diagnostics), and an engine that applies non-overlapping edits from the end. Two edits
+  that overlap are a bug: S2P9001.
+- `ICodeLanguage` with C# and VB implementations: parse, string literal reading (regular,
+  verbatim, raw, interpolated, VB) and writing, and how to write `using`/`Imports`.
+- Output mirrors the input tree. A report lists each file's edits and diagnostics, and the CLI
+  prints a summary and exits 2 when anything needs a person.
+- Tests: the engine on overlapping, adjacent and empty edits; round trip of untouched files
+  byte for byte; literal reading and writing for each form in both languages.
+
+#### WP A.2 — ADO.NET (M)
+
+- Namespaces: `Microsoft.Data.SqlClient` / `System.Data.SqlClient` → `Npgsql` (and
+  `NpgsqlTypes` when `NpgsqlDbType` is used).
+- Types: `SqlConnection`, `SqlCommand`, `SqlDataReader`, `SqlParameter`, `SqlTransaction`,
+  `SqlDataAdapter`, `SqlCommandBuilder`, `SqlConnectionStringBuilder`, `SqlParameterCollection`
+  → their `Npgsql…` counterparts. `SqlException` → `PostgresException` (S2P8001, Warning).
+  `.Number` values in the code are mapped to SQLSTATEs where the error is the same: 2627/2601 →
+  `23505`, 547 → `23503`/`23514`, 515 → `23502`, 1205 → `40P01`. Anything else is S2P8002
+  (Error).
+- `SqlDbType.X` → `NpgsqlDbType.Y` (and `.SqlDbType =` → `.NpgsqlDbType =`), following the
+  type mapper. `Structured` (table-valued parameters) → S2P8003 (Error).
+- `SqlBulkCopy` → S2P8004 (Error): the replacement is Npgsql's binary COPY, whose shape
+  differs.
+- Connection strings in code (literals passed to a connection, or assigned to
+  `ConnectionString`):
+  - keys are rewritten: `Server`/`Data Source` → `Host` (with `,port` → `Port`),
+    `Initial Catalog`/`Database` → `Database`, `User Id` → `Username`, `Password` kept;
+  - `Integrated Security` and `Trusted_Connection` → S2P8005 (Warning);
+  - SQL Server-only keys are dropped with S2P8006 (Info).
+- `SqlTypes` (`SqlString`, `GetSqlInt32` …) → S2P8007 (Error).
+- Tests: golden C# and VB files per rule. Both-engines tests compile a sample program
+  (in memory, with Roslyn) before and after conversion, run it against the SQL Server and
+  PostgreSQL containers, and compare its output.
+
+#### WP A.3 — SQL in code (L)
+
+- SQL sites:
+  - `new SqlCommand(sql, …)`, `.CommandText = sql`;
+  - Dapper's `Query*`, `Execute*` and `QueryMultiple*` (first argument, or `sql:`);
+  - EF Core's `FromSqlRaw`, `ExecuteSqlRaw`, `SqlQueryRaw` (`*Async` too), and the
+    `FormattableString` forms (`FromSql`, `FromSqlInterpolated`, `ExecuteSql…`).
+- Following the text back: a literal, a `const`, a `static readonly` field, or a local assigned
+  once from one of those. Concatenations of those are joined. Any other piece is S2P8010 (Error,
+  "SQL built at run time"), and the site is left alone.
+- Translation goes through `ScriptTranslator` in parameters mode; diagnostics carry over, mapped
+  to the file and line. `{0}` placeholders in EF `…Raw` strings and interpolation holes in
+  `FormattableString` forms are markers that come back unchanged.
+- App-specific rules (in the translator, parameters mode only):
+  - `INSERT …; SELECT SCOPE_IDENTITY()` (or `@@IDENTITY`, `CAST(… AS int)`) → `INSERT …
+    RETURNING <identity column>`, which needs `--source` (S2P8011 without it);
+  - `SELECT COUNT(*)` read with `ExecuteScalar` and cast to `int` → `count(*)::integer`
+    (PostgreSQL's count is bigint, and the cast in C# would throw). The column of every
+    translated `COUNT` is checked.
+- Tests: golden C#/VB for each site and each source of text; both-engines run of a sample
+  program with parameters, identity retrieval and counts.
+
+#### WP A.4 — Stored procedure calls (M)
+
+- `CommandType.StoredProcedure` (ADO.NET, and Dapper's `commandType:`), with `--source`:
+  - a procedure converted to a function → `CommandType.Text` with `SELECT * FROM f(@a, @b)`;
+  - a procedure → stays StoredProcedure (Npgsql issues `CALL`). Output parameters become
+    `InputOutput` (PostgreSQL's INOUT). A `ReturnValue` parameter becomes the INOUT
+    `return_code`;
+  - a procedure returning refcursors → S2P8020 (Error): the caller must fetch the cursors in a
+    transaction.
+- Without `--source`: S2P8021 (Warning), "which form depends on the converted schema".
+- Parameter names keep their T-SQL names without `@`. Npgsql matches them to the routine's
+  parameters by name.
+
+#### WP A.5 — Dapper and Dapper.Contrib (S)
+
+- Dapper calls are SQL sites (WP A.3) and procedure calls (WP A.4). Nothing else changes: Dapper
+  maps columns to properties ignoring case, which suits lower-case names.
+- Dapper.Contrib:
+  - `[Table("…")]` with brackets or `dbo.` is rewritten to the converted name (`public.orders`);
+  - `[Key]`/`[ExplicitKey]` keep working with Npgsql, which Dapper.Contrib supports;
+  - `SqlMapperExtensions.GetDatabaseType` overrides and custom `ISqlAdapter`s → S2P8030 (Info).
+- Tests: both-engines run of a sample using `Get`, `GetAll`, `Insert` (identity back),
+  `Update` and `Delete`.
+
+#### WP A.6 — Entity Framework Core (L)
+
+- `UseSqlServer(…)` → `UseNpgsql(…)`; the options lambda's SQL Server-only calls
+  (`EnableRetryOnFailure` is kept; `UseCompatibilityLevel` and the like are dropped with
+  S2P8040, Info).
+- Project files: `Microsoft.EntityFrameworkCore.SqlServer` →
+  `Npgsql.EntityFrameworkCore.PostgreSQL` (the version matching the EF Core major), and
+  `Microsoft.Data.SqlClient` → `Npgsql`.
+- Model configuration:
+  - `HasColumnType("…")` through the type mapper;
+  - `HasDefaultValueSql("…")` and `HasComputedColumnSql("…")` through the expression
+    translator;
+  - `ToTable("T", "dbo")` and `[Table]`/`[Column]` names through the name mapper;
+  - `UseIdentityColumn` → `UseIdentityByDefaultColumn`;
+  - `IsClustered`, `IsMemoryOptimized` and the like are dropped with S2P8040.
+- EF Core quotes names exactly as the model has them. With `NameStyle = Lower`, a model that does
+  not name its tables and columns explicitly no longer matches the converted schema. The
+  converter adds to `OnModelCreating` a loop that sets every table, column, key, index and
+  foreign key name to the name mapper's form, and reports S2P8041 (Info).
+- `EF.Functions` SQL Server methods: `DateDiffDay` and the like map to `EF.Functions` equivalents
+  or plain date arithmetic where Npgsql translates it, else S2P8042 (Error).
+- Migrations (`Migrations/*.cs` with `SqlServer:` annotations) → S2P8043 (Warning): regenerate
+  them against PostgreSQL rather than convert them.
+- Tests: golden files, plus a both-engines run of a small `DbContext` sample (create, query,
+  update with the converted schema).
+
+**Done when:** the sample programs (C# and VB) run on PostgreSQL with the same output as on SQL
+Server after conversion; every rule has a golden test in both languages; every `S2P8xxx` code is
+in `DiagnosticCodes` and `docs/diagnostics.md`.
 
 ### Stage 4 — the long tail (not yet broken into WPs)
 
