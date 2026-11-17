@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Majorsilence.Sql2Postgre.Cli/Majorsilence.Sql2Postgre.Cli.csproj" />
+    <Project Path="src/Majorsilence.Sql2Postgre.CodeConversion/Majorsilence.Sql2Postgre.CodeConversion.csproj" />
     <Project Path="src/Majorsilence.Sql2Postgre.Compat/Majorsilence.Sql2Postgre.Compat.csproj" />
     <Project Path="src/Majorsilence.Sql2Postgre.Data/Majorsilence.Sql2Postgre.Data.csproj" />
     <Project Path="src/Majorsilence.Sql2Postgre.Model/Majorsilence.Sql2Postgre.Model.csproj" />

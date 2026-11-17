@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **`sql2pg code`: the start of the application code converter (Stage A).**
+  - A new library, `Majorsilence.Sql2Postgre.CodeConversion`, parses C# and VB.NET with Roslyn.
+    Rules record edits, and the edits are applied to the original text, so untouched code
+    (comments, formatting, line endings, encoding) stays as it was.
+  - `sql2pg code <path>` takes a file, a folder, a project or a solution, and writes converted
+    copies to `--out` or rewrites files `--in-place`.
+  - The verb has `--json` and `--source`. See `docs/code-conversion.md`.
+  - The conversion rules follow in WPs A.2–A.6. (WP A.1)
 - Plan: Stage A, a Roslyn-based converter for C# and VB.NET application code (ADO.NET, SQL in
   code, stored procedure calls, Dapper, Dapper.Contrib, Entity Framework Core), as WPs A.1–A.6.
 - **Assessment v2.**

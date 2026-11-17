@@ -108,6 +108,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         root.Subcommands.Add(apply);
         root.Subcommands.Add(data);
         root.Subcommands.Add(migrate);
+        root.Subcommands.Add(CodeCommand());
         return root;
     }
 
