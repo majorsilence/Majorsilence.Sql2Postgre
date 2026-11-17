@@ -1,0 +1,1 @@
+EXEC dbo.SalesByCategory N'Beverages', N'1997'

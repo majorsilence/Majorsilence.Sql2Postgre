@@ -1,0 +1,1 @@
+EXEC dbo.uspGetWhereUsedProductID 819, '2010-05-26'

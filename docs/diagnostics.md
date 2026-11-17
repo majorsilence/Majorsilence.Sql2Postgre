@@ -67,8 +67,7 @@ the statement is kept as a comment.
 
 ### S2P0206 ProceduralStatement (Error)
 
-A procedural statement that is not translated yet: DDL on real tables, and the other
-statements Stage 3 is still adding. Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`,
+A procedural statement that is not translated yet (DDL has its own code, S2P5070). Variables, `SET`, `IF`, `WHILE`, `PRINT`, `RAISERROR`,
 `THROW`, `EXEC` of a procedure, result sets, transaction control, `TRY … CATCH`, cursors,
 dynamic SQL (S2P5060 when it cannot be), temp tables and table variables are translated. `FETCH` without `INTO` (which returns the row as a result set), a cursor used
 without being declared in the same code, and `WHERE CURRENT OF` with joined tables also get
@@ -758,6 +757,15 @@ statement fails, SQL Server keeps the changes already made, because each was com
 own, and only the failing statement is undone. PostgreSQL's exception block undoes everything
 the TRY did. Wrap the TRY's work in `BEGIN TRAN … COMMIT` if all-or-nothing is what the code
 means. If it is not, split the TRY.
+
+### S2P5070 DdlInRoutine (Error)
+
+A procedure, function or trigger runs DDL: `CREATE`, `ALTER` or `DROP` of a table, index,
+constraint, procedure or trigger, or `ALTER TABLE … SET (SYSTEM_VERSIONING = …)`. Load procedures
+often drop and re-create indexes, or disable constraints, around a bulk load. The DDL names
+SQL Server objects with SQL Server options, so it stays as a comment. Rewrite it for PostgreSQL
+(`DROP INDEX`/`CREATE INDEX`, `ALTER TABLE … DISABLE TRIGGER`), or move it out of the routine.
+Temp tables are not affected: their DDL is translated. In an ad-hoc script, DDL is S2P0205.
 
 ## S2P6xxx — triggers
 

@@ -37,6 +37,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.7 — cursors (FOR loop for the OPEN/FETCH/WHILE pattern, refcursor variables otherwise, scrolling, @@FETCH_STATUS, WHERE CURRENT OF, cursor variables); 5 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters' S2P0206 count fell from 214 to 154; its 32 Manual procedures all still contain dynamic SQL (WP 3.8).
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
+- WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
 
 ## Measured
 
@@ -300,3 +301,20 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   - `UPDATE(column)` for `SET c = c`.
   - Triggers on tables that are not converted.
   - A trigger's reads of `@@ROWCOUNT` after its first statement follow the usual rules.
+- WP 3.10:
+  - Effort weights live in `DiagnosticCodes.Weight`: Info 0, Warning 1, Error 5. Overrides:
+    encrypted and CLR objects 20, parse and internal errors 10, external references, dynamic SQL,
+    INSTEAD OF on tables and DDL triggers 8, refcursor result sets and DDL in a routine 3, and a
+    dependent's S2P0203 0.
+  - The compile scan's `Untranslated` field groups the S2P0206 and S2P5060 messages by kind. Every
+    S2P0206 left in the corpus was DDL in a routine; that is now S2P5070. WideWorldImporters'
+    remaining items are ALTER TABLE SET SYSTEM_VERSIONING and dynamic DDL (triggers, security
+    policies, roles); WideWorldImportersDW's are index and constraint changes around loads.
+  - The agreement harness calls converted procedures. `pubs/32-proc-reptq3` is at 50: the CASE
+    over a `char(12)` column keeps the trailing spaces in SQL Server (char to varchar), and
+    PostgreSQL's bpchar to text conversion drops them. Four of the eight rows differ only by
+    padding. The fix belongs in the expression translator: `rpad` a char(n) operand that a CASE
+    or `+` turns into varchar. The semantic model also types that CASE as varchar(3), the
+    literal's length; SQL Server's precedence rules give varchar(12).
+  - AdventureWorks' `uspGetEmployeeManagers` and `uspGetManagerEmployees` are Manual (S2P3001,
+    hierarchyid methods), so they are not in the agreement set.

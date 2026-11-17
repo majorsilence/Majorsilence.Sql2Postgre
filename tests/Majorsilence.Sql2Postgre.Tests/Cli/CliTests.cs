@@ -94,9 +94,29 @@ public class CliTests
         {
             Assert.That(code, Is.EqualTo(ExitCodes.Success), "the fixture read from its script converts without Manual objects");
             Assert.That(output, Does.Contain("Table").And.Contain("Trigger").And.Contain("S2P2002"));
-            Assert.That(File.ReadAllText(json), Does.Contain("\"conversion\""));
+            Assert.That(File.ReadAllText(json), Does.Contain("\"conversion\"").And.Contain("\"effort\""));
+            Assert.That(output, Does.Contain("Estimated effort:"));
         });
         File.Delete(json);
+    }
+
+    [Test]
+    public async Task AssessWritesASelfContainedHtmlReport()
+    {
+        string html = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"assess-{Guid.NewGuid():N}.html");
+        var (code, output, _) = await Run("assess", "--source", FixturePath, "--html", html);
+        string page = File.ReadAllText(html);
+        Assert.Multiple(() =>
+        {
+            Assert.That(code, Is.EqualTo(ExitCodes.Success));
+            Assert.That(output, Does.Contain("HTML report written to"));
+            Assert.That(page, Does.StartWith("<!doctype html>").And.Contain("<table id=\"objects\"").And.Contain("shop.trg_order_line_total"));
+            // Self-contained: no script, stylesheet or font fetched from elsewhere.
+            Assert.That(page, Does.Not.Contain("<script src").And.Not.Contain("<link").And.Not.Contain("http://").And.Not.Contain("https://"));
+            // Names and messages are escaped.
+            Assert.That(page, Does.Not.Contain("<order>"));
+        });
+        File.Delete(html);
     }
 
     [Test]

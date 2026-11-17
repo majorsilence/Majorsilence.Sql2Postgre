@@ -262,8 +262,7 @@ public sealed partial class ProceduralTranslator
             or SetTransactionIsolationLevelStatement or SetIdentityInsertStatement => false,
         TransactionStatement or TruncateTableStatement or DeclareTableVariableStatement => false,
         ExecuteStatement e => !IsPlainCall(e),
-        CreateTableStatement or AlterTableStatement or CreateIndexStatement or CreateViewStatement or CreateTypeStatement
-            or CreateSequenceStatement or CreateSchemaStatement or DropObjectsStatement => false,
+        var ddl when IsDdl(ddl) => false,
         _ => true,
     };
 
@@ -437,15 +436,26 @@ public sealed partial class ProceduralTranslator
                 return [WaitFor(w, st)];
             case GoToStatement or LabelStatement:
                 return [Untranslated(s, DiagnosticCodes.GotoLabel, "GOTO and labels have no PL/pgSQL equivalent.", st)];
-            case CreateTableStatement or AlterTableStatement or CreateIndexStatement or CreateViewStatement or CreateTypeStatement
-                or CreateSequenceStatement or CreateSchemaStatement or DropObjectsStatement
-                when st.Signature.Kind == BodyKind.AnonymousBlock:
+            case var ddl when IsDdl(ddl) && st.Signature.Kind == BodyKind.AnonymousBlock:
                 return [Untranslated(s, DiagnosticCodes.DdlInScript,
                     "DDL in an ad-hoc script: convert schema objects with 'sql2pg schema', which orders them and creates their keys and indexes.", st)];
+            case var ddl when IsDdl(ddl):
+                return [Untranslated(s, DiagnosticCodes.DdlInRoutine,
+                    $"DDL inside a routine ({DdlKind(ddl)}) is not translated: its names, options and effects are SQL Server's. Rewrite it for PostgreSQL, or move it out of the routine.", st)];
             default:
                 return [Untranslated(s, DiagnosticCodes.ProceduralStatement, $"'{s.GetType().Name}' is not translated yet.", st)];
         }
     }
+
+    /// <summary>A CREATE, ALTER or DROP statement (temp tables are handled before this is asked).</summary>
+    public static bool IsDdl(TSqlStatement s) =>
+        s.GetType().Name is var name && (name.StartsWith("Create", StringComparison.Ordinal) || name.StartsWith("Alter", StringComparison.Ordinal)
+                                         || name.StartsWith("Drop", StringComparison.Ordinal))
+        || s is DropObjectsStatement;
+
+    /// <summary>The kind of a DDL statement as a reader would say it: <c>AlterTableSetStatement</c> is "ALTER TABLE SET".</summary>
+    private static string DdlKind(TSqlStatement s) =>
+        System.Text.RegularExpressions.Regex.Replace(s.GetType().Name.Replace("Statement", ""), "(?<=[a-z])(?=[A-Z])", " ").ToUpperInvariant();
 
     /// <summary>A nested statement (IF/WHILE body): a BEGIN … END is flattened into its statements.</summary>
     private List<PgPlStatement> Nested(TSqlStatement s, BodyState st)

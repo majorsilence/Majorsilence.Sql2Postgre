@@ -1,0 +1,1 @@
+EXEC dbo.CustOrdersDetail 10248

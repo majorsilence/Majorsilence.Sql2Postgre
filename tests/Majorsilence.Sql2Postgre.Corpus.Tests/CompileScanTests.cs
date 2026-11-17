@@ -13,6 +13,9 @@ public sealed record ScanResult(string Database, int PostgresVersion,
     IReadOnlyList<string> ApplyFailures, IReadOnlyList<string> CopyFailures, IReadOnlyList<string> VerifyFailures,
     long RowsCopied)
 {
+    /// <summary>What is left untranslated in code (S2P0206 and S2P5060), by the start of each message.</summary>
+    public IReadOnlyDictionary<string, int> Untranslated { get; init; } = new Dictionary<string, int>();
+
     public bool Clean => ApplyFailures.Count == 0 && CopyFailures.Count == 0 && VerifyFailures.Count == 0;
 }
 
@@ -81,10 +84,22 @@ public class CompileScanTests
             .ToDictionary(g => g.Key, g => g.Count());
 
         int.TryParse(Engines.PostgresVersion, out int pg);
+        var untranslated = conversion.Objects.SelectMany(o => o.Diagnostics)
+            .Where(d => d.Code is DiagnosticCodes.ProceduralStatement or DiagnosticCodes.DynamicSqlUntranslatable)
+            .GroupBy(d => $"{d.Code} {Kind(d.Message)}").OrderByDescending(g => g.Count()).ToDictionary(g => g.Key, g => g.Count());
         return new ScanResult(entry.Database, pg, statuses, diagnostics, applyFailures,
             copy.Tables.Where(t => t.Error is not null).Select(t => $"{t.Target}: {t.Error}").ToList(),
             verify.Tables.Where(t => !t.Passed).Select(t => $"{t.Target}: {t.SourceRows} vs {t.TargetRows} rows, checksum {(t.ChecksumMatches == true ? "ok" : "differs")}").ToList(),
-            copy.Tables.Sum(t => t.Rows));
+            copy.Tables.Sum(t => t.Rows))
+        { Untranslated = untranslated };
+    }
+
+    /// <summary>A message without the statement it quotes: the part before the first ':' (or its first 80 characters).</summary>
+    private static string Kind(string message)
+    {
+        int colon = message.IndexOf(':');
+        string head = colon > 0 ? message[..colon] : message;
+        return head.Length > 80 ? head[..80] : head;
     }
 
     private static void Record(ScanResult result)

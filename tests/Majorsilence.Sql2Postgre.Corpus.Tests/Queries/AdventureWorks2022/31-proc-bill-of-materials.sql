@@ -1,0 +1,1 @@
+EXEC dbo.uspGetBillOfMaterials 749, '2010-05-26'

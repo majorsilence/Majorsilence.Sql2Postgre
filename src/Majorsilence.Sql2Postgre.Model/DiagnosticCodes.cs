@@ -322,6 +322,9 @@ public static class DiagnosticCodes
     /// <summary>Dynamic SQL splices text from a variable in as it stands.</summary>
     public const string DynamicSqlSpliced = "S2P5062";
 
+    /// <summary>DDL (CREATE, ALTER, DROP) inside a procedure, function or trigger.</summary>
+    public const string DdlInRoutine = "S2P5070";
+
     // ---- 6xxx triggers ----
 
     /// <summary>UPDATE(column) in an UPDATE trigger is true: PostgreSQL does not tell a trigger which columns the statement set.</summary>
@@ -347,4 +350,36 @@ public static class DiagnosticCodes
 
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
+
+    /// <summary>
+    /// Codes whose work differs from their severity's default weight: what a person needs to
+    /// rewrite by hand weighs more, and a dependent's error weighs nothing (the work is counted on
+    /// the object it waits for).
+    /// </summary>
+    private static readonly Dictionary<string, int> Weights = new(StringComparer.Ordinal)
+    {
+        [EncryptedModule] = 20,
+        [ClrObject] = 20,
+        [ParseError] = 10,
+        [InternalError] = 10,
+        [DependsOnUnconverted] = 0,
+        [ExternalReference] = 8,
+        [DynamicSqlUntranslatable] = 8,
+        [InsteadOfTable] = 8,
+        [DdlTrigger] = 8,
+        [ResultSetCursor] = 3,
+        [DdlInRoutine] = 3,
+    };
+
+    /// <summary>
+    /// The effort a diagnostic stands for, in points: Info 0, Warning 1, Error 5, unless the code
+    /// has a weight of its own. An assessment adds them up per object.
+    /// </summary>
+    public static int Weight(string code, Severity severity) =>
+        Weights.TryGetValue(code, out int weight) && severity != Severity.Info
+            ? weight
+            : severity switch { Severity.Error => 5, Severity.Warning => 1, _ => 0 };
+
+    /// <summary>The effort of a set of diagnostics: the sum of their weights.</summary>
+    public static int Effort(IEnumerable<Diagnostic> diagnostics) => diagnostics.Sum(d => Weight(d.Code, d.Severity));
 }

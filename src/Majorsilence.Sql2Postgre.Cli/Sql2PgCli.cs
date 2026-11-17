@@ -45,6 +45,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
     };
     private readonly Option<FileInfo?> _config = new("--config", "-c") { Description = "Conversion options as JSON (sql2pg.json)." };
     private readonly Option<FileInfo?> _json = new("--json") { Description = "Write the full report as JSON to this file." };
+    private readonly Option<FileInfo?> _html = new("--html") { Description = "Write the report as a single self-contained HTML file (summary, effort, sortable object table)." };
     private readonly Option<DirectoryInfo> _out = new("--out", "-o") { Description = "Directory for the phase scripts and report.json.", Required = true };
     private readonly Option<DirectoryInfo> _scripts = new("--scripts") { Description = "Directory written by 'sql2pg schema'.", Required = true };
     private readonly Option<bool> _stopOnError = new("--stop-on-error") { Description = "Stop at the first object that fails to apply." };
@@ -77,7 +78,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         var root = new RootCommand("sql2pg: convert a SQL Server database (schema, code and data) to PostgreSQL.");
 
         var assess = new Command("assess", "Convert without writing anything and report what converts, with warnings, or needs a person.")
-            { _source, _config, _json };
+            { _source, _config, _json, _html };
         assess.SetAction((p, ct) => Guarded(() => AssessAsync(p, ct)));
 
         var schema = new Command("schema", "Write the PostgreSQL schema as one script per phase, plus report.json.")
@@ -176,7 +177,19 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         var result = SchemaConverter.Convert(read.Database, options);
         await WriteSummaryAsync(read, result);
         if (p.GetValue(_json) is { } json)
-            await File.WriteAllTextAsync(json.FullName, JsonSerializer.Serialize(new { readerDiagnostics = read.Diagnostics, conversion = result }, ConversionOptions.Json), ct);
+            await File.WriteAllTextAsync(json.FullName, JsonSerializer.Serialize(new
+            {
+                readerDiagnostics = read.Diagnostics,
+                effort = DiagnosticCodes.Effort(read.Diagnostics.Concat(result.Diagnostics).Concat(result.Objects.SelectMany(o => o.Diagnostics))),
+                objectEffort = result.Objects.Where(o => o.Diagnostics.Count > 0)
+                    .Select(o => new { source = o.Source.ToString(), kind = o.Kind, status = o.Status, effort = DiagnosticCodes.Effort(o.Diagnostics) }),
+                conversion = result,
+            }, ConversionOptions.Json), ct);
+        if (p.GetValue(_html) is { } html)
+        {
+            await File.WriteAllTextAsync(html.FullName, HtmlReport.Render(read.Database.Name, options.TargetVersion, read, result, DateTimeOffset.UtcNow), ct);
+            await output.WriteLineAsync($"HTML report written to {html.FullName}");
+        }
         return HasManual(read, result) ? ExitCodes.CompletedWithProblems : ExitCodes.Success;
     }
 
@@ -355,6 +368,16 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         var all = read.Diagnostics.Concat(result.Diagnostics).Concat(result.Objects.SelectMany(o => o.Diagnostics)).ToList();
         if (all.Count == 0)
             return;
+        await output.WriteLineAsync();
+        await output.WriteLineAsync($"Estimated effort: {DiagnosticCodes.Effort(all)} points (Info 0, Warning 1, Error 5; heavier for code to rewrite by hand).");
+        var hardest = result.Objects.Select(o => (Object: o, Effort: DiagnosticCodes.Effort(o.Diagnostics))).Where(x => x.Effort > 0)
+            .OrderByDescending(x => x.Effort).ThenBy(x => x.Object.TargetName, StringComparer.Ordinal).Take(10).ToList();
+        if (hardest.Count > 0)
+        {
+            await output.WriteLineAsync("Objects needing the most work:");
+            foreach (var (o, effort) in hardest)
+                await output.WriteLineAsync($"  {effort,5}  {o.Kind,-10} {o.Source}  ({string.Join(", ", o.Diagnostics.Where(d => d.Severity != Severity.Info).Select(d => d.Code).Distinct())})");
+        }
         await output.WriteLineAsync();
         await output.WriteLineAsync("Most frequent diagnostics (see docs/diagnostics.md):");
         foreach (var g in all.GroupBy(d => (d.Code, d.Severity)).OrderByDescending(g => g.Count()).ThenBy(g => g.Key.Code, StringComparer.Ordinal).Take(20))

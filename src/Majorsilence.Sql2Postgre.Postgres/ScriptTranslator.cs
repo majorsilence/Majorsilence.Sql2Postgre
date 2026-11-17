@@ -134,8 +134,7 @@ public static class ScriptTranslator
                     c.Report(ex.Code, Severity.Error, ex.Message);
                     return PgWriter.Write(new PgUntranslated(ex.Code, original), options.TargetVersion) + "\n";
                 }
-            case CreateTableStatement or AlterTableStatement or CreateIndexStatement or CreateViewStatement or CreateTypeStatement
-                or CreateSequenceStatement or CreateSchemaStatement or DropObjectsStatement:
+            case var ddl when ProceduralTranslator.IsDdl(ddl):
                 c.Report(DiagnosticCodes.DdlInScript, Severity.Error, "DDL in an ad-hoc script: convert schema objects with 'sql2pg schema', which orders them and creates their keys and indexes.");
                 return PgWriter.Write(new PgUntranslated(DiagnosticCodes.DdlInScript, original), options.TargetVersion) + "\n";
             default:

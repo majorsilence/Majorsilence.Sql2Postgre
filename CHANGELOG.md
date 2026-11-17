@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Assessment v2.**
+  - `sql2pg assess` estimates the effort, in points: Info 0, Warning 1, Error 5. Encrypted and
+    CLR code, dynamic DDL, INSTEAD OF on tables, DDL triggers and external references weigh more.
+    An object waiting on another weighs nothing, since its work is counted on that object. It
+    also lists the objects that need the most work.
+  - `--json` adds the effort, in total and per object.
+  - `--html report.html` writes one self-contained HTML file: the summary, effort by kind,
+    diagnostics by code and a sortable, filterable table of every object with its messages.
+  - DDL inside a procedure, function or trigger reports its own code, S2P5070 (it was S2P0206).
+  - A test checks that every diagnostic code has its section in `docs/diagnostics.md`.
+  - The corpus agreement harness calls converted procedures: 10 calls on Northwind, pubs and
+    AdventureWorks, 9 of them agreeing fully.
+  - The compile scan records what is left untranslated, by kind. (WP 3.10)
 - **Triggers are converted.**
   - Each event of a DML trigger is a trigger function and a `CREATE TRIGGER`. An AFTER trigger
     is `FOR EACH STATEMENT` with the transition tables `inserted` and `deleted`, so set-based

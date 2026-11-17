@@ -1,0 +1,1 @@
+EXEC dbo.reptq3 0, 20, N'business'

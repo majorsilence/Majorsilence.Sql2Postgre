@@ -1,0 +1,1 @@
+EXEC dbo.[Ten Most Expensive Products]

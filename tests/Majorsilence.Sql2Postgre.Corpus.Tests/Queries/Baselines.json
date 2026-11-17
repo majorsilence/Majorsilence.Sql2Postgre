@@ -29,6 +29,8 @@
   "AdventureWorks2022/28-current-new-products": 100,
   "AdventureWorks2022/29-customer-names": 100,
   "AdventureWorks2022/30-line-arithmetic": 100,
+  "AdventureWorks2022/31-proc-bill-of-materials": 100,
+  "AdventureWorks2022/33-proc-where-used": 100,
   "AdventureWorksDW2022/01-sales-by-year": 100,
   "AdventureWorksDW2022/02-top-products": 100,
   "AdventureWorksDW2022/03-customers-by-gender": 100,
@@ -89,6 +91,12 @@
   "Northwind/28-dateadd-eomonth": 100,
   "Northwind/29-previous-order": 100,
   "Northwind/30-territories-per-region": 100,
+  "Northwind/31-proc-cust-order-hist": 100,
+  "Northwind/32-proc-cust-orders-orders": 100,
+  "Northwind/33-proc-cust-orders-detail": 100,
+  "Northwind/34-proc-ten-most-expensive": 100,
+  "Northwind/35-proc-sales-by-category": 100,
+  "Northwind/36-proc-employee-sales-by-country": 100,
   "WideWorldImporters/01-orders-by-year": 100,
   "WideWorldImporters/02-top-items": 100,
   "WideWorldImporters/03-orders-per-customer": 100,
@@ -178,5 +186,7 @@
   "pubs/27-us-date": 100,
   "pubs/28-top-sellers-nulls": 100,
   "pubs/29-like-range": 92.9,
-  "pubs/30-hire-span": 100
+  "pubs/30-hire-span": 100,
+  "pubs/31-proc-byroyalty": 100,
+  "pubs/32-proc-reptq3": 50
 }
