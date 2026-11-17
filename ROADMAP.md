@@ -314,11 +314,27 @@ Server before it.
 
 ### Stage 4 — the long tail (ongoing)
 
-Chosen from the assessment histogram: `FOR XML`/`FOR JSON` variants, `PIVOT`, XML methods,
-`sys.*` catalog queries in code → `information_schema`/`pg_catalog`, spatial methods via
-PostGIS, SQL Server Agent T-SQL jobs via pg_cron (opt-in), full-text → `tsvector`, table-valued parameters, collation strategy refinements, an HTML
-assessment report, `.dacpac` input (see the DacFx note above), and possibly incremental data
-sync.
+Broken into WPs 4.1–4.16 in the implementation plan, ordered by what the corpus scan and
+BACKLOG still report:
+
+1. DDL inside routines.
+2. System-versioned temporal tables.
+3. XML methods.
+4. hierarchyid (through `mssql_compat`).
+5. Table-valued parameters (SQL and application code).
+6. OPENJSON and FOR JSON over joins.
+7. Full-text search (`tsvector`).
+8. Spatial methods through PostGIS (opt-in).
+9. Char padding semantics.
+10. Catalog queries in code.
+11. Connection strings in configuration files.
+12. ERROR_*() through calls.
+13. The remaining DML forms.
+14. Trigram indexes (pg_trgm, opt-in).
+15. SQL Server Agent jobs (pg_cron, opt-in).
+16. Incremental data sync.
+
+`.dacpac` input and PostgreSQL 15–17 wait for the maintainer.
 
 ## Decisions to settle before Stage 1
 

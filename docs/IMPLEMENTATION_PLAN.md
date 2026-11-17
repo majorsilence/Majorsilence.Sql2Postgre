@@ -1216,18 +1216,286 @@ Rules for the whole stage:
 Server after conversion; every rule has a golden test in both languages; every `S2P8xxx` code is
 in `DiagnosticCodes` and `docs/diagnostics.md`.
 
-### Stage 4 — the long tail (not yet broken into WPs)
+### Stage 4 — the long tail
 
-Chosen from the corpus histogram and user reports: XML data type methods (`.value()`,
-`.query()`, `.nodes()`, `.exist()`) → `xpath()`/`xmltable()`; `sys.*` and `INFORMATION_SCHEMA`
-queries in code → `pg_catalog`/`information_schema`; full-text predicates (`CONTAINS`,
-`FREETEXT`) → `to_tsvector`/`to_tsquery` with expression indexes; table-valued parameters;
-`OPENJSON WITH (…)` → `jsonb_to_recordset`; spatial methods → PostGIS `ST_*` functions
-(`postgis`); trigram GIN indexes for columns searched with leading-wildcard `LIKE` (`pg_trgm`,
-opt-in); SQL Server Agent jobs whose steps are T-SQL → `cron.schedule(…)` (`pg_cron`, opt-in,
-read from `msdb`); `.dacpac` input via the `Microsoft.SqlServer.DacFx`
-package ([microsoft/DacFx](https://github.com/microsoft/DacFx), dependency only, its license
-reviewed first); incremental data sync. Each becomes a WP in this file before work starts.
+**Goal:** close the gaps the corpus and the code converter still report, largest first. The
+order comes from the compile scan (`tests/corpus/results/*-pg18.json`, including the
+`Untranslated` breakdown) and BACKLOG. At the end of Stage 3 and Stage A, the open items were:
+
+- S2P5070 DDL in routines: 142, nearly all of them WideWorldImporters' and WideWorldImportersDW's
+  load procedures.
+- S2P3001 untranslatable expressions: 71. These are XML methods (7 AdventureWorks views, 2
+  triggers), hierarchyid methods, full-text `CONTAINSTABLE`, and UDFs in computed columns.
+- S2P5060 dynamic DDL: 48.
+- WideWorldImporters' temporal tables, table-valued parameters, `OPENJSON … WITH` and geography
+  columns.
+- One agreement query at 50, caused by char padding.
+
+Every WP follows the definition of done:
+- golden tests for the translation rules;
+- both-engines tests for the behaviour;
+- codes documented;
+- the corpus scan with 0 apply/copy/verify failures, and its Manual counts recorded in BACKLOG.
+
+#### WP 4.1 — DDL inside routines (M)
+
+The most frequent error left (S2P5070). Load procedures drop and re-create indexes, disable
+constraints around bulk loads, and truncate.
+
+- `CREATE [UNIQUE] [NON]CLUSTERED INDEX ix ON t (…) [INCLUDE (…)] [WHERE …]` on a real table →
+  `CREATE INDEX` with the name, table and columns the schema converter gives
+  (`SchemaTranslator`'s index translation, reused). `DROP INDEX ix ON t` /
+  `DROP INDEX t.ix` → `DROP INDEX IF EXISTS schema.ix` (an index name is per schema in
+  PostgreSQL).
+- `ALTER INDEX ix ON t REBUILD|REORGANIZE` → `REINDEX INDEX schema.ix` (S2P5071, Info:
+  REORGANIZE has no lighter form). `ALTER INDEX … DISABLE` / `REBUILD` used to re-enable →
+  `DROP INDEX` / `CREATE INDEX` from the index's definition in the source model (S2P5072,
+  Warning: the index is gone while disabled).
+- `ALTER TABLE t NOCHECK CONSTRAINT fk` / `CHECK CONSTRAINT fk` (and `ALL`): PostgreSQL cannot
+  switch a foreign key off. A NOCHECK…CHECK pair around a load in one routine → `ALTER TABLE …
+  DROP CONSTRAINT` and `ADD CONSTRAINT … NOT VALID` then `VALIDATE CONSTRAINT`, from the
+  source model's definition (S2P5073, Warning). An unpaired one is S2P5070 as now.
+- `ALTER TABLE t ADD col …` / `DROP COLUMN` / `ALTER COLUMN` → the schema converter's column
+  translation (S2P5074, Warning: the routine changes the schema at run time).
+- Anything else stays S2P5070.
+- Tests: golden files; a both-engines run of a load procedure that drops an index, disables a
+  foreign key, loads and re-creates both.
+
+#### WP 4.2 — System-versioned temporal tables (L)
+
+WideWorldImporters keeps history for most of its tables.
+
+- A table with `PERIOD FOR SYSTEM_TIME` and `SYSTEM_VERSIONING = ON (HISTORY_TABLE = h)`:
+  - The current table keeps `ValidFrom`/`ValidTo` (timestamp). The history table is converted as
+    a plain table.
+  - A trigger (`BEFORE UPDATE OR DELETE … FOR EACH ROW`) copies the old row into the history
+    table with `ValidTo = now()`, and sets the new row's `ValidFrom` (S2P2020, Info).
+  - Defaults give `ValidFrom` the insert time and `ValidTo` `9999-12-31 23:59:59.9999999`, as SQL
+    Server does.
+- Queries:
+  - `FOR SYSTEM_TIME AS OF @t` → `(SELECT … FROM t WHERE ValidFrom <= @t AND ValidTo > @t UNION ALL
+    SELECT … FROM h WHERE …)`;
+  - `FROM`, `BETWEEN`, `CONTAINED IN` and `ALL` likewise.
+- `ALTER TABLE … SET (SYSTEM_VERSIONING = OFF|ON)` in routines: they are used around loads, so
+  they become `ALTER TABLE … DISABLE|ENABLE TRIGGER` on the history trigger (S2P5075, Info).
+- The data copy copies both tables with their period values as they are.
+- Tests: golden files; a both-engines run of updates and deletes, then each `FOR SYSTEM_TIME`
+  form compared row for row (the period values compared by order, since the clocks differ).
+
+#### WP 4.3 — XML methods and XML indexes (M)
+
+AdventureWorks' views over `Person.Demographics`, `Resume` and `Instructions`, and its triggers'
+`.modify()`.
+
+- `x.value('xpath', 'type')` → `CAST((xpath('xpath', x, nsarray))[1]::text AS type)`; text nodes
+  and attributes as XPath 1.0 gives them. `WITH XMLNAMESPACES` and `declare namespace` in the
+  query → the namespace array.
+- `x.query('xpath')` → `xmlagg` over `xpath(…)`. `x.exist('xpath')` → `xpath_exists` (1/0).
+- `CROSS APPLY x.nodes('xpath') AS T(c)` → `CROSS JOIN LATERAL unnest(xpath('xpath', x, ns)) AS
+  T(c)`; `c.value(…)` over it as above.
+- `x.modify('insert|replace value of|delete …')` → S2P3040 (Error): PostgreSQL's xml type has no
+  update functions. It names the statement to rewrite: build the document anew in the
+  application or with `xmlelement`.
+- XQuery beyond XPath 1.0 (FLWOR, `sql:variable`, `sql:column`) → S2P3041 (Error).
+- XML indexes (primary and secondary) → an expression index on the XPath values the converted
+  views and routines read, when there are any; otherwise a note (S2P2003 as now).
+- Tests: golden files; both-engines result agreement on the AdventureWorks XML views, which
+  become corpus queries.
+
+#### WP 4.4 — hierarchyid (M)
+
+hierarchyid is converted to its text form (`/1/2/`, S2P1105). Its methods become
+`mssql_compat` helpers over that text, which are plain SQL functions with no extension:
+
+- `GetLevel()`, `GetAncestor(n)`, `IsDescendantOf(p)`, `GetRoot()`, `ToString()`,
+  `Parse(s)`, `GetDescendant(a, b)` and `GetReparentedValue(old, new)` → the corresponding helpers.
+- Ordering by a hierarchyid column → a sort key helper (`mssql_compat.hierarchyid_key(x)`, an
+  integer array), so ORDER BY and indexes sort depth-first as SQL Server does.
+- Computed columns using `GetLevel()` (AdventureWorks' `OrganizationLevel`) become stored
+  generated columns; the helper is IMMUTABLE.
+- Tests: helper unit tests on both engines over a grid of paths; AdventureWorks'
+  `uspGetEmployeeManagers` and `uspGetManagerEmployees` converted and in result agreement.
+
+#### WP 4.5 — Table-valued parameters (M)
+
+`Website.OrderList` and `OrderLineList` in WideWorldImporters, and `SqlDbType.Structured` in
+application code (S2P8003).
+
+- A user-defined table type → a composite type (as now, S2P2005) used as an array: a
+  `READONLY` parameter `@t TableType` becomes `t tabletype[]`, and reads of `@t` become
+  `unnest(routine.t)`.
+- Procedures and functions taking one become callable from SQL with
+  `ARRAY[ROW(…)::type, …]`, and from Npgsql with an array of a mapped composite.
+- Application code (`sql2pg code`): a `DataTable` or `IEnumerable<SqlDataRecord>` passed as
+  `Structured`. The converter adds a record class with the type's columns. It also adds a
+  `MapComposite<T>` registration on the data source, and passes the rows as `T[]` (S2P8050,
+  Warning: the code that fills the rows changes too).
+- Tests: golden files; a both-engines run of `Website.InsertCustomerOrders`-style calls from SQL
+  and from a C# sample.
+
+#### WP 4.6 — JSON: OPENJSON and FOR JSON (M)
+
+- `OPENJSON(@j)` with no WITH → `jsonb_each` / `jsonb_array_elements` (key, value, type
+  columns as SQL Server's).
+- `OPENJSON(@j, '$.path') WITH (c type '$.p' [AS JSON])` → `jsonb_to_recordset` where every path
+  is a plain member, else `jsonb_array_elements` with `->>`/`#>>` per column and a cast. This
+  includes WideWorldImporters' `Website.RecordVehicleTemperature`.
+- `FOR JSON AUTO` over joins → nested `json_agg` per joined table, in SQL Server's nesting order.
+  `FOR JSON PATH` with dotted names over joins likewise.
+- `JSON_MODIFY` → `jsonb_set` / `jsonb_insert` / `#-` by its mode; `ISJSON(x, type)`.
+- Tests: golden files; both-engines result agreement on JSON shapes, compared as parsed JSON.
+
+#### WP 4.7 — Full-text search (M)
+
+AdventureWorks' full-text indexes and `uspSearchCandidateResumes`.
+
+- A full-text index on (columns) → a GIN expression index on
+  `to_tsvector(config, coalesce(c1,'') || ' ' || …)`. The config comes from the index's language:
+  `english` for 1033, otherwise reported (S2P2021).
+- `CONTAINS(cols, 'term')`, `CONTAINS(cols, '"a" AND "b*"')`, `FREETEXT(cols, text)` → the same
+  expression `@@ to_tsquery` / `websearch_to_tsquery`, mapping AND/OR/NOT, prefix `*`, phrase
+  and `NEAR` (→ `<N>`).
+- `CONTAINSTABLE`/`FREETEXTTABLE` → a lateral query with `ts_rank` as `RANK` and the key as
+  `KEY`, for `JOIN … ON KEY_TBL.[KEY] = t.id`.
+- Ranking values and stemming differ from SQL Server's (S2P3042, Info). Thesaurus and stoplists
+  are reported.
+- Tests: golden files; a both-engines check that the same rows match. Ranks are compared by
+  order only.
+
+#### WP 4.8 — Spatial methods with PostGIS (M, `postgis` opt-in)
+
+With `postgis` enabled, geography/geometry columns are PostGIS types (WP 1.5). The methods then
+map to `ST_*`:
+
+- `STDistance`, `STIntersects`, `STContains`, `STWithin`, `STBuffer`, `STArea`, `STLength`,
+  `STAsText`, `STAsBinary`, `STX`/`Lat`, `STY`/`Long` and `STSrid`;
+- `geography::Point(lat, long, srid)`, `STGeomFromText`, `STPointFromText`, `Parse`;
+- geography distances are in metres on both engines.
+
+`MakeValid`, `Reduce` and `STUnion` map where an `ST_` function does the same; others are
+S2P3030 as now. Spatial indexes become GiST (WP 1.8 notes them today). Without `postgis`,
+everything stays as now (WKB bytea, S2P1106/S2P3030).
+
+Tests: a both-engines grid of each method over points, lines and polygons. Results are compared
+to 1e-6 relative, and SQL Server's and PostGIS's geodesic models are recorded where they differ.
+
+#### WP 4.9 — Character semantics (S)
+
+- A `char(n)` value that a CASE, `+`, ISNULL/COALESCE or a varchar CAST turns into varchar keeps
+  its trailing spaces in SQL Server. PostgreSQL's bpchar-to-text drops them. Such an operand is
+  wrapped in `rpad(x::text, n)` when the result is a string. This is the pubs agreement query at
+  50.
+- The semantic model types a CASE (and COALESCE/ISNULL/IIF) by SQL Server's precedence and the
+  longest length, not the first branch's.
+- LIKE on char columns: trailing spaces as SQL Server treats them.
+- Tests: the expression grid on both engines with char values; `pubs/32-proc-reptq3` reaches
+  100.
+
+#### WP 4.10 — Catalog queries in code (M)
+
+Code that asks SQL Server about itself.
+
+- `OBJECT_ID('schema.name'[, type])` → `to_regclass` / `to_regproc` on the converted name, as an
+  integer oid (or NULL), as WP 3.5 already does for temp tables.
+- `COL_LENGTH`, `COLUMNPROPERTY(…, 'IsIdentity')`, `OBJECTPROPERTY(…, 'IsUserTable')`,
+  `DB_ID`, `SCHEMA_ID`, `SCHEMA_NAME`, `OBJECT_NAME`, `TYPE_NAME` → catalog lookups.
+- `INFORMATION_SCHEMA.TABLES|COLUMNS|ROUTINES|…` → PostgreSQL's `information_schema`, which
+  has the same views. Names are compared through the name mapper: SQL Server's
+  `TABLE_SCHEMA = 'dbo'` → `'public'`.
+- `sys.tables`, `sys.columns`, `sys.objects`, `sys.indexes`, `sys.schemas`, `sys.procedures` in
+  the common join shapes → `pg_catalog` equivalents (`pg_class`, `pg_attribute`, `pg_namespace`,
+  `pg_proc`, `pg_index`), with only the columns that have a counterpart. Others are S2P3043
+  (Error).
+- `sp_rename`, `sp_help`, `sp_columns`, `sp_tables` in scripts → `ALTER … RENAME` / catalog
+  queries (S2P5023 today).
+- Tests: golden files; both-engines result agreement of catalog queries over the shop fixture
+  (names compared through the name mapper).
+
+#### WP 4.11 — Connection strings in configuration files (S)
+
+`sql2pg code` also converts:
+
+- `appsettings*.json`: the `ConnectionStrings` section, and any string value that is a SQL
+  Server connection string;
+- `web.config` / `app.config`: `<connectionStrings><add connectionString="…"
+  providerName="System.Data.SqlClient"/>` gets an Npgsql connection string and
+  `providerName="Npgsql"`;
+- `*.dbproj`/`*.sqlproj` are left alone (S2P8051, Info).
+
+They use the same connection-string conversion as WP A.2, and the files' formatting is kept
+(text edits). Secrets are never printed: diagnostics name the key, not the value. Tests: golden
+files for JSON (comments allowed) and XML.
+
+#### WP 4.12 — Error context through calls (S)
+
+`ERROR_*()` in a procedure called from a caller's CATCH block is NULL today (S2P5043).
+AdventureWorks' `uspLogError` and `uspPrintError` work this way.
+
+- Each converted handler stores the error with
+  `set_config('sql2pg.error_number' | 'error_message' | …, value, true)` (transaction-local).
+  `ERROR_*()` outside a CATCH block reads `current_setting('sql2pg.error_…', true)`.
+- Leaving the handler clears the settings, so `ERROR_*()` is NULL afterwards, as in SQL Server.
+- Tests: a both-engines run of a procedure whose CATCH block calls a logging procedure; the log
+  rows agree.
+
+#### WP 4.13 — Remaining DML forms (M)
+
+These come from BACKLOG:
+
+- UPDATE/DELETE whose target is inside an outer join → a key-based rewrite
+  (`WHERE key IN (SELECT … FROM … LEFT JOIN …)`);
+- `UPDATE TOP (n)` / `DELETE TOP (n)` → a key-based rewrite with `LIMIT n` (an arbitrary n rows,
+  as in SQL Server; S2P4009 becomes Info);
+- `FOR XML RAW|AUTO|PATH` beyond the `PATH('')` concatenation → `xmlelement`/`xmlagg`;
+- `PIVOT`/`UNPIVOT` forms the translator does not take yet.
+
+Tests: golden files and both-engines agreement for each.
+
+#### WP 4.14 — Trigram indexes (S, `pg_trgm` opt-in)
+
+With `pg_trgm` enabled, a column that converted views and routines search with a
+leading-wildcard `LIKE '%…%'` (or that a `--trigram-index schema.table.column` option names) gets
+`CREATE INDEX … USING gin (col gin_trgm_ops)`. This is reported (S2P2022, Info), so the space
+cost is a choice. Tests: the index is created and used (`EXPLAIN`) on PostgreSQL 18.
+
+#### WP 4.15 — SQL Server Agent jobs (M, `pg_cron` opt-in)
+
+- `sql2pg schema` reads `msdb` jobs whose steps are T-SQL, along with their schedules
+  (`sysjobs`, `sysjobsteps`, `sysschedules`) when the source is a live database and
+  `--agent-jobs` is given.
+- Each job becomes a converted procedure (the steps in order, with their on-failure actions as
+  far as one procedure can express them), plus `cron.schedule(name, cron expression, 'CALL …')`.
+- Daily, weekly and monthly schedules map to cron expressions. Others (on idle, on start, every N
+  seconds) are reported (S2P2023).
+- Other step types (SSIS, PowerShell, CmdExec) are reported (S2P2024).
+- Tests: the schedule mapping as unit tests. A container test runs on PostgreSQL 18 with
+  pg_cron: the CI image gets it, or the test is skipped where pg_cron is not installed.
+
+#### WP 4.16 — Incremental data sync (L)
+
+`sql2pg data --since <state>` copies rows changed since the last run, for a cut-over with a
+short outage:
+
+- With a `rowversion` column, rows whose rowversion is above the last value copied.
+- With SQL Server change tracking enabled, `CHANGETABLE(CHANGES …)` gives the changes, deletes
+  included.
+- Otherwise the table is copied whole again (the plan says which applies to each table).
+- Changed rows are upserted (`INSERT … ON CONFLICT (pk) DO UPDATE`), and deletes are applied when
+  change tracking reports them. Sequences and identities are moved past the new values.
+- The state file records each table's high-water mark. `--verify` checks counts and checksums
+  after the last pass.
+- Tests: a container test runs a full copy, changes rows on SQL Server, runs an incremental copy,
+  and verifies.
+
+#### Waiting for the maintainer
+
+- `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package
+  ([microsoft/DacFx](https://github.com/microsoft/DacFx), as a dependency only, its license
+  reviewed first). It is on hold; it becomes a WP when the maintainer asks.
+- PostgreSQL 15–17. PostgreSQL 18 is the target until the maintainer decides it is in good
+  shape. Then a WP checks what 15, 16 and 17 need: virtual generated columns, `uuidv7`, MERGE
+  RETURNING, OLD/NEW in RETURNING, LIKE on nondeterministic collations. The scan runs on each
+  version.
 
 ## Definition of done
 

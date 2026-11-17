@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Plan: Stage 4 broken into WPs 4.1–4.16, ordered by what the corpus scan and BACKLOG still
+  report. `.dacpac` input and PostgreSQL 15–17 wait for the maintainer.
 - **`sql2pg code` converts Entity Framework Core.**
   - `UseSqlServer` becomes `UseNpgsql`.
   - Column types, default SQL and computed SQL go through the schema converter's mappings, and
