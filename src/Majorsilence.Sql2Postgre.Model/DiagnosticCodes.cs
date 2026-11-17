@@ -322,6 +322,26 @@ public static class DiagnosticCodes
     /// <summary>Dynamic SQL splices text from a variable in as it stands.</summary>
     public const string DynamicSqlSpliced = "S2P5062";
 
+    // ---- 6xxx triggers ----
+
+    /// <summary>UPDATE(column) in an UPDATE trigger is true: PostgreSQL does not tell a trigger which columns the statement set.</summary>
+    public const string UpdateColumnAssumed = "S2P6001";
+
+    /// <summary>COLUMNS_UPDATED() has no PostgreSQL equivalent.</summary>
+    public const string ColumnsUpdated = "S2P6002";
+
+    /// <summary>An INSTEAD OF trigger on a view runs once per row in PostgreSQL, once per statement in SQL Server.</summary>
+    public const string InsteadOfPerRow = "S2P6003";
+
+    /// <summary>An INSTEAD OF trigger on a table: PostgreSQL has INSTEAD OF triggers on views only.</summary>
+    public const string InsteadOfTable = "S2P6004";
+
+    /// <summary>A DDL or logon trigger.</summary>
+    public const string DdlTrigger = "S2P6005";
+
+    /// <summary>Several triggers on one table and event: PostgreSQL fires them in name order.</summary>
+    public const string TriggerOrder = "S2P6006";
+
     /// <summary>RAISERROR format flags, width, precision or %x/%o: the arguments are written in their plain text form.</summary>
     public const string RaiserrorFormat = "S2P5011";
 

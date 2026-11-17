@@ -87,6 +87,7 @@ public sealed partial class SchemaTranslator
             objects.AddRange(GuardMany(t.Name, () => ForeignKeys(t)));
         }
         var procedural = new ProceduralTranslator(queries);
+        var triggerCounts = TriggerCounts(modules, model);
         foreach (var m in modules)
         {
             if (m.Kind is ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure && string.IsNullOrWhiteSpace(m.Definition))
@@ -98,11 +99,16 @@ public sealed partial class SchemaTranslator
                 objects.Add(Guard(m.Name, ObjectKind.Function, Phase.Code, () => Function(m, model, procedural)));
             else if (m.Kind == ObjectKind.Procedure)
                 objects.Add(Guard(m.Name, ObjectKind.Procedure, Phase.Code, () => Procedure(m, model, procedural)));
+            else if (m.Kind == ObjectKind.Trigger && string.IsNullOrWhiteSpace(m.Definition))
+                objects.Add(Untranslated(m, _names.Routine(m.Name).Qualified, [], DiagnosticCodes.EncryptedModule,
+                    $"{m.Name} was created WITH ENCRYPTION, so SQL Server does not reveal its text; supply the original script."));
+            else if (m.Kind == ObjectKind.Trigger)
+                objects.Add(Guard(m.Name, ObjectKind.Trigger, Phase.Triggers, () => Trigger(m, model, procedural, triggerCounts)));
             else
                 objects.Add(new TranslatedObject(m.Name, m.Kind, m.Name.ToString(),
                     m.Kind == ObjectKind.Trigger ? Phase.Triggers : Phase.Code, [],
                     [new Diagnostic(DiagnosticCodes.NotYetSupported, Severity.Info, m.Name,
-                        $"{m.Kind} {m.Name} is not converted yet (triggers come later in Stage 3).")], [])
+                        $"{m.Kind} {m.Name} is not converted.")], [])
                 { Skipped = true });
         }
         objects = PropagateUnconverted(objects, model);

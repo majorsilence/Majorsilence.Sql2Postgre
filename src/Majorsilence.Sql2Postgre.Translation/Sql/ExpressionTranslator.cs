@@ -82,8 +82,12 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             new PgBetween(Compared(t.FirstExpression, t.SecondExpression, c), Compared(t.SecondExpression, t.FirstExpression, c),
                 Compared(t.ThirdExpression, t.FirstExpression, c), t.TernaryExpressionType == BooleanTernaryExpressionType.NotBetween),
         LikePredicate like => Like(like, c),
+        UpdateCall update when ProceduralPredicate?.Invoke(update, c) is { } translated => translated,
         _ => SubqueryPredicate(e, c),
     };
+
+    /// <summary>Predicates only procedural code has (a trigger's UPDATE(column)); set by the procedural translator.</summary>
+    public Func<BooleanExpression, ExpressionContext, PgExpr?>? ProceduralPredicate { get; set; }
 
     /// <summary>EXISTS, IN (subquery) and comparisons with ANY/ALL: the query translator's (WP 2.3) concern.</summary>
     private PgExpr SubqueryPredicate(BooleanExpression e, ExpressionContext c) => e switch

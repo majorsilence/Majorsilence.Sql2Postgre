@@ -523,6 +523,12 @@ public sealed partial class ProceduralTranslator
                 if (begin.Name?.Value is { } named)
                     st.TransactionNames.Add(named);
                 st.TransactionBegun = true;
+                if (st.Signature.Kind == BodyKind.Trigger)
+                {
+                    c.Report(DiagnosticCodes.BeginTransactionDropped, Severity.Info,
+                        "BEGIN TRANSACTION in a trigger is dropped: the trigger runs inside the triggering statement's transaction.");
+                    return [];
+                }
                 if (st.TryDepth > 0)
                 {
                     c.Report(DiagnosticCodes.BeginTransactionDropped, Severity.Info,
@@ -532,6 +538,10 @@ public sealed partial class ProceduralTranslator
                 c.Report(DiagnosticCodes.BeginTransactionDropped, Severity.Info,
                     "BEGIN TRANSACTION becomes COMMIT: the work before it is committed, as SQL Server's autocommit had done, and a new transaction starts.");
                 return [new PgTransactionControl(true)];
+            case RollbackTransactionStatement when st.Signature.Kind == BodyKind.Trigger:
+                return [TriggerRollback()];
+            case CommitTransactionStatement when st.Signature.Kind == BodyKind.Trigger:
+                throw ExpressionTranslator.Untranslatable(t, "COMMIT inside a trigger (it runs inside the triggering statement's transaction)", DiagnosticCodes.ProceduralStatement);
             case CommitTransactionStatement or RollbackTransactionStatement when st.TryDepth > 0:
                 throw ExpressionTranslator.Untranslatable(t,
                     "COMMIT or ROLLBACK inside TRY, other than a COMMIT ending it (PL/pgSQL cannot end a transaction inside a block with an exception handler)",

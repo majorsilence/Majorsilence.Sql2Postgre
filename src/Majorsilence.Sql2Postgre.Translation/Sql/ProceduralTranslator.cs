@@ -16,6 +16,9 @@ public enum BodyKind
 
     /// <summary>A multi-statement table-valued function: rows go to its return table, RETURN returns them.</summary>
     TableFunction,
+
+    /// <summary>A trigger function: inserted and deleted are its transition tables or rows.</summary>
+    Trigger,
 }
 
 /// <summary>A routine parameter as its body sees it.</summary>
@@ -36,6 +39,9 @@ public sealed record BodySignature(BodyKind Kind, string? RoutineName, IReadOnly
 
     /// <summary>A procedure's shape: where its result sets and status code go.</summary>
     public ProcedureShape? Shape { get; init; }
+
+    /// <summary>A trigger's table and event.</summary>
+    public TriggerEvent? Trigger { get; init; }
 }
 
 /// <summary>
@@ -178,11 +184,17 @@ public sealed partial class ProceduralTranslator
             }
             if (signature.Shape?.ReturnCode is { } returnCode)
                 body.Add(new PgAssign(new PgColumnRef(returnCode, signature.RoutineName), new PgLiteral("0")));
+            if (signature.Trigger is { } trigger)
+                body.AddRange(TriggerPrologue(trigger, st));
             var statementsTranslated = List(statements, st, topLevel: true);
             body.AddRange(st.TableVariableSetup.Values.SelectMany(x => x));
             body.AddRange(statementsTranslated);
             if (statementsTranslated.LastOrDefault() is not PgReturn)
+            {
                 body.AddRange(Drops(st));
+                if (signature.Trigger is { } ended)
+                    body.Add(new PgReturn(TriggerResult(ended)));
+            }
             if (st.StatementAfterDml && !st.XactAbortOn && !st.HasTry)
                 context.Report(DiagnosticCodes.ErrorStopsExecution, Severity.Info,
                     "Statements follow DML without SET XACT_ABORT ON or TRY: SQL Server continues after most statement errors, PostgreSQL stops at the first.");
@@ -215,19 +227,21 @@ public sealed partial class ProceduralTranslator
     {
         foreach (var p in st.Signature.Parameters)
             st.C.Scope.DefineVariable(p.SourceName, p.Type);
-        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable);
+        var saved = (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.PseudoTable, _x.ProceduralPredicate);
         _x.VariableWriter = name => VariableRef(name, st);
         _x.ProceduralGlobal = (name, c) => Global(name, c, st);
         _x.ProceduralFunction = (name, f, c) => Function(name, f, c, st);
         _queries.TableVariable = name => st.TableVariables.GetValueOrDefault(name);
         _queries.CursorVariable = id => st.Cursors.GetValueOrDefault(CursorKey(id))?.Variable;
+        _queries.PseudoTable = st.Signature.Trigger is { } trigger ? (written, alias) => PseudoTable(written, alias, trigger) : null;
+        _x.ProceduralPredicate = (e, c) => TriggerPredicate(e, c, st);
         try
         {
             return translate();
         }
         finally
         {
-            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable) = saved;
+            (_x.VariableWriter, _x.ProceduralGlobal, _x.ProceduralFunction, _queries.TableVariable, _queries.CursorVariable, _queries.PseudoTable, _x.ProceduralPredicate) = saved;
         }
     }
 
@@ -611,6 +625,8 @@ public sealed partial class ProceduralTranslator
     private IEnumerable<PgPlStatement> Return(ReturnStatement r, BodyState st)
     {
         var sig = st.Signature;
+        if (sig.Trigger is { } trigger)
+            return [.. Drops(st), new PgReturn(TriggerResult(trigger))];
         if (sig.Kind == BodyKind.TableFunction && st.ReturnTable is { } table)
             return
             [
@@ -808,6 +824,8 @@ public sealed partial class ProceduralTranslator
         "SCOPE_IDENTITY" when f.Parameters.Count == 0 => Helper(IdentityVariable, "numeric(38,0)", st),
         "ERROR_MESSAGE" or "ERROR_NUMBER" or "ERROR_SEVERITY" or "ERROR_STATE" or "ERROR_LINE" or "ERROR_PROCEDURE" or "XACT_STATE"
             when f.Parameters.Count == 0 => ErrorFunction(name, c, st),
+        "COLUMNS_UPDATED" => throw new UntranslatableException(DiagnosticCodes.ColumnsUpdated,
+            "COLUMNS_UPDATED() has no PostgreSQL equivalent: a trigger is not told which columns the statement set."),
         _ => null,
     };
 

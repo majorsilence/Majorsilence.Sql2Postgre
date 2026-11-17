@@ -46,7 +46,7 @@ public sealed partial class ProceduralTranslator
         if (outermost)
         {
             // BEGIN TRAN in the TRY: what came before it was committed in SQL Server (autocommit).
-            if (beginsTransaction)
+            if (beginsTransaction && st.Signature.Kind != BodyKind.Trigger)
                 result.Add(new PgTransactionControl(true));
             if (tryStatements.LastOrDefault() is CommitTransactionStatement)
             {
@@ -211,8 +211,15 @@ public sealed partial class ProceduralTranslator
     private PgExpr TransactionState(ExpressionContext c, BodyState st, string what, string open)
     {
         if (!st.ErrorFrames.TryPeek(out var frame))
-            throw new UntranslatableException(DiagnosticCodes.TranCount,
-                $"{what} outside a CATCH block has no PostgreSQL equivalent: a routine always runs in a transaction.");
+        {
+            if (what == "@@TRANCOUNT")
+                throw new UntranslatableException(DiagnosticCodes.TranCount,
+                    $"{what} outside a CATCH block has no PostgreSQL equivalent: a routine always runs in a transaction.");
+            // Outside a handler the transaction is active and committable.
+            c.Report(DiagnosticCodes.TransactionState, Severity.Info,
+                $"{what} outside CATCH is 1: PL/pgSQL code always runs in an active transaction (SQL Server returns 0 outside a transaction, and -1 in code called from a CATCH block whose transaction is doomed).");
+            return new PgLiteral("1");
+        }
         c.Report(DiagnosticCodes.TransactionState, Severity.Info,
             frame.TransactionMayBeOpen
                 ? $"{what} in CATCH is {open}: a BEGIN TRAN may have run, and a ROLLBACK here undoes the work since it (the TRY's own work is already undone)."

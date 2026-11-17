@@ -529,10 +529,10 @@ statements become `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`.
 
 ### S2P5025 TranCount (Error)
 
-`@@TRANCOUNT` or `XACT_STATE()` outside a `CATCH` block. `@@TRANCOUNT` counts nested
-`BEGIN TRANSACTION`s, and PostgreSQL has one transaction and no count. A routine always runs
-inside a transaction, so the test has no translation. The statement using it is kept as a
-comment. Inside `CATCH` both are translated (S2P5041).
+`@@TRANCOUNT` outside a `CATCH` block. It counts nested `BEGIN TRANSACTION`s, and PostgreSQL
+has one transaction and no count. A routine always runs inside a transaction, so the test has no
+translation. The statement using it is kept as a comment. Inside `CATCH` it is translated
+(S2P5041), and `XACT_STATE()` is translated everywhere (S2P5041).
 
 ### S2P5026 BeginTransactionDropped (Info)
 
@@ -671,6 +671,10 @@ a number. `ERROR_STATE()` is 1, because PostgreSQL errors have no state number.
 
 ### S2P5041 TransactionState (Info)
 
+`XACT_STATE()` outside a `CATCH` block is 1, because PL/pgSQL code always runs in an active,
+committable transaction. SQL Server returns 0 outside a transaction, and -1 in code called from
+a CATCH block whose transaction is doomed: AdventureWorks' `uspLogError` tests for -1.
+
 `XACT_STATE()` or `@@TRANCOUNT` in a `CATCH` block is a constant:
 
 - -1 (`XACT_STATE()`) or 1 (`@@TRANCOUNT`) when a `BEGIN TRAN` may have run, in the TRY or
@@ -754,6 +758,75 @@ statement fails, SQL Server keeps the changes already made, because each was com
 own, and only the failing statement is undone. PostgreSQL's exception block undoes everything
 the TRY did. Wrap the TRY's work in `BEGIN TRAN … COMMIT` if all-or-nothing is what the code
 means. If it is not, split the TRY.
+
+## S2P6xxx — triggers
+
+DML triggers are converted; each event (INSERT, UPDATE, DELETE) becomes a trigger function and
+a `CREATE TRIGGER` of its own. A trigger with one event keeps its name; one with several gets
+`_insert`, `_update` and `_delete`. This is because PostgreSQL allows transition tables only on
+single-event triggers.
+
+- **AFTER (and FOR) triggers** are `AFTER … FOR EACH STATEMENT` with
+  `REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted`.
+  - Set-based T-SQL over `inserted` and `deleted` runs as it is, once per statement, as in SQL
+    Server.
+  - The pseudo-table an event does not have (`deleted` on INSERT, `inserted` on DELETE) is an
+    empty query of the table (`SELECT * FROM t WHERE false`).
+  - `@@ROWCOUNT` at the start is the number of rows the statement affected. As in SQL Server,
+    `SET NOCOUNT ON` resets it, so test it first.
+- **INSTEAD OF triggers on views** are `INSTEAD OF … FOR EACH ROW`. `inserted` is the one row
+  (`SELECT NEW.*`), and so is `deleted` (`SELECT OLD.*`).
+- **The function returns** NULL, or the row for an INSTEAD OF trigger, so that PostgreSQL counts
+  it as done.
+- **ROLLBACK** in a trigger raises an error ("transaction rolled back by trigger …"). That ends
+  the statement and its transaction, as SQL Server ends the batch. `BEGIN TRAN` in a trigger is
+  dropped.
+- **Applied last.** Triggers are applied in the Triggers phase, after the data is copied, so the
+  copy does not fire them.
+- **Dropped options.** Trigger options (`EXECUTE AS`, `WITH ENCRYPTION`) and
+  `NOT FOR REPLICATION` are dropped (Info, S2P0204).
+
+### S2P6001 UpdateColumnAssumed (Warning)
+
+`UPDATE(column)` in an UPDATE trigger. SQL Server answers whether the statement's SET list names
+the column. PostgreSQL does not tell a trigger which columns were set, so the translation tests
+whether the value changed in some row:
+
+- AFTER trigger: `inserted` and `deleted` are joined on the primary key, so a row whose key
+  changed counts as changed. A table without a primary key gives true.
+- INSTEAD OF trigger: `NEW.c IS DISTINCT FROM OLD.c`.
+
+The answers differ only for `SET c = c`, where the value does not change. `UPDATE(column)` is
+true in an INSERT trigger and false in a DELETE trigger, as in SQL Server.
+
+### S2P6002 ColumnsUpdated (Error)
+
+`COLUMNS_UPDATED()` returns a bitmap of the columns the statement set. PostgreSQL has no
+equivalent. Compare `inserted` with `deleted` column by column instead.
+
+### S2P6003 InsteadOfPerRow (Warning)
+
+An INSTEAD OF trigger on a view runs once per row in PostgreSQL, and once per statement in SQL
+Server. This is reported when its body is more than one statement. The body sees one row in
+`inserted`/`deleted` each time, so code that counts or aggregates them, or that should run once,
+needs a look.
+
+### S2P6004 InsteadOfTable (Error)
+
+An INSTEAD OF trigger on a table. PostgreSQL has INSTEAD OF triggers on views only. A `BEFORE …
+FOR EACH ROW` trigger that does the work and returns NULL (which skips the row) is the usual
+rewrite.
+
+### S2P6005 DdlTrigger (Error)
+
+A DDL trigger (`ON DATABASE`, `ON ALL SERVER`) or a logon trigger. PostgreSQL's event triggers
+fire on DDL commands with a different model (and need superuser). Rewrite it as one if it is
+still needed.
+
+### S2P6006 TriggerOrder (Info)
+
+A table has several triggers for one event. PostgreSQL fires them in name order. SQL Server fires
+them in its own order, which `sp_settriggerorder` sets. Rename them if the order matters.
 
 ## S2P7xxx — data copy and verification
 

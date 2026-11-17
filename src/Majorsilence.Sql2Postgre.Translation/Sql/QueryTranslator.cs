@@ -281,6 +281,8 @@ public sealed partial class QueryTranslator
             throw ExpressionTranslator.Untranslatable(n, "FOR SYSTEM_TIME (temporal tables)");
         string written = n.SchemaObject.BaseIdentifier.Value;
         string? alias = n.Alias is null ? null : _names.Alias(n.Alias.Value);
+        if (n.SchemaObject.SchemaIdentifier is null && PseudoTable?.Invoke(written, alias) is { } pseudo)
+            return pseudo;
         if (n.SchemaObject.SchemaIdentifier is null && c.Scope.Cte(written) is not null)
             return new PgTableRef(new PgName("", _names.Alias(written)), alias);
         GlobalTemp(n, written);
@@ -293,6 +295,12 @@ public sealed partial class QueryTranslator
             c.Report(DiagnosticCodes.UnresolvedColumn, Severity.Warning, $"{name} is not a table or view this database has; it is written as {_names.Relation(name).Qualified}.");
         return new PgTableRef(_names.Relation(name), alias);
     }
+
+    /// <summary>
+    /// A trigger's <c>inserted</c> or <c>deleted</c> (written name, alias) as a FROM item, or null
+    /// for any other name (set by the procedural translator for a trigger body).
+    /// </summary>
+    public Func<string, string?, PgFromItem?>? PseudoTable { get; set; }
 
     /// <summary>A temp table's PostgreSQL name: its name without <c>#</c>, styled.</summary>
     public string TempTable(string written) => _names.Alias(written.TrimStart('#'));

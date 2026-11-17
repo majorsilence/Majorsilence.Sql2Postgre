@@ -82,7 +82,7 @@ public sealed partial class ProceduralTranslator
         // A script batch's temp tables live on in the session; its table variables end with it.
         // A procedure's both end with it, unless cursors it returns still read them. A function's
         // table variables go when the transaction commits (ON COMMIT DROP).
-        bool procedure = sig.Kind == BodyKind.Procedure && sig.Shape is not { Cursors.Count: > 0 };
+        bool procedure = sig.Kind is BodyKind.Procedure or BodyKind.Trigger && sig.Shape is not { Cursors.Count: > 0 };
         if (procedure)
             st.EndDrops.AddRange(finder.TempTables.Select(t => new PgName("", _queries.TempTable(t))));
         if (procedure || sig.Kind == BodyKind.AnonymousBlock)

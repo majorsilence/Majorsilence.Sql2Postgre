@@ -36,6 +36,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.6 — TRY … CATCH (exception blocks, ERROR_*() from stacked diagnostics with SQL Server error numbers, transaction patterns in TRY/CATCH, BEGIN TRAN → COMMIT); 9 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. Procedures converted / Manual: AdventureWorks 3/7 (was 2/8), WideWorldImportersDW 17/7 (was 16/8), WideWorldImporters 10/32 (its TRY blocks are translated, but the procedures still have dynamic SQL and cursors).
 - WP 3.7 — cursors (FOR loop for the OPEN/FETCH/WHILE pattern, refcursor variables otherwise, scrolling, @@FETCH_STATUS, WHERE CURRENT OF, cursor variables); 5 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters' S2P0206 count fell from 214 to 154; its 32 Manual procedures all still contain dynamic SQL (WP 3.8).
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
+- WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 
 ## Measured
 
@@ -276,3 +277,26 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   - `EXEC (…) AT linked_server`.
   - In `sql2pg translate`, a dynamic SELECT at the top of a script (it goes to a DO block, which
     returns no rows).
+- WP 3.9 departs from the plan in these places:
+  - Each event gets its own trigger function, not one function behind several triggers. The
+    pseudo-table an event lacks is an empty query of the table (`SELECT * FROM t WHERE false`).
+    A single function would fail on a statement that names `deleted` in an INSERT firing.
+  - `UPDATE(column)` compares the old and new values, joining `inserted` and `deleted` on the
+    primary key. The plan had it always true. It is still S2P6001, a Warning, because
+    `SET c = c` differs.
+  - An INSTEAD OF trigger on a view takes any body, with `inserted` as `(SELECT NEW.*)`. The plan
+    allowed a single DML statement only. A longer body reports S2P6003 as a Warning, not an
+    Error.
+- Established on PostgreSQL 18:
+  - Transition tables need a single-event trigger.
+  - A statement trigger fires for an UPDATE of no rows too, as SQL Server's does.
+  - `(SELECT NEW.*) AS inserted` works in a row trigger on a view.
+- Seen in the corpus with WP 3.9: all ten AdventureWorks triggers were Manual. Two are INSTEAD OF
+  on tables (S2P6004). The other eight call `uspLogError`, which was Manual for testing
+  `XACT_STATE()` outside CATCH (S2P5025). `XACT_STATE()` outside CATCH is now 1 (S2P5041, Info).
+- Not translated yet for triggers:
+  - `sp_settriggerorder` (only reported, S2P6006).
+  - A trigger disabled in SQL Server (it is created enabled).
+  - `UPDATE(column)` for `SET c = c`.
+  - Triggers on tables that are not converted.
+  - A trigger's reads of `@@ROWCOUNT` after its first statement follow the usual rules.

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Triggers are converted.**
+  - Each event of a DML trigger is a trigger function and a `CREATE TRIGGER`. An AFTER trigger
+    is `FOR EACH STATEMENT` with the transition tables `inserted` and `deleted`, so set-based
+    bodies run unchanged. An INSTEAD OF trigger on a view is `FOR EACH ROW` over `NEW`/`OLD`.
+  - `@@ROWCOUNT` is the number of rows the statement affected.
+  - `UPDATE(column)` tests whether the value changed, joining on the primary key (S2P6001).
+  - `ROLLBACK` raises an error that ends the statement.
+  - These report a code: `COLUMNS_UPDATED()` (S2P6002); INSTEAD OF on a table (S2P6004); DDL and
+    logon triggers (S2P6005); several triggers on one event (S2P6006, name order); a multi-statement
+    INSTEAD OF body (S2P6003).
+  - Statements fired on both engines leave the same rows. (WP 3.9)
 - **Dynamic SQL is converted.**
   - `EXEC (string)` and `sp_executesql` become `EXECUTE`. The text is translated as T-SQL; when
     it is held in a variable, it is followed back to the SET or DECLARE that gave it its value.

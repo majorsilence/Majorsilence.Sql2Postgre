@@ -45,6 +45,23 @@ public sealed record PgCreateTable(PgName Name, IReadOnlyList<PgColumnDef> Colum
 /// <summary><c>DROP TABLE [IF EXISTS] name</c>.</summary>
 public sealed record PgDropTable(PgName Name, bool IfExists = true) : PgStatement;
 
+/// <summary>
+/// <c>CREATE TRIGGER name {AFTER | INSTEAD OF} event ON table [REFERENCING NEW TABLE AS …
+/// OLD TABLE AS …] FOR EACH {STATEMENT | ROW} EXECUTE FUNCTION function()</c>.
+/// </summary>
+/// <param name="Timing"><c>AFTER</c> or <c>INSTEAD OF</c>.</param>
+/// <param name="Event"><c>INSERT</c>, <c>UPDATE</c> or <c>DELETE</c>.</param>
+public sealed record PgCreateTrigger(string Name, PgName Table, string Timing, string Event, PgName Function) : PgStatement
+{
+    /// <summary>The transition table of new rows (<c>inserted</c>).</summary>
+    public string? NewTable { get; init; }
+
+    /// <summary>The transition table of old rows (<c>deleted</c>).</summary>
+    public string? OldTable { get; init; }
+
+    public bool ForEachRow { get; init; }
+}
+
 /// <summary><c>TRUNCATE TABLE name [RESTART IDENTITY]</c>.</summary>
 public sealed record PgTruncate(PgName Table, bool RestartIdentity) : PgStatement;
 

@@ -244,7 +244,7 @@ public sealed partial class ExpressionTranslator
                 Arity(0);
                 return Call("current_setting", PgLiteral.String("application_name"));
             case "SCOPE_IDENTITY" or "IDENT_CURRENT" or "ERROR_MESSAGE" or "ERROR_NUMBER" or "ERROR_LINE"
-                or "ERROR_PROCEDURE" or "ERROR_SEVERITY" or "ERROR_STATE" or "XACT_STATE":
+                or "ERROR_PROCEDURE" or "ERROR_SEVERITY" or "ERROR_STATE" or "XACT_STATE" or "COLUMNS_UPDATED":
                 if (ProceduralFunction?.Invoke(name, f, c) is { } procedural)
                     return procedural;
                 throw Untranslatable(f, $"{name}() in a plain query", DiagnosticCodes.ProceduralGlobal);

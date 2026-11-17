@@ -93,7 +93,7 @@ public class CliTests
         Assert.Multiple(() =>
         {
             Assert.That(code, Is.EqualTo(ExitCodes.Success), "the fixture read from its script converts without Manual objects");
-            Assert.That(output, Does.Contain("Table").And.Contain("S2P0201"));
+            Assert.That(output, Does.Contain("Table").And.Contain("Trigger").And.Contain("S2P2002"));
             Assert.That(File.ReadAllText(json), Does.Contain("\"conversion\""));
         });
         File.Delete(json);

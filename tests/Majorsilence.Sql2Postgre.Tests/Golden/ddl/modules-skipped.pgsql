@@ -27,5 +27,17 @@ FROM public.t;
 
 -- sql2pg: phase Triggers
 
--- sql2pg:object Trigger dbo.t_insert status=Skipped
--- S2P0201: Trigger dbo.t_insert is not converted yet (triggers come later in Stage 3).
+-- sql2pg:object Trigger public.t_insert status=Converted
+CREATE FUNCTION public.t_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+#variable_conflict use_column
+BEGIN
+    RETURN NULL;
+END;
+$$;
+CREATE TRIGGER t_insert AFTER INSERT ON public.t
+REFERENCING NEW TABLE AS inserted
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.t_insert();

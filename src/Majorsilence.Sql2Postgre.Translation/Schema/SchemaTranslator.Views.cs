@@ -79,7 +79,7 @@ public sealed partial class SchemaTranslator
             for (int i = 0; i < objects.Count; i++)
             {
                 var o = objects[i];
-                if (o.Kind is not (ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure) || o.Status is ObjectStatus.Manual or ObjectStatus.Skipped)
+                if (o.Kind is not (ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure or ObjectKind.Trigger) || o.Status is ObjectStatus.Manual or ObjectStatus.Skipped)
                     continue;
                 var blocker = o.DependsOn.FirstOrDefault(d =>
                     bySource.TryGetValue(d, out var deps)

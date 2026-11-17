@@ -32,6 +32,7 @@ public static partial class PgWriter
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
         PgDropTable d => $"DROP TABLE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
+        PgCreateTrigger t => Trigger(t),
         PgTruncate t => $"TRUNCATE TABLE {t.Table.Qualified}{(t.RestartIdentity ? " RESTART IDENTITY" : "")};\n",
         PgDoBlock d => DoBlock(d, targetVersion),
         PgLineComment c =>string.Concat(c.Text.Replace("\r\n", "\n").Split('\n').Select(l => $"-- {l}".TrimEnd() + "\n")),
@@ -96,6 +97,21 @@ public static partial class PgWriter
         if (fk.NotValid)
             sb.Append(" NOT VALID");
         return sb.Append(";\n").ToString();
+    }
+
+    private static string Trigger(PgCreateTrigger t)
+    {
+        var sb = new StringBuilder($"CREATE TRIGGER {Q(t.Name)} {t.Timing} {t.Event} ON {t.Table.Qualified}\n");
+        if (t.NewTable is not null || t.OldTable is not null)
+        {
+            sb.Append("REFERENCING");
+            if (t.NewTable is not null)
+                sb.Append(" NEW TABLE AS ").Append(Q(t.NewTable));
+            if (t.OldTable is not null)
+                sb.Append(" OLD TABLE AS ").Append(Q(t.OldTable));
+            sb.Append('\n');
+        }
+        return sb.Append($"FOR EACH {(t.ForEachRow ? "ROW" : "STATEMENT")}\nEXECUTE FUNCTION {t.Function.Qualified}();\n").ToString();
     }
 
     private static string Index(PgCreateIndex i)
