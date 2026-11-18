@@ -17,9 +17,12 @@ public sealed class PostgresDatabase : IAsyncDisposable
         ConnectionString = new NpgsqlConnectionStringBuilder(maintenance) { Database = name }.ConnectionString;
     }
 
-    public static async Task<PostgresDatabase> CreateAsync(string prefix = "target")
+    public static async Task<PostgresDatabase> CreateAsync(string prefix = "target") =>
+        await CreateAsync(prefix, await Engines.PostgresAsync());
+
+    /// <summary>A database on the given server (<see cref="Engines.PostGisAsync"/>, say), as its maintenance database connects to it.</summary>
+    public static async Task<PostgresDatabase> CreateAsync(string prefix, string maintenance)
     {
-        string maintenance = await Engines.PostgresAsync();
         var db = new PostgresDatabase(maintenance, $"{prefix}_{Guid.NewGuid():N}");
         await using var conn = new NpgsqlConnection(maintenance);
         await conn.OpenAsync();

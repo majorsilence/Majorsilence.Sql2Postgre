@@ -23,6 +23,8 @@ public sealed partial class ExpressionTranslator
             return XmlMethod(f, xml, c);
         if (model.HierarchyIdCall(f, c.Scope, c.Schema) is { } hierarchy)
             return HierarchyIdMethod(f, hierarchy, c);
+        if (model.SpatialCall(f, c.Scope, c.Schema) is { } spatial)
+            return SpatialMethod(f, spatial, c);
         if (f.CallTarget is not null)
             throw MethodCall(f);
 

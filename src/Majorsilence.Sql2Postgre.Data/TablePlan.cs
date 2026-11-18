@@ -119,15 +119,20 @@ public sealed record TablePlan(Table Source, PgName Target, IReadOnlyList<Column
             case "sql_variant" or "hierarchyid":
                 return new(c, target, pgType, NpgsqlDbType.Text, [$"CAST({src} AS nvarchar(4000))"], StringReader);
             case "geography" or "geometry" when baseType is "geography" or "geometry":
+                bool geography = baseType == "geography";
                 return new(c, target, pgType, NpgsqlDbType.Bytea,
                     [$"{src}.STAsBinary()", $"{src}.STSrid", $"CAST({src}.HasZ | {src}.HasM AS bit)"],
                     (r, i, s) =>
                     {
                         if (r.IsDBNull(i))
                             return null;
+                        // The reader is sequential: the value, its SRID and its Z/M flag in column order.
+                        var wkb = (byte[])r.GetValue(i);
+                        int srid = r.GetInt32(i + 1);
                         if (!r.IsDBNull(i + 2) && r.GetBoolean(i + 2))
                             Interlocked.Increment(ref s.ZmDropped);
-                        return ValueTransforms.ToEwkb((byte[])r.GetValue(i), r.GetInt32(i + 1));
+                        var ewkb = ValueTransforms.ToEwkb(wkb, srid);
+                        return geography ? ValueTransforms.NudgeGeodetic(ewkb) : ewkb;
                     });
             case "geography" or "geometry":
                 return new(c, target, pgType, NpgsqlDbType.Bytea, [$"{src}.STAsBinary()"], (r, i, _) => r.IsDBNull(i) ? null : (byte[])r.GetValue(i));

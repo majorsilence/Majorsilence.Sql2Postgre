@@ -46,6 +46,29 @@ public class CompileScanTests
         });
     }
 
+    public static IEnumerable<TestCaseData> SpatialDatabases() =>
+        CorpusEntry.All.Where(e => e.Database is "AdventureWorks2022" or "WideWorldImporters" or "WideWorldImportersDW")
+            .Select(e => new TestCaseData(e).SetName($"CompileScanPostGis({e.Database})"));
+
+    /// <summary>
+    /// The databases with geography columns, migrated with <c>postgis</c> into PostGIS: the columns
+    /// are PostGIS types, copied as EWKB and verified as EWKB, and spatial indexes are GiST.
+    /// </summary>
+    [TestCaseSource(nameof(SpatialDatabases))]
+    public async Task MigratesWithPostGis(CorpusEntry entry)
+    {
+        var options = CorpusMigration.DefaultOptions with { Extensions = new HashSet<string> { PermittedExtensions.PostGis } };
+        var result = await ScanAsync(entry, options, await Engines.PostGisAsync());
+        Record(result, "-postgis");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ApplyFailures, Is.Empty, "objects that are not Manual must apply");
+            Assert.That(result.CopyFailures, Is.Empty, "every table must copy");
+            Assert.That(result.VerifyFailures, Is.Empty, "every table must verify");
+            Assert.That(result.DiagnosticsByCode.Keys, Has.None.StartsWith(DiagnosticCodes.InternalError), "no internal errors (S2P9001)");
+        });
+    }
+
     /// <summary>
     /// A deliberately wrong mapping (an identity column typed as date) must be reported. If this
     /// passes silently the scan cannot see failures and its zeros mean nothing.
@@ -63,10 +86,10 @@ public class CompileScanTests
     /// <summary>Scans the shared default-options migration.</summary>
     public static async Task<ScanResult> ScanAsync(CorpusEntry entry) => Summarize(await CorpusMigration.DefaultAsync(entry));
 
-    /// <summary>Scans a migration of its own with these options.</summary>
-    public static async Task<ScanResult> ScanAsync(CorpusEntry entry, ConversionOptions options)
+    /// <summary>Scans a migration of its own with these options, on the shared PostgreSQL or the given server.</summary>
+    public static async Task<ScanResult> ScanAsync(CorpusEntry entry, ConversionOptions options, string? maintenance = null)
     {
-        await using var target = await PostgresDatabase.CreateAsync(entry.Database.ToLowerInvariant());
+        await using var target = await PostgresDatabase.CreateAsync(entry.Database.ToLowerInvariant(), maintenance ?? await Engines.PostgresAsync());
         return Summarize(await CorpusMigration.MigrateAsync(entry, options, target.ConnectionString));
     }
 
@@ -103,11 +126,11 @@ public class CompileScanTests
         return head.Length > 80 ? head[..80] : head;
     }
 
-    private static void Record(ScanResult result)
+    private static void Record(ScanResult result, string suffix = "")
     {
         string dir = Path.Combine(CorpusSource.Directory, "results");
         System.IO.Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, $"{result.Database}-pg{result.PostgresVersion}.json"),
+        File.WriteAllText(Path.Combine(dir, $"{result.Database}-pg{result.PostgresVersion}{suffix}.json"),
             JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         TestContext.Out.WriteLine($"{result.Database} on PostgreSQL {result.PostgresVersion}: {result.RowsCopied} rows, "
                                   + $"{result.ApplyFailures.Count} apply / {result.CopyFailures.Count} copy / {result.VerifyFailures.Count} verify failures");

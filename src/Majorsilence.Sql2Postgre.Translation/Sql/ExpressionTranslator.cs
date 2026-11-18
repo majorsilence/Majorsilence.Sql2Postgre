@@ -64,6 +64,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             RightFunctionCall r => new PgFunctionCall("right", [Text(r.Parameters[0], c), Scalar(r.Parameters[1], c)]),
             NextValueForExpression n => NextValue(n, c),
             ScalarSubquery sq when Subquery is not null => Subquery(sq.QueryExpression, c),
+            UserDefinedTypePropertyAccess p when model.SpatialProperty(p, c.Scope, c.Schema) is { } property => SpatialProperty(property, p, c),
             _ => throw Untranslatable(e, "this kind of expression"),
         };
     }
@@ -120,6 +121,8 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
                 qualifier = pseudo.ToLowerInvariant() switch { "inserted" => "new", "deleted" => "old", _ => qualifier };
             return new PgColumnRef(TargetColumn(resolved.Binding, resolved.Column.Name), qualifier);
         }
+        if (model.SpatialProperty(col, c.Scope, c.Schema) is { } property)
+            return SpatialProperty(property, col, c);
         c.Report(DiagnosticCodes.UnresolvedColumn, Severity.Warning,
             $"Column {string.Join('.', parts)} could not be resolved; it is written as {names.Alias(parts[^1])} without knowing its type.");
         return new PgColumnRef(names.Alias(parts[^1]), c.QualifyColumns && parts.Count >= 2 ? names.Alias(parts[^2]) : null);

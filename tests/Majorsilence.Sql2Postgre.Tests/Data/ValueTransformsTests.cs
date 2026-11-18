@@ -64,6 +64,47 @@ public class ValueTransformsTests
     }
 
     [Test]
+    public void EwkbLeavesSridZeroOut()
+    {
+        // PostGIS stores and writes SRID 0 (unknown) without the SRID flag: the WKB is already its EWKB.
+        var wkb = new byte[21];
+        wkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(wkb.AsSpan(1), 1);
+        Assert.That(ValueTransforms.ToEwkb(wkb, 0), Is.EqualTo(wkb));
+    }
+
+    [Test]
+    public void GeodeticNudgeSetsValuesAHairOutOfRangeToTheLimit()
+    {
+        // EWKB multipolygon (SRID 4326) of one triangle whose first longitude is one ulp past 180.
+        double past = BitConverter.Int64BitsToDouble(BitConverter.DoubleToInt64Bits(180.0) + 1);
+        double[] coordinates = [past, -16.5, 179.5, -17, -179.99, -90.00000000001, past, -16.5];
+        var b = new List<byte> { 1 };
+        void U32(uint v) { var x = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(x, v); b.AddRange(x); }
+        U32(0x20000006); U32(4326); U32(1);
+        b.Add(1); U32(3); U32(1); U32(4);
+        foreach (double v in coordinates)
+        {
+            var x = new byte[8];
+            BinaryPrimitives.WriteDoubleLittleEndian(x, v);
+            b.AddRange(x);
+        }
+        var wkb = b.ToArray();
+
+        var nudged = ValueTransforms.NudgeGeodetic(wkb);
+        double At(int i) => BinaryPrimitives.ReadDoubleLittleEndian(nudged.AsSpan(wkb.Length - 8 * (coordinates.Length - i)));
+        Assert.Multiple(() =>
+        {
+            Assert.That(At(0), Is.EqualTo(180.0));
+            Assert.That(At(2), Is.EqualTo(179.5));
+            Assert.That(At(4), Is.EqualTo(-179.99));
+            Assert.That(At(5), Is.EqualTo(-90.0));
+            Assert.That(At(6), Is.EqualTo(180.0));
+            Assert.That(BinaryPrimitives.ReadDoubleLittleEndian(wkb.AsSpan(wkb.Length - 64)), Is.EqualTo(past), "the input is unchanged");
+        });
+    }
+
+    [Test]
     public void VectorParsesAndEncodesForPgvector()
     {
         var values = ValueTransforms.ParseVector("[1, -2.5, 3e2]");

@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.8 — spatial methods with PostGIS (geography and geometry methods and properties as ST_* functions with postgis enabled, constructors, spatial_text for SQL Server's WKT; S2P3031; fixes to the PostGIS data copy and verify, and to spatial/xml index columns in the catalog reader); 2 golden files and a both-engines grid of 23 queries over points, lines and polygons on postgis/postgis:18-3.6, migrated, copied and verified first. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; with postgis, AdventureWorks, WideWorldImporters and WideWorldImportersDW also migrate with 0 failures (14 geography columns as PostGIS types, 6.4 million rows copied and verified as EWKB). The corpus has no spatial method outside dynamic SQL.
 - WP 4.7 — full-text search (full-text indexes as GIN indexes of one to_tsvector expression per column in its language; CONTAINS and FREETEXT per column through the contains_query and freetext_query helpers; CONTAINSTABLE and FREETEXTTABLE as key/rank derived tables with top_n; LANGUAGE through fulltext_config; SERVERPROPERTY('LCID'); S2P2021, S2P3042; bit parameter defaults as booleans); 1 golden file and 46 both-engines cases on a SQL Server image with Full-Text Search, including that PostgreSQL uses the index. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; AdventureWorks' 3 full-text indexes created (Production.Document's without its varbinary documents, S2P2021), Manual procedures 1 → 0 (uspSearchCandidateResumes converts), S2P3001 6 → 1 (the UDF in a computed column).
 - WP 4.6 — JSON (FOR JSON AUTO over joins with SQL Server's nesting and grouping, FOR JSON procedure results as one column, OPENJSON with and without WITH, JSON_MODIFY keeping member order, ISJSON with a type); 1 golden file and 20 both-engines cases. Corpus: 0 apply / copy / verify failures; 5 new WideWorldImporters agreement queries (the search procedures, OPENJSON and JSON_MODIFY over CustomFields), all at 100; WideWorldImporters Manual procedures 22 → 17. Agreement now compares JSON values parsed.
 - WP 4.5 — table-valued parameters (READONLY table-type parameters as composite arrays read through unnest in procedures and inline functions; DECLARE @t TableType as a table variable passed on as an array; S2P8003 guidance for application code); 1 golden file and a both-engines run called from T-SQL, from SqlClient DataTables and from Npgsql mapped-composite arrays. Corpus: 0 apply / copy / verify failures; WideWorldImporters Manual procedures 24 → 22 (InsertCustomerOrders and InvoiceCustomerOrders convert; RecordColdRoomTemperatures is natively compiled).
@@ -125,7 +126,7 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - The script reader now reads CREATE SPATIAL/XML/FULLTEXT INDEX.
 - PostgreSQL rounds a 7th fractional digit half to even (checked on 17: .0000005→0, .0000015→2, .0000025→2), not half away from zero as the plan guessed; the copier rounds the same way because binary COPY would truncate.
 - `Sequence.CurrentValue` is now `last_used_value` (null when the sequence was never used), so setval is only issued for sequences that handed out values.
-- PostGIS EWKB and pgvector binary writes are implemented and unit-tested at the byte level but not run against a server with those extensions (the test PostgreSQL has none). A CI job on the postgis/postgis image would close that.
+- PostGIS EWKB and pgvector binary writes are implemented and unit-tested at the byte level. The PostGIS path now runs against postgis/postgis in the container tests and the corpus (WP 4.8); pgvector's still runs against no server.
 - decimal/numeric values beyond System.Decimal's 28–29 digits fail the table's copy (SqlDataReader.GetDecimal overflows) with S2P7003; reading SqlDecimal into a BigInteger-scaled numeric would fix it.
 - `--recreate` (drop and recreate the target) is on `apply` and `migrate`; it is never the default.
 - `migrate` exits 1 when the reader found something a person must handle (an encrypted module) even if everything else succeeded.
@@ -507,3 +508,34 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
     `to_tsvector`, as noise words do in SQL Server's NEAR.
   - A function with `SET client_min_messages` is still folded while planning when its arguments
     are constants.
+- WP 4.8 departs from the plan in these places:
+  - More methods than the plan lists are mapped (the geometry set operations, envelope, centroid,
+    convex hull, point accessors, `STGeometryType`, `STNumPoints` and others), each checked on both
+    engines. Geography forms PostGIS has only for geometry stay S2P3030, as their results would be
+    planar arithmetic on degrees.
+  - Geography `STContains`/`STWithin` are `ST_Covers`/`ST_CoveredBy` (PostGIS has no geography
+    ST_Contains); they differ on the boundary (S2P3031).
+  - The PostGIS data copy had three faults that only a real server showed, now fixed: values read
+    out of column order under sequential access, SRID 0 written with the SRID flag, and the
+    verifier reading PostGIS types through Npgsql (now `ST_AsEWKB`). The catalog reader also gave
+    spatial and xml indexes no columns.
+  - Not done: the corpus agreement queries do not run with postgis (the harness uses the shared
+    stock PostgreSQL); `MakeValid`/`Reduce`/set operations on geography; CAST of a spatial value
+    to a string.
+- Established with SQL Server 2022 and PostGIS 3.6 on PostgreSQL 18, for spatial values:
+  - Geography distances, lengths and areas agree to about 1e-7 relative (polygon area 5e-7): both
+    compute on the WGS 84 ellipsoid. `ST_Distance(…, false)` (the sphere) is 2.5e-4 off.
+  - SQL Server writes WKT as `POINT (x y)` with `, ` between coordinates, drops Z and M in
+    STAsText, prints up to 17 significant digits and `1E-07`; PostGIS writes `POINT(x y)`, keeps Z
+    (`POINT Z (…)`), prints 15 significant digits and `0.0000001`.
+  - STLength of a polygon is its perimeter (ST_Length gives 0); STCentroid is NULL for points
+    and lines; STEnvelope's ring is counter-clockwise from the lower-left corner, ST_Envelope's
+    clockwise.
+  - STBuffer around a point is a 129-point circle, which is `ST_Buffer(…, 'quad_segs=32')` to
+    1e-14 in area. Buffers of lines differ by about 2e-5, geography buffers by about 7e-4.
+  - STGeometryType names are ST_GeometryType's without `ST_` (`Polygon`, `LineString`).
+  - SQL Server keeps a geography longitude one ulp past 180 (WideWorldImporters' borders of
+    countries 73 and 177 have 180.00000000000003); PostGIS geography stores it as 180. The copier
+    writes such values (within 1e-10 of ±180/±90) as the limit, so they verify.
+  - PostGIS stores SRID 0 without the EWKB SRID flag; `ST_AsEWKB` has no geography form.
+  - SQL Server returns NULL for a method on values with different SRIDs; PostGIS raises an error.

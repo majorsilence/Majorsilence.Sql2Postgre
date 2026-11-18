@@ -85,8 +85,9 @@ public static class SqlServerCatalogReader
                     uniques.Add(new UniqueConstraint(kc.Name, KeysOf(id, kc.IndexId)));
             }
 
+            // Columnstore, xml (3) and spatial (4) index columns have no key ordinal: take them in column order.
             var tableIndexes = indexes[id].Select(i => new TableIndex(i.Name,
-                IsColumnstore(i.Type)
+                IsColumnstore(i.Type) || i.Type is 3 or 4
                     ? indexColumns[(id, i.IndexId)].OrderBy(c => c.ColumnId).Select(c => new IndexColumn(c.Name)).ToList()
                     : KeysOf(id, i.IndexId),
                 indexColumns[(id, i.IndexId)].Where(c => c.Included && !IsColumnstore(i.Type)).OrderBy(c => c.ColumnId).Select(c => c.Name).ToList(),

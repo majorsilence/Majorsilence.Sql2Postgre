@@ -82,7 +82,7 @@ public class JsonBothEnginesTests
         await using var conn = new NpgsqlConnection(_target.ConnectionString);
         await conn.OpenAsync();
         await new NpgsqlCommand("CREATE SCHEMA IF NOT EXISTS mssql_compat;\n"
-            + string.Concat(CompatScripts.Names.Select(n => CompatScripts.Create(n, "mssql_compat") + "\n")), conn).ExecuteNonQueryAsync();
+            + string.Concat(CompatScripts.CoreNames.Select(n => CompatScripts.Create(n, "mssql_compat") + "\n")), conn).ExecuteNonQueryAsync();
     }
 
     [OneTimeTearDown]

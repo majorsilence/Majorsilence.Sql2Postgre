@@ -197,6 +197,9 @@ public static class DiagnosticCodes
     /// <summary>A spatial method (STDistance, …), which needs the PostGIS mapping of Stage 4.</summary>
     public const string SpatialMethod = "S2P3030";
 
+    /// <summary>A spatial method maps to a PostGIS function whose results differ slightly (buffers, geography containment).</summary>
+    public const string SpatialResultsDiffer = "S2P3031";
+
     /// <summary>The xml modify() method: PostgreSQL's xml type has no update functions.</summary>
     public const string XmlModify = "S2P3040";
 

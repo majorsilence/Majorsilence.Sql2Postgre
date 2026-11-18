@@ -426,8 +426,45 @@ The translation needs an `mssql_compat` helper (for `DATEDIFF`, `CHARINDEX`, `IS
 
 ### S2P3030 SpatialMethod (Error)
 
-A spatial method (`STDistance`, `STIntersects`, `geography::Point`, …). Mapping these to PostGIS
-`ST_*` functions is planned for Stage 4.
+A spatial method or property that is not translated:
+
+- **Without `postgis`** (the columns are WKB in bytea, S2P1106), no spatial method is.
+- **With `postgis`**, methods become PostGIS functions on the geography and geometry columns:
+  - `STDistance`, `STIntersects`, `STDisjoint`, `STEquals`, `STContains`, `STWithin`;
+  - `STArea`, `STLength` (a polygon's perimeter, as in SQL Server), `STBuffer`;
+  - `STAsText`/`ToString` (`mssql_compat.spatial_text`, in SQL Server's spelling), `STAsBinary`;
+  - `STGeometryType`, `STNumPoints`, `STNumGeometries`, `STDimension`, `STIsValid`, `STIsEmpty`,
+    `STIsClosed`;
+  - `STStartPoint`, `STEndPoint`, `STPointN`, `STGeometryN`;
+  - the properties `Lat`, `Long`, `STX`, `STY`, `Z`, `M` and `STSrid`;
+  - `geography::Point(lat, long, srid)`, `geometry::Point(x, y, srid)`, `STGeomFromText` and the
+    other `…FromText` and `…FromWKB` methods, and `Parse` (SRID 4326 for geography, 0 for
+    geometry).
+- **Geometry only:**
+  - `STTouches`, `STOverlaps`, `STCrosses`;
+  - `STEnvelope`, `STCentroid` (NULL except for polygons, as in SQL Server), `STConvexHull`,
+    `STBoundary`;
+  - `STIntersection`, `STUnion`, `STDifference`, `STSymDifference`, `MakeValid` and `Reduce`
+    (`ST_Simplify`; both use Douglas-Peucker).
+
+  The geography forms of these get this code: PostGIS has them only for geometry, and on
+  geography the result would come from planar arithmetic on degrees.
+
+Any other method (`STCurveToLine`, `STRelate`, `Filter`, …) gets this code too. Results are
+compared with SQL Server's on both engines (BACKLOG): geography distances, lengths and areas agree
+to about 1e-7, as both compute on the WGS 84 ellipsoid. Two values differ in SRID: SQL Server
+returns NULL for a method on two values with different SRIDs, and PostGIS raises an error.
+
+### S2P3031 SpatialResultsDiffer (Info)
+
+A spatial method maps to a PostGIS function that answers slightly differently:
+
+- `STBuffer` becomes `ST_Buffer(…, 'quad_segs=32')`. Around a point that is the same 129-point
+  circle SQL Server draws. Buffers of lines, polygons and geography values place their vertices
+  differently, so their areas differ in the fourth or fifth significant digit.
+- Geography `STContains` and `STWithin` become `ST_Covers` and `ST_CoveredBy`, which PostGIS has
+  for geography (`ST_Contains`/`ST_Within` it has only for geometry). A point on the boundary,
+  such as a line's end point, counts as inside, where SQL Server says it is not.
 
 ### S2P3040 XmlModify (Error)
 

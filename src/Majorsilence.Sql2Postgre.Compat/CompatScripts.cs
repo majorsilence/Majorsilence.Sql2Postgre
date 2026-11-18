@@ -16,6 +16,15 @@ public static class CompatScripts
     /// <summary>Every helper, by name (<c>datediff</c>, <c>try_cast_integer</c>, …).</summary>
     public static IReadOnlyCollection<string> Names => Scripts.Keys;
 
+    /// <summary>The helpers that need no extension: a <c>-- requires: extension</c> first line marks the others.</summary>
+    public static IReadOnlyCollection<string> CoreNames => Scripts.Keys.Where(n => Requires(n) is null).ToList();
+
+    /// <summary>The extension a helper's types or functions come from (<c>postgis</c>), or null.</summary>
+    public static string? Requires(string name) =>
+        Scripts.TryGetValue(name, out string? sql) && sql.StartsWith("-- requires: ", StringComparison.Ordinal)
+            ? sql["-- requires: ".Length..sql.IndexOf('\n', StringComparison.Ordinal)].Trim()
+            : null;
+
     /// <summary>The CREATE OR REPLACE FUNCTION statement for a helper, in the given (already quoted) schema.</summary>
     public static string Create(string name, string quotedSchema) =>
         Scripts.TryGetValue(name, out string? sql)

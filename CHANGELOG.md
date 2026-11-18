@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Spatial methods with PostGIS** (WP 4.8, with `postgis` enabled):
+  - geography and geometry methods and properties become `ST_*` functions: distance, the
+    predicates, area, length (a polygon's perimeter), buffer (`quad_segs=32`), the WKT/WKB output,
+    type and point accessors, `Lat`/`Long`/`STX`/`STY`/`STSrid`, and the constructors
+    (`Point`, `STGeomFromText`, `Parse`, …). Set operations, envelope, centroid, `MakeValid` and
+    `Reduce` for geometry.
+  - `STAsText`/`ToString` keep SQL Server's spelling through the new `mssql_compat.spatial_text`
+    helper.
+  - S2P3031 notes where PostGIS answers slightly differently (buffers, geography containment on
+    the boundary).
+  - Fixed the PostGIS data copy, which had only been unit-tested until now:
+    - geography/geometry values were read out of column order under sequential access;
+    - SRID 0 is written as plain WKB, as PostGIS stores it;
+    - the verifier reads PostGIS columns as EWKB.
+  - The catalog reader now gives spatial and XML indexes their column (it gave none, so a GiST
+    index failed to apply).
+  - Container tests can use a PostGIS PostgreSQL (`postgis/postgis:18-3.6`), and the corpus scan
+    migrates the three databases with geography columns with `postgis` too.
+  - `mssql_compat` helpers that need an extension say so (`-- requires:`).
 - **Full-text search** (WP 4.7):
   - A full-text index becomes a GIN index with a `to_tsvector` expression per column, in each
     column's language (`english` for 1033; S2P2021 for a language with no configuration, a

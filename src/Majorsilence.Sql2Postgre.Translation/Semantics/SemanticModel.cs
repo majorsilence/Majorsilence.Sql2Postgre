@@ -189,7 +189,9 @@ public sealed partial class SemanticModel
         VariableReference v => scope.TryVariable(v.Name, out var vt) ? vt : null,
         GlobalVariableExpression g => TypeRules.BuiltinReturnType(g.Name.ToUpperInvariant(), []),
         ColumnReferenceExpression { ColumnType: Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType.Regular, MultiPartIdentifier: { } id } =>
-            scope.ResolveColumn(id.Identifiers.Select(x => x.Value).ToList())?.Column.Type,
+            scope.ResolveColumn(id.Identifiers.Select(x => x.Value).ToList())?.Column.Type
+            ?? (SpatialProperty(e, scope, contextSchema) is { } property ? SpatialReturnType(property) : null),
+        UserDefinedTypePropertyAccess p => SpatialProperty(p, scope, contextSchema) is { } spatial ? SpatialReturnType(spatial) : null,
         UnaryExpression u => TypeOf(u.Expression, scope, contextSchema),
         BinaryExpression b => Binary(b, scope, contextSchema),
         CastCall c => TypeOf(c.DataType, contextSchema),
@@ -253,6 +255,8 @@ public sealed partial class SemanticModel
     {
         if (XmlMethodTarget(f, scope, contextSchema) is not null)
             return XmlMethodType(f, contextSchema);
+        if (SpatialCall(f, scope, contextSchema) is { } spatialCall)
+            return SpatialReturnType(spatialCall);
         if (HierarchyIdCall(f, scope, contextSchema) is not null)
             return f.FunctionName.Value.ToLowerInvariant() switch
             {

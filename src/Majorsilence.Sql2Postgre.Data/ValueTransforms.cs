@@ -58,12 +58,15 @@ public static class ValueTransforms
 
     /// <summary>
     /// PostGIS reads extended WKB: the WKB SQL Server's <c>STAsBinary()</c> writes, with the SRID
-    /// flag (0x20000000) set in the geometry type word and the 4-byte SRID after it.
+    /// flag (0x20000000) set in the geometry type word and the 4-byte SRID after it. SRID 0 is
+    /// PostGIS's "unknown", which it stores and writes without the flag, so that WKB stays as it is.
     /// </summary>
     public static byte[] ToEwkb(byte[] wkb, int srid)
     {
         if (wkb.Length < 5)
             throw new FormatException("WKB is shorter than its header.");
+        if (srid == 0)
+            return wkb;
         bool little = wkb[0] == 1;
         uint type = little ? BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(1)) : BinaryPrimitives.ReadUInt32BigEndian(wkb.AsSpan(1));
         var ewkb = new byte[wkb.Length + 4];
@@ -81,6 +84,81 @@ public static class ValueTransforms
         }
         wkb.AsSpan(5).CopyTo(ewkb.AsSpan(9));
         return ewkb;
+    }
+
+    /// <summary>How far past ±180 longitude or ±90 latitude PostGIS geography takes a value as the limit.</summary>
+    public const double GeodeticNudge = 1e-10;
+
+    /// <summary>
+    /// A geography value's (E)WKB with every longitude and latitude a hair outside its range (at most
+    /// <see cref="GeodeticNudge"/>) set to the limit, as PostGIS stores it. SQL Server keeps such
+    /// values (a border at 180.00000000000003), and without this the copy would verify as different.
+    /// The input is not changed.
+    /// </summary>
+    public static byte[] NudgeGeodetic(byte[] wkb)
+    {
+        var copy = (byte[])wkb.Clone();
+        int offset = 0;
+        NudgeGeometry(copy, ref offset);
+        return copy;
+    }
+
+    private static void NudgeGeometry(byte[] b, ref int at)
+    {
+        bool little = b[at] == 1;
+        uint type = little ? BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(at + 1)) : BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(at + 1));
+        at += 5;
+        if ((type & 0x20000000) != 0)
+            at += 4; // the SRID
+        uint iso = type & 0x0FFFFFFF;
+        int dims = 2 + ((type & 0x80000000) != 0 || iso % 10000 / 1000 is 1 or 3 ? 1 : 0) + ((type & 0x40000000) != 0 || iso % 10000 / 1000 is 2 or 3 ? 1 : 0);
+        uint kind = iso % 1000;
+        uint Count(ref int p)
+        {
+            uint n = little ? BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p)) : BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(p));
+            p += 4;
+            return n;
+        }
+        void Points(ref int p, uint n)
+        {
+            for (uint i = 0; i < n; i++, p += 8 * dims)
+            {
+                Nudge(b, p, 180, little);
+                Nudge(b, p + 8, 90, little);
+            }
+        }
+        switch (kind)
+        {
+            case 1:
+                Points(ref at, 1);
+                break;
+            case 2:
+                Points(ref at, Count(ref at));
+                break;
+            case 3:
+                for (uint rings = Count(ref at), r = 0; r < rings; r++)
+                    Points(ref at, Count(ref at));
+                break;
+            case 4 or 5 or 6 or 7:
+                for (uint parts = Count(ref at), g = 0; g < parts; g++)
+                    NudgeGeometry(b, ref at);
+                break;
+            default:
+                throw new FormatException($"WKB geometry type {kind} is not one SQL Server writes.");
+        }
+    }
+
+    private static void Nudge(byte[] b, int at, double limit, bool little)
+    {
+        var span = b.AsSpan(at, 8);
+        double v = little ? BinaryPrimitives.ReadDoubleLittleEndian(span) : BinaryPrimitives.ReadDoubleBigEndian(span);
+        double fixedValue = v > limit && v - limit <= GeodeticNudge ? limit : v < -limit && -limit - v <= GeodeticNudge ? -limit : v;
+        if (fixedValue == v)
+            return;
+        if (little)
+            BinaryPrimitives.WriteDoubleLittleEndian(span, fixedValue);
+        else
+            BinaryPrimitives.WriteDoubleBigEndian(span, fixedValue);
     }
 
     /// <summary>A SQL Server <c>vector</c> as its JSON text (<c>[1,2,3]</c>), parsed to floats.</summary>

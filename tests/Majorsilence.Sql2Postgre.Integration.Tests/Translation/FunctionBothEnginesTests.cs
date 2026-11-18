@@ -45,7 +45,7 @@ public class FunctionBothEnginesTests
         if (postgres)
         {
             sb.Append("CREATE SCHEMA mssql_compat;\n");
-            foreach (string name in CompatScripts.Names.Order(StringComparer.Ordinal))
+            foreach (string name in CompatScripts.CoreNames.Order(StringComparer.Ordinal))
                 sb.Append(CompatScripts.Create(name, "mssql_compat")).Append('\n');
         }
         sb.Append($"CREATE TABLE grid ({string.Join(", ", GridColumns.Select(c => $"{c.Name} {(postgres ? c.Postgres : c.SqlServer)}"))});\n");

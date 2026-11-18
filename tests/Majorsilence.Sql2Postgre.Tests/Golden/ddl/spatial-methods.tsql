@@ -1,0 +1,28 @@
+CREATE TABLE dbo.City (CityId int NOT NULL PRIMARY KEY, Name nvarchar(50) NOT NULL, Location geography NULL);
+GO
+CREATE TABLE dbo.Lot (LotId int NOT NULL PRIMARY KEY, Shape geometry NULL);
+GO
+CREATE SPATIAL INDEX SIX_City_Location ON dbo.City (Location);
+GO
+CREATE VIEW dbo.CityPoints AS
+SELECT CityId, Name, Location.Lat AS Latitude, c.Location.Long AS Longitude, Location.STAsText() AS Wkt, Location.STSrid AS Srid
+FROM dbo.City AS c;
+GO
+CREATE VIEW dbo.LotFacts AS
+SELECT LotId, Shape.STArea() AS Area, Shape.STLength() AS Perimeter, Shape.STCentroid().STX AS CentreX, Shape.STCentroid().STY AS CentreY,
+    Shape.STGeometryType() AS Kind, Shape.STNumPoints() AS Points, Shape.STIsValid() AS Valid, Shape.STEnvelope().ToString() AS Box
+FROM dbo.Lot;
+GO
+CREATE PROCEDURE dbo.Nearby @lat float, @long float, @metres float AS
+BEGIN
+    DECLARE @here geography = geography::Point(@lat, @long, 4326);
+    SELECT CityId, Name, Location.STDistance(@here) AS Metres
+    FROM dbo.City
+    WHERE Location.STDistance(@here) <= @metres AND Location.STIntersects(@here.STBuffer(@metres)) = 1
+    ORDER BY Metres;
+    SELECT l.LotId FROM dbo.Lot AS l
+    WHERE l.Shape.STContains(geometry::STGeomFromText('POINT(1 1)', 0)) = 1
+        OR l.Shape.STIntersects(geometry::Parse('LINESTRING(0 0, 5 5)')) = 1;
+    SELECT @here.Long AS x, @here.STAsBinary() AS wkb, geography::STGeomFromText(N'POLYGON((-123 45, -121 45, -121 48, -123 48, -123 45))', 4326).STContains(@here) AS inside;
+END;
+GO

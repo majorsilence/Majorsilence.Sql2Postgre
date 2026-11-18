@@ -119,8 +119,10 @@ public static class DataVerifier
     {
         await using var conn = new NpgsqlConnection(postgres);
         await conn.OpenAsync(ct);
+        // A PostGIS column is read as the EWKB the copy wrote (Npgsql has no reader for the types themselves).
+        static bool PostGis(ColumnPlan c) => c.PgType is "geography" or "geometry";
         await using var cmd = new NpgsqlCommand(
-            $"SELECT {string.Join(", ", plan.Columns.Select(c => NameMapper.Quote(c.TargetName)))} FROM {plan.Target.Qualified}", conn) { CommandTimeout = 0 };
+            $"SELECT {string.Join(", ", plan.Columns.Select(c => PostGis(c) ? $"ST_AsEWKB(CAST({NameMapper.Quote(c.TargetName)} AS geometry))" : NameMapper.Quote(c.TargetName)))} FROM {plan.Target.Qualified}", conn) { CommandTimeout = 0 };
         await using var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess, ct);
         var values = new string[plan.Columns.Count];
         long rows = 0;
@@ -128,7 +130,7 @@ public static class DataVerifier
         while (await reader.ReadAsync(ct))
         {
             for (int i = 0; i < plan.Columns.Count; i++)
-                values[i] = CanonicalValue.Format(reader.GetValue(i), reader.GetDataTypeName(i));
+                values[i] = CanonicalValue.Format(reader.GetValue(i), PostGis(plan.Columns[i]) ? plan.Columns[i].PgType : reader.GetDataTypeName(i));
             sum = unchecked(sum + RowHash(values));
             rows++;
         }

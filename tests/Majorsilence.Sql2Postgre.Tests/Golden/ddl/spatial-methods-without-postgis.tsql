@@ -1,0 +1,6 @@
+-- options: {"extensions": []}
+CREATE TABLE dbo.City (CityId int NOT NULL PRIMARY KEY, Location geography NULL);
+GO
+CREATE VIEW dbo.CityPoints AS
+SELECT CityId, Location.Lat AS Latitude, Location.STAsText() AS Wkt FROM dbo.City;
+GO

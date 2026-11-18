@@ -61,6 +61,38 @@ public static class Engines
         }
     }
 
+    private static readonly Lazy<Task<(PostgreSqlContainer? Container, string? Unavailable)>> PostGis =
+        new(StartPostGisAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>The PostGIS image for <see cref="PostgresVersion"/> (<c>postgis/postgis:18-3.6</c>).</summary>
+    public static string PostGisImage => $"postgis/postgis:{PostgresVersion}-3.6";
+
+    /// <summary>
+    /// A second PostgreSQL, with PostGIS available (the stock image has none), started on first use;
+    /// ignores the test without Docker.
+    /// </summary>
+    public static async Task<string> PostGisAsync()
+    {
+        var (container, unavailable) = await PostGis.Value;
+        if (unavailable is not null)
+            Assert.Ignore($"Docker is not available: {unavailable}");
+        return container!.GetConnectionString();
+    }
+
+    private static async Task<(PostgreSqlContainer?, string?)> StartPostGisAsync()
+    {
+        try
+        {
+            var container = new PostgreSqlBuilder(PostGisImage).Build();
+            await container.StartAsync();
+            return (container, null);
+        }
+        catch (DockerUnavailableException ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
     /// <summary>PostgreSQL connection string; ignores the test without Docker.</summary>
     public static async Task<string> PostgresAsync() => (await RequireAsync()).Postgres!.GetConnectionString();
 
@@ -93,6 +125,8 @@ public static class Engines
     {
         if (FullText.IsValueCreated && (await FullText.Value).Container is { } fullText)
             await fullText.DisposeAsync();
+        if (PostGis.IsValueCreated && (await PostGis.Value).Container is { } postGis)
+            await postGis.DisposeAsync();
         if (!Started.IsValueCreated)
             return;
         var state = await Started.Value;
