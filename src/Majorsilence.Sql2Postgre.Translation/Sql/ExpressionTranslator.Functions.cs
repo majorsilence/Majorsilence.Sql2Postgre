@@ -238,6 +238,11 @@ public sealed partial class ExpressionTranslator
                 return new PgKeyword("current_user");
             case "DB_NAME" when a.Count == 0:
                 return Call("current_database");
+            case "SERVERPROPERTY" when a is [StringLiteral { Value: var property }] && property.Equals("LCID", StringComparison.OrdinalIgnoreCase):
+                // The server's language, which full-text searches default to: PostgreSQL's default text search configuration's.
+                c.Report(DiagnosticCodes.FullTextSearch, Severity.Info,
+                    "SERVERPROPERTY('LCID') is the LCID of PostgreSQL's default_text_search_config (1033 for english), the language text search defaults to.");
+                return Compat("fulltext_lcid", [], c, f);
             case "OBJECT_ID" when a.Count is 1 or 2 && TempTableName(a[0]) is { } temp:
                 // OBJECT_ID('tempdb..#t'): whether the session has the temp table (its oid as an int, or NULL).
                 return new PgCast(new PgCast(Call("to_regclass", PgLiteral.String("pg_temp." + NameMapper.Quote(names.Alias(temp)))), "oid"), "integer");

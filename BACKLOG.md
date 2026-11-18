@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.7 — full-text search (full-text indexes as GIN indexes of one to_tsvector expression per column in its language; CONTAINS and FREETEXT per column through the contains_query and freetext_query helpers; CONTAINSTABLE and FREETEXTTABLE as key/rank derived tables with top_n; LANGUAGE through fulltext_config; SERVERPROPERTY('LCID'); S2P2021, S2P3042; bit parameter defaults as booleans); 1 golden file and 46 both-engines cases on a SQL Server image with Full-Text Search, including that PostgreSQL uses the index. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; AdventureWorks' 3 full-text indexes created (Production.Document's without its varbinary documents, S2P2021), Manual procedures 1 → 0 (uspSearchCandidateResumes converts), S2P3001 6 → 1 (the UDF in a computed column).
 - WP 4.6 — JSON (FOR JSON AUTO over joins with SQL Server's nesting and grouping, FOR JSON procedure results as one column, OPENJSON with and without WITH, JSON_MODIFY keeping member order, ISJSON with a type); 1 golden file and 20 both-engines cases. Corpus: 0 apply / copy / verify failures; 5 new WideWorldImporters agreement queries (the search procedures, OPENJSON and JSON_MODIFY over CustomFields), all at 100; WideWorldImporters Manual procedures 22 → 17. Agreement now compares JSON values parsed.
 - WP 4.5 — table-valued parameters (READONLY table-type parameters as composite arrays read through unnest in procedures and inline functions; DECLARE @t TableType as a table variable passed on as an array; S2P8003 guidance for application code); 1 golden file and a both-engines run called from T-SQL, from SqlClient DataTables and from Npgsql mapped-composite arrays. Corpus: 0 apply / copy / verify failures; WideWorldImporters Manual procedures 24 → 22 (InsertCustomerOrders and InvoiceCustomerOrders convert; RecordColdRoomTemperatures is natively compiled).
 - WP 4.4 — hierarchyid (mssql_compat helpers for GetLevel, GetAncestor, IsDescendantOf, GetDescendant, GetReparentedValue; depth-first hierarchyid_key for ORDER BY and comparisons; GetRoot, Parse, ToString; helper-calling computed columns STORED); 1 golden file and a both-engines grid of 23 cases (8 queries, 15 GetDescendant pairs). Corpus: 0 apply / copy / verify failures on all six databases; 4 new AdventureWorks agreement queries (both recursive manager procedures, the org chart in hierarchy order, the document tree), all at 100. AdventureWorks: Manual procedures 3 → 1, S2P3001 10 → 6.
@@ -463,3 +464,46 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
   - The deepest level keeps every row.
   - A JSON_MODIFY result used directly as the new value goes in as JSON; the same text through a
     variable goes in as a string.
+- WP 4.7 departs from the plan in these places:
+  - The index is one GIN index with a `to_tsvector` expression per column, not one expression
+    over the columns concatenated. SQL Server matches a search condition within one column
+    (`CONTAINS(*, '"red" AND "fox"')` finds nothing when the words are in different columns), and
+    a multicolumn GIN index serves a search of any subset of its columns.
+  - The condition is parsed at run time by `mssql_compat.contains_query`, not at conversion time:
+    AdventureWorks' `uspSearchCandidateResumes` passes it in a variable. The helper rewrites it in
+    `to_tsquery`'s syntax and lets `to_tsquery` stem and drop stop words. It is IMMUTABLE, so a
+    constant is folded while planning; a variable goes in a scalar subquery, worked out once.
+  - FREETEXT is `freetext_query`: any of the stemmed words (`|`), not `websearch_to_tsquery`,
+    which needs all of them.
+  - `NEAR` with more than two terms checks each neighbouring pair; a distance over 100 is AND.
+  - `SERVERPROPERTY('LCID')` is translated (as `default_text_search_config`'s LCID), ahead of WP
+    4.10, because `uspSearchCandidateResumes` uses it.
+  - Not done: full-text indexes on indexed views, `PROPERTY()` searches, `ALTER FULLTEXT INDEX`
+    and `CREATE FULLTEXT INDEX` inside routines (S2P5070 as before), custom stoplists and the
+    thesaurus. The corpus agreement queries do not cover full-text search: the corpus SQL Server
+    is the stock image, without Full-Text Search.
+- Established with SQL Server 2022 (with mssql-server-fts), for full-text search:
+  - Multi-column CONTAINS needs every term in one column.
+  - A prefix term works only in double quotes (`"moun*"`); `moun*` bare is the word itself.
+  - A phrase is in order and adjacent; noise words in a phrase are skipped (`"the fox"` matches
+    `fox`), but a noise word as an AND operand matches nothing.
+  - `NEAR((a, b), n)` allows at most n words between, noise words counted, in either order unless
+    TRUE. The generic `a NEAR b` / `a ~ b` matched at 21 words apart.
+  - CONTAINS does not stem (`run` does not match `running`; FORMSOF(INFLECTIONAL, run) does);
+    FREETEXT stems and matches any word.
+  - `NOT` first, `OR NOT` and two bare words with no operator are syntax errors.
+  - xml columns: element text and attribute values are indexed, tags are not. Hyphenated words
+    are indexed whole only (`mail` does not match `e-mail`).
+  - Ranks are integers from 0 to 1000; SERVERPROPERTY('LCID') is 1033 on the container.
+  - The stock `mssql/server:2022` image has no Full-Text Search
+    (`FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')` = 0). The engine there is not a dpkg
+    package, so installing `mssql-server-fts` brings `mssql-server` from Microsoft's repository
+    along with it.
+- Established with PostgreSQL 18:
+  - An xml column cast to text is immutable and can be indexed; the parser skips tags, attribute
+    values included. `xpath()` is not immutable.
+  - `to_tsquery` drops stop words from phrases (`'the' <-> 'fox'` is `'fox'`) and from AND,
+    keeping the distance (`fox <-> the <-> dog` is `fox <2> dog`). Stop words count as positions in
+    `to_tsvector`, as noise words do in SQL Server's NEAR.
+  - A function with `SET client_min_messages` is still folded while planning when its arguments
+    are constants.

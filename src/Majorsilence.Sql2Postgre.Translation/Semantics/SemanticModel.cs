@@ -407,6 +407,15 @@ public sealed partial class SemanticModel
                             i.AsJson ? new SqlServerType("nvarchar", -1) : TypeOf(i.ColumnDefinition.DataType, contextSchema))).ToList()
                         : [new ColumnInfo("key", new SqlServerType("nvarchar", 4000)), new ColumnInfo("value", new SqlServerType("nvarchar", -1)), new ColumnInfo("type", new SqlServerType("int"))])));
                 break;
+            case FullTextTableReference ft:
+                // CONTAINSTABLE and FREETEXTTABLE: the full-text key and its rank.
+                var keyType = ResolveRelation(ft.TableName, contextSchema) is { } ftName && Table(ftName) is { } ftTable
+                    && ftTable.Indexes.FirstOrDefault(i => i.Type == "fulltext")?.FullText?.KeyColumn is { } keyColumn
+                        ? ftTable.Columns.FirstOrDefault(col => col.Name.Equals(keyColumn, StringComparison.OrdinalIgnoreCase)) is { } kc ? ColumnType(kc) : null
+                        : null;
+                scope.Bind(new Binding(ft.Alias?.Value ?? "ft", new RelationInfo(null, ObjectKind.Function,
+                    [new ColumnInfo("KEY", keyType), new ColumnInfo("RANK", new SqlServerType("int"))])));
+                break;
             case GlobalFunctionTableReference g:
                 // STRING_SPLIT and GENERATE_SERIES return one column, value.
                 SqlServerType? valueType = g.Name.Value.Equals("STRING_SPLIT", StringComparison.OrdinalIgnoreCase)
@@ -611,6 +620,8 @@ public sealed partial class SemanticModel
             if (!IsXmlNodesCall(node.SchemaObject))
                 Names.Add(node.SchemaObject);
         }
+
+        public override void Visit(FullTextTableReference node) => Names.Add(node.TableName);
 
         public override void Visit(NextValueForExpression node) => Names.Add(node.SequenceName);
 

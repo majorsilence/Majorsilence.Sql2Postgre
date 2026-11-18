@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Full-text search** (WP 4.7):
+  - A full-text index becomes a GIN index with a `to_tsvector` expression per column, in each
+    column's language (`english` for 1033; S2P2021 for a language with no configuration, a
+    varbinary document column, or a stoplist other than the system one).
+  - `CONTAINS` and `FREETEXT` test each searched column against the same expressions, so the
+    index is used. The condition becomes a tsquery through the new `mssql_compat` helpers
+    `contains_query` (AND/OR/AND NOT, phrases, `"pre*"`, `NEAR`, `FORMSOF`, `ISABOUT`) and
+    `freetext_query`. Constant conditions are worked out while planning, variables once per
+    statement.
+  - `CONTAINSTABLE` and `FREETEXTTABLE` are derived tables of `key` and `rank` (`ts_rank` × 1000),
+    with `top_n_by_rank`. `LANGUAGE` maps to a configuration, at run time through
+    `fulltext_config`.
+  - `SERVERPROPERTY('LCID')` is the LCID of `default_text_search_config` (`fulltext_lcid`).
+  - S2P3042 says how matching and ranks differ from SQL Server's.
+  - Both readers keep the key column, each column's language and type column, and the stoplist.
+  - Container tests build a SQL Server image with Full-Text Search installed
+    (`Infrastructure/mssql-fts/Dockerfile`).
+- A `bit` parameter's default (`@flag bit = 0`) is `DEFAULT false`; `DEFAULT 0` on a boolean
+  parameter failed to apply.
 - **JSON** (WP 4.6):
   - `FOR JSON AUTO` over joins nests as SQL Server does: one level per table in select-list
     order, consecutive rows grouped under a parent, an unmatched outer join as `[{}]`.

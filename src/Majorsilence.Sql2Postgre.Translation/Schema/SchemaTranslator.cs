@@ -547,6 +547,11 @@ public sealed partial class SchemaTranslator
         foreach (var ix in t.Indexes)
         {
             var source = new ObjectName(t.Name.Schema, ix.Name);
+            if (ix.Type == "fulltext")
+            {
+                yield return FullTextGinIndex(t, ix, source);
+                continue;
+            }
             string? method = ix.Type switch
             {
                 "rowstore" => null,
@@ -596,5 +601,53 @@ public sealed partial class SchemaTranslator
                     ix.Included.Select(c => _names.Column(t.Name, c)).ToList(), ix.IsUnique, where, method)],
                 diagnostics, [t.Name]) { Extensions = extensions };
         }
+    }
+
+    /// <summary>
+    /// A full-text index as one GIN index with a <c>to_tsvector</c> expression per column, in the
+    /// column's language. A multicolumn GIN index serves a search of any of its columns, and SQL
+    /// Server matches a search condition within one column, so queries test each column on its own.
+    /// </summary>
+    private TranslatedObject FullTextGinIndex(Table t, TableIndex ix, ObjectName source)
+    {
+        var table = _names.Relation(t.Name);
+        string name = _names.Index(t.Name, ix.Name);
+        string target = $"{NameMapper.Quote(table.Schema)}.{NameMapper.Quote(name)}";
+        var info = ix.FullText ?? new FullTextIndex(null, ix.Keys.Select(k => new FullTextColumn(k.Name)).ToList());
+        var diagnostics = new List<Diagnostic>();
+        void Unmapped(Severity severity, string message) =>
+            diagnostics.Add(new Diagnostic(DiagnosticCodes.FullTextSettingUnmapped, severity, t.Name, message));
+        var keys = new List<PgIndexKey>();
+        foreach (var column in info.Columns)
+        {
+            var c = t.Columns.FirstOrDefault(x => x.Name.Equals(column.Name, StringComparison.OrdinalIgnoreCase));
+            string mapped = _names.Column(t.Name, column.Name);
+            if (c is null || Missing(t.Name, [mapped]).Count > 0)
+            {
+                Unmapped(Severity.Warning, $"{t.Name}.{column.Name} is not a column the table kept, so the full-text index leaves it out.");
+                continue;
+            }
+            if (!FullTextSearch.IsText(c.Type))
+            {
+                Unmapped(Severity.Warning, $"{t.Name}.{column.Name} holds {c.Type.Name} documents"
+                    + (column.TypeColumn is null ? "" : $" typed by {column.TypeColumn}")
+                    + ", which SQL Server reads through its filters for each file type; PostgreSQL text search has none, so the full-text index leaves the column out. Extract the text into a column of its own to search it.");
+                continue;
+            }
+            if (FullTextSearch.Config(column.Language) is null)
+                Unmapped(Severity.Warning, $"The full-text language {FullTextLanguages.Name(column.Language!.Value)} of {t.Name}.{column.Name} has no PostgreSQL text search configuration; it is indexed with simple (lower-cased words, no stemming, no stop words).");
+            keys.Add(new PgIndexKey(mapped, Expression: FullTextSearch.Vector(FullTextSearch.ColumnConfig(column), new PgColumnRef(mapped), c.Type)));
+        }
+        if (!info.StopList.Equals(FullTextIndex.SystemStopList, StringComparison.OrdinalIgnoreCase))
+            Unmapped(Severity.Info, info.StopList.Equals(FullTextIndex.NoStopList, StringComparison.OrdinalIgnoreCase)
+                ? $"The full-text index on {t.Name} has STOPLIST = OFF; PostgreSQL's configuration drops its own stop words, so searches for them match nothing."
+                : $"The full-text index on {t.Name} uses the stoplist {info.StopList}; PostgreSQL's configuration uses its own stop words. A text search dictionary with that list can replace them.");
+        if (keys.Count == 0)
+            return new TranslatedObject(source, ObjectKind.Index, target, Phase.Indexes, [],
+                [.. diagnostics, new Diagnostic(DiagnosticCodes.IndexTypeUnsupported, Severity.Warning, t.Name,
+                    $"The full-text index on {t.Name} has no column PostgreSQL can index as text, so it is not created.")], [t.Name])
+            { Skipped = true };
+        return new TranslatedObject(source, ObjectKind.Index, target, Phase.Indexes,
+            [new PgCreateIndex(name, table, keys, [], Method: "gin")], diagnostics, [t.Name]);
     }
 }

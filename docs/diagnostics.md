@@ -182,9 +182,10 @@ that matters for performance.
 
 ### S2P2003 IndexTypeUnsupported (Warning)
 
-Columnstore, XML, full-text and memory-optimized hash indexes have no PostgreSQL equivalent, nor
-do spatial indexes when `postgis` is disabled. The index is not created; queries still work but
-may be slower. Full-text search is planned for Stage 4.
+Columnstore, XML and memory-optimized hash indexes have no PostgreSQL equivalent, nor do spatial
+indexes when `postgis` is disabled. The index is not created; queries still work but may be
+slower. A full-text index becomes a GIN index (see S2P3042); it gets this code only when none of
+its columns can be indexed as text (all of them hold varbinary or image documents).
 
 ### S2P2004 ConstraintNotValid (Info)
 
@@ -287,6 +288,27 @@ period trigger overwrites what is written to the current table. Without `SYSTEM_
 or when the history table is not in the source, only the period trigger is created. A script
 that versions a table without naming `HISTORY_TABLE` gets this code as a Warning: the table
 SQL Server creates is not in the script.
+
+### S2P2021 FullTextSettingUnmapped (Warning or Info)
+
+Something about a full-text index, or a search's `LANGUAGE`, that PostgreSQL text search has no
+counterpart for:
+
+- **A language with no built-in configuration** (Warning). The configurations cover English
+  (1033, 2057), German, French, Spanish, Italian, Dutch, Portuguese (1046, 2070), Danish,
+  Norwegian (Bokmål), Swedish, Russian, Turkish, Romanian, Greek, Arabic, Catalan, Indonesian,
+  Lithuanian, Hindi, Tamil and Serbian. The neutral language (0) is `simple`. Any other language
+  (Chinese, Japanese, Korean, Thai, Czech, Polish, …) is indexed with `simple`: lower-cased words
+  split at spaces and punctuation, with no stemming and no stop words. Languages without spaces
+  between words need a parser of their own.
+- **A varbinary or image column** (Warning), usually with a `TYPE COLUMN`. SQL Server reads its
+  documents through a filter for each file type; PostgreSQL has none, so the index leaves the
+  column out. Extract the text into a column of its own (in the application, or while loading)
+  and index that.
+- **A stoplist other than the system one** (Info). With `STOPLIST = OFF`, SQL Server indexes
+  every word; PostgreSQL's configuration still drops its stop words. A custom stoplist's words
+  are not carried over. A text search dictionary built from the list can replace the
+  configuration's.
 
 ## S2P3xxx — expressions and built-in functions
 
@@ -434,6 +456,49 @@ document's root element.
 The prolog's `declare namespace` become `XMLNAMESPACES`. PostgreSQL has no default namespace, so
 `declare default element namespace` gives every unprefixed element name a prefix of its own.
 `string(.)[1]`, XQuery's singleton marker after a function, loses its `[1]`.
+
+### S2P3042 FullTextSearch (Info or Warning)
+
+Full-text search goes through PostgreSQL text search.
+
+- **The index.** A full-text index becomes one GIN index with a `to_tsvector('config', column)`
+  expression for each column, in the column's language; an xml column is indexed as its text,
+  whose tags the parser skips.
+- **CONTAINS and FREETEXT.** Each searched column is tested on its own
+  (`to_tsvector(…, a) @@ q OR to_tsvector(…, b) @@ q`). SQL Server, too, matches a condition
+  within one column, so `CONTAINS(*, '"red" AND "fox"')` needs both words in the same column.
+  The query expressions are the index's, so the index is used.
+- **The condition.** It becomes a tsquery through `mssql_compat.contains_query`, which
+  rewrites SQL Server's grammar into `to_tsquery`'s:
+  - `AND`/`&`, `OR`/`|` and `AND NOT`/`&!` become `&`, `|` and `& !`;
+  - a quoted phrase becomes `<->`, and `"pre*"` becomes `pre:*`;
+  - `NEAR((a, b), n[, TRUE])` becomes `a <1> b | … | a <n+1> b`, and the reverse too unless
+    `TRUE` (at most n words between them);
+  - `FORMSOF(…)` and `ISABOUT(…)` become `|` of their terms.
+- **FREETEXT** uses `mssql_compat.freetext_query`, which matches any of the stemmed words.
+  For a constant condition PostgreSQL works the tsquery out once while planning; for a variable,
+  once per statement.
+- **CONTAINSTABLE and FREETEXTTABLE** become a derived table of the matching rows' `key` (the
+  KEY INDEX column) and `rank`, so `JOIN … ON t.id = k.[KEY]` works as it did. `top_n_by_rank`
+  becomes `ORDER BY rank DESC LIMIT n`.
+- **LANGUAGE** changes only how the condition is read, as in SQL Server: a constant picks the
+  configuration, and a variable goes through `mssql_compat.fulltext_config(lcid)`.
+- **SERVERPROPERTY('LCID')** is the LCID of PostgreSQL's `default_text_search_config`.
+
+Which rows match is close to SQL Server's, but not the same:
+
+- **Stemming.** Words are stemmed by the configuration, so `CONTAINS(c, 'run')` also matches
+  "running", where SQL Server needs `FORMSOF(INFLECTIONAL, run)`.
+- **Stop words.** The configuration's stop words are not SQL Server's noise words. A term made
+  only of stop words is dropped with its operator, where SQL Server matches nothing (`"fox" AND
+  "the"`).
+- **Word breaking.** Hyphenated words are indexed whole and as their parts (`e-mail` matches
+  `mail`), and xml attribute values are not indexed. No thesaurus, and `ISABOUT` weights are
+  ignored.
+- **Ranks.** `RANK` is `ts_rank` × 1000 as an integer: order rows by it, but don't compare its
+  values with SQL Server's.
+
+The Warning form names a varbinary column that `*` leaves out (S2P2021).
 
 ## S2P4xxx — queries and DML
 

@@ -62,8 +62,26 @@ public sealed record CheckConstraint(string? Name, string Expression, bool IsDis
 /// which implicit usings bring into every file.
 /// </summary>
 /// <param name="Type"><c>rowstore</c>, <c>columnstore</c>, <c>xml</c>, <c>spatial</c> or <c>fulltext</c>.</param>
+/// <param name="FullText">A full-text index's key, languages and stoplist.</param>
 public sealed record TableIndex(string Name, IReadOnlyList<IndexColumn> Keys, IReadOnlyList<string> Included,
-    bool IsUnique, bool IsClustered, string? FilterExpression, string Type = "rowstore");
+    bool IsUnique, bool IsClustered, string? FilterExpression, string Type = "rowstore", FullTextIndex? FullText = null);
+
+/// <summary>
+/// What a full-text index (<c>CREATE FULLTEXT INDEX ON t (cols) KEY INDEX ix</c>) has beyond its
+/// columns, which are the index's <see cref="TableIndex.Keys"/>.
+/// </summary>
+/// <param name="KeyColumn">The single column of the KEY INDEX, which CONTAINSTABLE returns as KEY; null when unknown.</param>
+/// <param name="Columns">Each indexed column with its language and type column.</param>
+/// <param name="StopList"><c>SYSTEM</c> (the default), <c>OFF</c>, or the name of a stoplist of the database's own.</param>
+public sealed record FullTextIndex(string? KeyColumn, IReadOnlyList<FullTextColumn> Columns, string StopList = FullTextIndex.SystemStopList)
+{
+    public const string SystemStopList = "SYSTEM";
+    public const string NoStopList = "OFF";
+}
+
+/// <param name="Language">The column's word-breaker language (an LCID: 1033 is English); null when not given (the server default).</param>
+/// <param name="TypeColumn">For a varbinary/image column, the column holding each document's file extension.</param>
+public sealed record FullTextColumn(string Name, int? Language = null, string? TypeColumn = null);
 
 /// <summary>
 /// A table's <c>PERIOD FOR SYSTEM_TIME</c>: the row start and end columns SQL Server sets, and

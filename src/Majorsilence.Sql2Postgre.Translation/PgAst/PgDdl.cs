@@ -75,7 +75,8 @@ public sealed record PgAddCheck(PgName Table, string Name, PgExpr Condition, boo
 public sealed record PgAddForeignKey(PgName Table, string Name, IReadOnlyList<string> Columns, PgName Referenced,
     IReadOnlyList<string> ReferencedColumns, string? OnDelete = null, string? OnUpdate = null, bool NotValid = false) : PgStatement;
 
-public sealed record PgIndexKey(string Column, bool Descending = false);
+/// <param name="Expression">An expression key (<c>to_tsvector('english', body)</c>) in place of <see cref="Column"/>.</param>
+public sealed record PgIndexKey(string Column, bool Descending = false, PgExpr? Expression = null);
 
 /// <param name="Name">The index name; empty lets PostgreSQL choose one (a temp table's index).</param>
 /// <param name="Method">The access method (<c>gist</c>…), or null for the default B-tree.</param>

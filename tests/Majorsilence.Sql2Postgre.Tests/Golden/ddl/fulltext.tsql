@@ -1,0 +1,28 @@
+CREATE TABLE dbo.Doc (Id int NOT NULL CONSTRAINT PK_Doc PRIMARY KEY, Title nvarchar(200) NULL, Body nvarchar(max) NULL,
+    Notes xml NULL, Content varbinary(max) NULL, Extension nvarchar(8) NULL);
+GO
+CREATE FULLTEXT CATALOG DocCatalog AS DEFAULT;
+GO
+CREATE FULLTEXT INDEX ON dbo.Doc (Title LANGUAGE 1033, Body LANGUAGE English, Notes, Content TYPE COLUMN Extension LANGUAGE 0x409)
+    KEY INDEX PK_Doc WITH STOPLIST = SYSTEM, CHANGE_TRACKING AUTO;
+GO
+CREATE TABLE dbo.Memo (MemoId int NOT NULL PRIMARY KEY, Txt nvarchar(400) NULL, Summary varchar(200) NULL);
+GO
+CREATE FULLTEXT INDEX ON dbo.Memo (Txt LANGUAGE 1041, Summary LANGUAGE 'British English') KEY INDEX PK_Memo WITH STOPLIST = OFF;
+GO
+CREATE VIEW dbo.AppleDocs AS
+SELECT Id, Title FROM dbo.Doc WHERE CONTAINS(*, '"apple*" AND NOT pie');
+GO
+CREATE PROCEDURE dbo.Search @q nvarchar(400), @lang int = 0, @top int = 10, @inflect bit = 0 AS
+BEGIN
+    IF @inflect = 1
+        SET @q = 'FORMSOF(INFLECTIONAL, "' + @q + '")';
+    SELECT d.Id, k.[RANK]
+    FROM dbo.Doc AS d JOIN CONTAINSTABLE(dbo.Doc, (Title, Body), @q, LANGUAGE @lang, @top) AS k ON d.Id = k.[KEY]
+    ORDER BY k.[RANK] DESC;
+    SELECT Id FROM dbo.Doc WHERE FREETEXT(Body, @q) OR CONTAINS(Title, 'NEAR((red, apple), 2)');
+    SELECT k.[KEY], k.RANK FROM FREETEXTTABLE(dbo.Doc, *, @q, LANGUAGE 'British English') AS k;
+    SELECT m.MemoId FROM dbo.Memo AS m WHERE CONTAINS(m.Summary, @q, LANGUAGE 1033);
+    SELECT CONVERT(int, SERVERPROPERTY('lcid')) AS lcid;
+END;
+GO

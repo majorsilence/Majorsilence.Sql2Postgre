@@ -26,6 +26,41 @@ public static class Engines
     /// <summary>The SQL Server container itself (to copy backup files into it); ignores the test without Docker.</summary>
     public static async Task<MsSqlContainer> SqlServerContainerAsync() => (await RequireAsync()).SqlServer!;
 
+    private static readonly Lazy<Task<(MsSqlContainer? Container, string? Unavailable)>> FullText =
+        new(StartFullTextAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>
+    /// A second SQL Server, with Full-Text Search installed (the stock image has none), built from
+    /// <c>Infrastructure/mssql-fts/Dockerfile</c> on first use; ignores the test without Docker.
+    /// </summary>
+    public static async Task<string> SqlServerFullTextAsync()
+    {
+        var (container, unavailable) = await FullText.Value;
+        if (unavailable is not null)
+            Assert.Ignore($"Docker is not available: {unavailable}");
+        return container!.GetConnectionString();
+    }
+
+    private static async Task<(MsSqlContainer?, string?)> StartFullTextAsync()
+    {
+        try
+        {
+            var image = new ImageFromDockerfileBuilder()
+                .WithDockerfileDirectory(CommonDirectoryPath.GetProjectDirectory(), Path.Combine("Infrastructure", "mssql-fts"))
+                .WithName("sql2pg-mssql-fts:2022")
+                .WithCleanUp(false)
+                .Build();
+            await image.CreateAsync();
+            var container = new MsSqlBuilder(image.FullName).Build();
+            await container.StartAsync();
+            return (container, null);
+        }
+        catch (DockerUnavailableException ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
     /// <summary>PostgreSQL connection string; ignores the test without Docker.</summary>
     public static async Task<string> PostgresAsync() => (await RequireAsync()).Postgres!.GetConnectionString();
 
@@ -56,6 +91,8 @@ public static class Engines
 
     internal static async Task StopAsync()
     {
+        if (FullText.IsValueCreated && (await FullText.Value).Container is { } fullText)
+            await fullText.DisposeAsync();
         if (!Started.IsValueCreated)
             return;
         var state = await Started.Value;

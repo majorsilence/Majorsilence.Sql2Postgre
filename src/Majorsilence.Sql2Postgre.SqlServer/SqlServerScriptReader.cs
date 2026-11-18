@@ -161,7 +161,7 @@ public static partial class SqlServerScriptReader
                     AddSpecialIndex(xml.OnName, xml.Name.Value, [xml.XmlColumn.Value], "xml");
                     break;
                 case CreateFullTextIndexStatement ft:
-                    AddSpecialIndex(ft.OnName, $"fulltext_{ft.OnName.BaseIdentifier.Value}", ft.FullTextIndexColumns.Select(c => c.Name.Value).ToList(), "fulltext");
+                    AddFullTextIndex(ft);
                     break;
                 case CreateViewStatement or CreateOrAlterViewStatement:
                     AddModule(((ViewStatementBody)statement).SchemaObjectName, ObjectKind.View, statement);
@@ -392,6 +392,45 @@ public static partial class SqlServerScriptReader
         {
             if (_tables.TryGetValue(NameOf(on), out var table))
                 table.Indexes.Add(new TableIndex(name, columns.Select(c => new IndexColumn(c)).ToList(), [], false, false, null, type));
+        }
+
+        /// <summary>
+        /// A full-text index, named as the catalog reader names it. Its key is the KEY INDEX's single
+        /// column (the primary key's when the name is not one the script gave).
+        /// </summary>
+        private void AddFullTextIndex(CreateFullTextIndexStatement ft)
+        {
+            if (!_tables.TryGetValue(NameOf(ft.OnName), out var table))
+                return;
+            string keyIndex = ft.KeyIndexName.Value;
+            bool Named(string? name) => string.Equals(name, keyIndex, StringComparison.OrdinalIgnoreCase);
+            var keys = Named(table.PrimaryKey?.Name) ? table.PrimaryKey!.Columns
+                : table.Uniques.FirstOrDefault(u => Named(u.Name))?.Columns
+                ?? table.Indexes.FirstOrDefault(i => Named(i.Name))?.Keys
+                ?? table.PrimaryKey?.Columns;
+            var columns = new List<FullTextColumn>();
+            foreach (var c in ft.FullTextIndexColumns)
+            {
+                int? language = null;
+                if (c.LanguageTerm is { } term)
+                {
+                    string written = term.Identifier?.Value ?? TextOf(term.ValueExpression);
+                    language = FullTextLanguages.Parse(written);
+                    if (language is null)
+                        Diagnostics.Add(new Diagnostic(DiagnosticCodes.FullTextSettingUnmapped, Severity.Warning, table.Name,
+                            $"The full-text language {written} of {table.Name}.{c.Name.Value} is not one SQL Server lists; the column is indexed as English."));
+                }
+                columns.Add(new FullTextColumn(c.Name.Value, language, c.TypeColumn?.Value));
+            }
+            var stopList = ft.Options.OfType<StopListFullTextIndexOption>().FirstOrDefault() switch
+            {
+                null => FullTextIndex.SystemStopList,
+                { IsOff: true } => FullTextIndex.NoStopList,
+                { StopListName: { } name } => name.Value,
+                _ => FullTextIndex.SystemStopList,
+            };
+            table.Indexes.Add(new TableIndex($"fulltext_{table.Name.Name}", columns.Select(c => new IndexColumn(c.Name)).ToList(), [], false, false, null,
+                "fulltext", new FullTextIndex(keys is [var key] ? key.Name : null, columns, stopList)));
         }
 
         private void AddModule(SchemaObjectName name, ObjectKind kind, TSqlStatement statement, ObjectName? parent = null) =>

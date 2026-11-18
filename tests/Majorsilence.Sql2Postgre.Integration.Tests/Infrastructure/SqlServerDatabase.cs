@@ -18,9 +18,12 @@ public sealed class SqlServerDatabase : IAsyncDisposable
         ConnectionString = new SqlConnectionStringBuilder(master) { InitialCatalog = name }.ConnectionString;
     }
 
-    public static async Task<SqlServerDatabase> CreateAsync(string script, string prefix = "fixture")
+    public static async Task<SqlServerDatabase> CreateAsync(string script, string prefix = "fixture") =>
+        await CreateAsync(script, prefix, await Engines.SqlServerAsync());
+
+    /// <summary>A database on the given server (<see cref="Engines.SqlServerFullTextAsync"/>, say), as <c>master</c> connects to it.</summary>
+    public static async Task<SqlServerDatabase> CreateAsync(string script, string prefix, string master)
     {
-        string master = await Engines.SqlServerAsync();
         var db = new SqlServerDatabase(master, $"{prefix}_{Guid.NewGuid():N}");
         await using (var conn = new SqlConnection(master))
         {

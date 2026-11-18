@@ -86,11 +86,21 @@ internal static class CatalogQueries
         ORDER BY ic.object_id, ic.index_id, ic.key_ordinal, ic.index_column_id;
         """;
 
+    /// <summary>
+    /// Full-text index columns, with each column's language and type column, the key index's
+    /// column (it has exactly one) and the stoplist: id 0 is the system stoplist, NULL is OFF.
+    /// </summary>
     public const string FullTextIndexes = """
-        SELECT fi.object_id, c.name, fic.column_id
+        SELECT fi.object_id, c.name, fic.column_id, fic.language_id, tc.name AS type_column,
+               kc.name AS key_column,
+               CASE WHEN fi.stoplist_id IS NULL THEN 'OFF' WHEN fi.stoplist_id = 0 THEN 'SYSTEM' ELSE sl.name END AS stoplist
         FROM sys.fulltext_indexes fi
         JOIN sys.fulltext_index_columns fic ON fic.object_id = fi.object_id
         JOIN sys.columns c ON c.object_id = fic.object_id AND c.column_id = fic.column_id
+        LEFT JOIN sys.columns tc ON tc.object_id = fic.object_id AND tc.column_id = fic.type_column_id
+        LEFT JOIN sys.index_columns kic ON kic.object_id = fi.object_id AND kic.index_id = fi.unique_index_id AND kic.key_ordinal = 1
+        LEFT JOIN sys.columns kc ON kc.object_id = kic.object_id AND kc.column_id = kic.column_id
+        LEFT JOIN sys.fulltext_stoplists sl ON sl.stoplist_id = fi.stoplist_id
         ORDER BY fi.object_id, fic.column_id;
         """;
 

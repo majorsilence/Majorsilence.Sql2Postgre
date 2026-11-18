@@ -82,6 +82,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             new PgBetween(Compared(t.FirstExpression, t.SecondExpression, c), Compared(t.SecondExpression, t.FirstExpression, c),
                 Compared(t.ThirdExpression, t.FirstExpression, c), t.TernaryExpressionType == BooleanTernaryExpressionType.NotBetween),
         LikePredicate like => Like(like, c),
+        FullTextPredicate ft => FullTextPredicate(ft, c),
         UpdateCall update when ProceduralPredicate?.Invoke(update, c) is { } translated => translated,
         _ => SubqueryPredicate(e, c),
     };

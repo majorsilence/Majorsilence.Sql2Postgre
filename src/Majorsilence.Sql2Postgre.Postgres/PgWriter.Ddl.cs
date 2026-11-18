@@ -138,13 +138,21 @@ public static partial class PgWriter
         var sb = new StringBuilder($"CREATE {(i.Unique ? "UNIQUE " : "")}INDEX {(i.Name.Length == 0 ? "" : Q(i.Name) + " ")}ON {i.Table.Qualified}");
         if (i.Method is not null)
             sb.Append($" USING {i.Method}");
-        sb.Append($" ({string.Join(", ", i.Keys.Select(k => Q(k.Column) + (k.Descending ? " DESC" : "")))})");
+        sb.Append($" ({string.Join(", ", i.Keys.Select(k => IndexKey(k) + (k.Descending ? " DESC" : "")))})");
         if (i.Include.Count > 0)
             sb.Append($" INCLUDE ({Columns(i.Include)})");
         if (i.Where is not null)
             sb.Append($" WHERE {Expression(i.Where)}");
         return sb.Append(";\n").ToString();
     }
+
+    /// <summary>A column, or an expression: a function call as it is, anything else in the parentheses an index expression needs.</summary>
+    private static string IndexKey(PgIndexKey k) => k.Expression switch
+    {
+        null => Q(k.Column),
+        PgFunctionCall call => Expression(call),
+        var e => $"({Expression(e)})",
+    };
 
     /// <summary>
     /// The original T-SQL in a block comment. PostgreSQL nests block comments, so a <c>/*</c> inside

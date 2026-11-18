@@ -86,7 +86,7 @@ public static class DiagnosticCodes
     /// <summary>Clustered indexes and primary keys become ordinary B-tree indexes; PostgreSQL does not keep rows in index order.</summary>
     public const string ClusteredIgnored = "S2P2002";
 
-    /// <summary>A columnstore, XML, full-text, hash or (without postgis) spatial index has no PostgreSQL equivalent and is not created.</summary>
+    /// <summary>A columnstore, XML, hash or (without postgis) spatial index, or a full-text index with nothing left to index, has no PostgreSQL equivalent and is not created.</summary>
     public const string IndexTypeUnsupported = "S2P2003";
 
     /// <summary>A constraint SQL Server does not trust is created NOT VALID: existing rows are not checked.</summary>
@@ -130,6 +130,9 @@ public static class DiagnosticCodes
 
     /// <summary>A system-versioned temporal table: a trigger sets its period columns and keeps its history.</summary>
     public const string SystemVersioning = "S2P2020";
+
+    /// <summary>A full-text index's language, stoplist or document type column has no PostgreSQL counterpart.</summary>
+    public const string FullTextSettingUnmapped = "S2P2021";
 
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
@@ -199,6 +202,9 @@ public static class DiagnosticCodes
 
     /// <summary>An xml method's XQuery goes beyond XPath 1.0, which is all PostgreSQL evaluates.</summary>
     public const string XQueryUnsupported = "S2P3041";
+
+    /// <summary>Full-text search through PostgreSQL text search: which rows match is close, ranks and stemming differ.</summary>
+    public const string FullTextSearch = "S2P3042";
 
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";

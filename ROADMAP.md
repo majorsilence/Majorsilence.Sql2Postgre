@@ -178,7 +178,7 @@ defaults (named default constraints become column defaults); computed columns �
 columns (`STORED`, or `VIRTUAL` on 18 for non-persisted); PK/unique/FK (with `ON DELETE`/
 `ON UPDATE`)/check constraints, `NOCHECK` constraints → `NOT VALID`; indexes: included columns
 → `INCLUDE`, filtered → partial, clustered → plain B-tree (optional one-time `CLUSTER`),
-columnstore and XML/spatial/full-text indexes → assessed; indexed views → materialized views
+columnstore and XML/spatial indexes → assessed; full-text indexes → GIN over `to_tsvector`; indexed views → materialized views
 (manual refresh, warned); synonyms → views or `search_path` notes; `dbo` → configurable
 (`public` or kept).
 

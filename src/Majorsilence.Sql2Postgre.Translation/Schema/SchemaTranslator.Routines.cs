@@ -204,7 +204,7 @@ public sealed partial class SchemaTranslator
                 target = "p_" + target;
             }
             var type = model.TypeOf(p.DataType, c.Schema);
-            PgExpr? value = p.Value is null ? null : procedural.Constant(p.Value, c);
+            PgExpr? value = p.Value is null ? null : procedural.Constant(p.Value, type, c);
             if (value is null && p.Modifier == ParameterModifier.Output)
                 value = PgLiteral.Null; // a caller need not pass an INOUT parameter whose value it does not want
             else if (value is null && defaulted)

@@ -254,6 +254,8 @@ public sealed partial class QueryTranslator
                 return BuiltinTableFunction(g, c);
             case OpenJsonTableReference o:
                 return _x.OpenJson(o, c);
+            case FullTextTableReference ft:
+                return _x.FullTextTable(ft, c);
             case PivotedTableReference p:
                 return Pivot(p, outer);
             case UnpivotedTableReference u:

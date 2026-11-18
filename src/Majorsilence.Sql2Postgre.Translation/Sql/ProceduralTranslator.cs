@@ -228,8 +228,13 @@ public sealed partial class ProceduralTranslator
         return WithHooks(st, () => Assigned(value, signature.ReturnType, signature.ReturnDataType, context));
     }
 
-    /// <summary>A constant such as a parameter's default (no variables in scope).</summary>
-    public PgExpr Constant(ScalarExpression value, ExpressionContext context) => _x.Scalar(value, context);
+    /// <summary>
+    /// A constant such as a parameter's default (no variables in scope). A bit's <c>0</c>/<c>1</c> is
+    /// <c>false</c>/<c>true</c>: PostgreSQL has no assignment cast from integer to boolean. Other
+    /// literals take the parameter's type as they are.
+    /// </summary>
+    public PgExpr Constant(ScalarExpression value, SqlServerType type, ExpressionContext context) =>
+        type.Name == "bit" ? _x.ConvertTo(value, type, context) : _x.Scalar(value, context);
 
     /// <summary>An inline table-valued function's query, for a <c>LANGUAGE sql</c> body.</summary>
     public PgQuery Query(SelectStatement select, BodySignature signature, ExpressionContext context)

@@ -47,8 +47,10 @@ public static class SqlServerCatalogReader
             IsUnique = r.GetBoolean(4), Filter = r.IsDBNull(5) ? null : r.GetString(5),
         }, ct)).ToLookup(x => x.ObjectId);
 
-        var fullText = (await QueryAsync(conn, CatalogQueries.FullTextIndexes, r => (Id: r.GetInt32(0), Column: r.GetString(1)), ct))
-            .ToLookup(x => x.Id, x => x.Column);
+        var fullText = (await QueryAsync(conn, CatalogQueries.FullTextIndexes, r => (Id: r.GetInt32(0),
+                Column: new FullTextColumn(r.GetString(1), r.IsDBNull(3) ? null : System.Convert.ToInt32(r.GetValue(3)), r.IsDBNull(4) ? null : r.GetString(4)),
+                Key: r.IsDBNull(5) ? null : r.GetString(5), StopList: r.IsDBNull(6) ? FullTextIndex.SystemStopList : r.GetString(6)), ct))
+            .ToLookup(x => x.Id);
 
         var fkColumns = (await QueryAsync(conn, CatalogQueries.ForeignKeyColumns,
             r => (FkId: r.GetInt32(0), Column: r.GetString(1), RefColumn: r.GetString(2)), ct)).ToLookup(x => x.FkId);
@@ -89,9 +91,9 @@ public static class SqlServerCatalogReader
                     : KeysOf(id, i.IndexId),
                 indexColumns[(id, i.IndexId)].Where(c => c.Included && !IsColumnstore(i.Type)).OrderBy(c => c.ColumnId).Select(c => c.Name).ToList(),
                 i.IsUnique, i.Type is 1 or 5, i.Filter, IndexTypeName(i.Type))).ToList();
-            if (fullText[id].Any())
-                tableIndexes.Add(new TableIndex($"fulltext_{name.Name}", fullText[id].Select(c => new IndexColumn(c)).ToList(),
-                    [], false, false, null, "fulltext"));
+            if (fullText[id].ToList() is { Count: > 0 } ft)
+                tableIndexes.Add(new TableIndex($"fulltext_{name.Name}", ft.Select(c => new IndexColumn(c.Column.Name)).ToList(),
+                    [], false, false, null, "fulltext", new FullTextIndex(ft[0].Key, ft.Select(c => c.Column).ToList(), ft[0].StopList)));
 
             return new Table(name, columns[id].OrderBy(c => c.Ordinal).ToList(), pk, uniques,
                 foreignKeys[id].ToList(), checks[id].ToList(),
