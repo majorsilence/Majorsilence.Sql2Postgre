@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **JSON** (WP 4.6):
+  - `FOR JSON AUTO` over joins nests as SQL Server does: one level per table in select-list
+    order, consecutive rows grouped under a parent, an unmatched outer join as `[{}]`.
+  - A procedure's FOR JSON result is one JSON column.
+  - `OPENJSON` with and without `WITH` (paths, `AS JSON`), in document order.
+  - `JSON_MODIFY` (lax/strict, `append`, NULL removal, nested JSON values) keeps member order,
+    over `json`.
+  - `ISJSON(x, type)`.
+  - The new `mssql_compat` helpers are `openjson`, `json_modify` and `isjson_type`.
+  - Result agreement compares JSON values parsed.
 - **Table-valued parameters** (WP 4.5):
   - A `READONLY` table-type parameter becomes an array of the type's composite type, read as
     `unnest(routine.param)` in procedures and inline functions.

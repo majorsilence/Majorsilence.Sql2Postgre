@@ -1,0 +1,36 @@
+CREATE TABLE dbo.City (CityId int NOT NULL PRIMARY KEY, CityName nvarchar(50) NOT NULL);
+GO
+CREATE TABLE dbo.Customer (CustomerId int NOT NULL PRIMARY KEY, CustomerName nvarchar(100) NOT NULL, CityId int NOT NULL, Phone nvarchar(20) NULL, CustomFields nvarchar(max) NULL);
+GO
+CREATE TABLE dbo.Reading (Rego nvarchar(20) NOT NULL, Sensor int NOT NULL, RecordedWhen datetime2(7) NOT NULL, Temperature decimal(18, 2) NOT NULL, FullData nvarchar(max) NOT NULL);
+GO
+CREATE PROCEDURE dbo.SearchCustomers @SearchText nvarchar(100), @Rows int AS
+BEGIN
+    SELECT TOP (@Rows) c.CustomerId, c.CustomerName, ct.CityName, c.Phone
+    FROM dbo.Customer AS c JOIN dbo.City AS ct ON c.CityId = ct.CityId
+    WHERE c.CustomerName LIKE N'%' + @SearchText + N'%'
+    ORDER BY c.CustomerName
+    FOR JSON AUTO, ROOT(N'Customers');
+END;
+GO
+CREATE PROCEDURE dbo.RecordReadings @Data nvarchar(max) AS
+BEGIN
+    IF ISJSON(@Data) = 0
+        THROW 51000, N'Data must be JSON', 1;
+    INSERT INTO dbo.Reading (Rego, Sensor, RecordedWhen, Temperature, FullData)
+    SELECT Rego, Sensor, RecordedWhen, Temperature, FullData
+    FROM OPENJSON(@Data, N'$.Recordings')
+    WITH (Rego nvarchar(20) N'$.properties.rego', Sensor int N'$.properties.sensor', RecordedWhen datetime2(7) N'$.properties.when',
+          Temperature decimal(18, 2) N'$.properties.temp', FullData nvarchar(max) N'$' AS JSON);
+END;
+GO
+CREATE PROCEDURE dbo.TagCustomer @Id int, @Tag nvarchar(30) AS
+BEGIN
+    UPDATE dbo.Customer SET CustomFields = JSON_MODIFY(CustomFields, N'append $.Tags', @Tag) WHERE CustomerId = @Id;
+    SELECT JSON_MODIFY(N'{"Events": []}', N'append $.Events',
+        JSON_MODIFY(JSON_MODIFY(N'{ }', N'$.Event', N'Ready'), N'$.When', CONVERT(nvarchar(20), SYSDATETIME(), 126))) AS Delivery,
+        ISJSON(CustomFields, OBJECT) AS IsObject
+    FROM dbo.Customer WHERE CustomerId = @Id;
+    SELECT t.[key], t.[value], t.[type] FROM dbo.Customer AS c CROSS APPLY OPENJSON(c.CustomFields) AS t WHERE c.CustomerId = @Id;
+END;
+GO

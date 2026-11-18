@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.6 — JSON (FOR JSON AUTO over joins with SQL Server's nesting and grouping, FOR JSON procedure results as one column, OPENJSON with and without WITH, JSON_MODIFY keeping member order, ISJSON with a type); 1 golden file and 20 both-engines cases. Corpus: 0 apply / copy / verify failures; 5 new WideWorldImporters agreement queries (the search procedures, OPENJSON and JSON_MODIFY over CustomFields), all at 100; WideWorldImporters Manual procedures 22 → 17. Agreement now compares JSON values parsed.
 - WP 4.5 — table-valued parameters (READONLY table-type parameters as composite arrays read through unnest in procedures and inline functions; DECLARE @t TableType as a table variable passed on as an array; S2P8003 guidance for application code); 1 golden file and a both-engines run called from T-SQL, from SqlClient DataTables and from Npgsql mapped-composite arrays. Corpus: 0 apply / copy / verify failures; WideWorldImporters Manual procedures 24 → 22 (InsertCustomerOrders and InvoiceCustomerOrders convert; RecordColdRoomTemperatures is natively compiled).
 - WP 4.4 — hierarchyid (mssql_compat helpers for GetLevel, GetAncestor, IsDescendantOf, GetDescendant, GetReparentedValue; depth-first hierarchyid_key for ORDER BY and comparisons; GetRoot, Parse, ToString; helper-calling computed columns STORED); 1 golden file and a both-engines grid of 23 cases (8 queries, 15 GetDescendant pairs). Corpus: 0 apply / copy / verify failures on all six databases; 4 new AdventureWorks agreement queries (both recursive manager procedures, the org chart in hierarchy order, the document tree), all at 100. AdventureWorks: Manual procedures 3 → 1, S2P3001 10 → 6.
 - WP 4.3 — xml methods (value, exist, query over XMLTABLE; nodes() in CROSS/OUTER APPLY; XQuery prolog namespaces and default element namespace to XPath 1.0 prefixes; modify() S2P3040, XQuery beyond XPath 1.0 S2P3041), plus CONVERT reading year-first strings under other date styles as SQL Server does; 1 golden file, 7 xml both-engines cases, 5 new CONVERT cases. Corpus: 0 apply / copy / verify failures on all six databases; 8 new AdventureWorks agreement queries over its XML views, all at 100; AdventureWorks views 20 converted, 0 Manual (was 8 Manual). AdventureWorks' S2P3001 left is hierarchyid (WP 4.4), CONTAINSTABLE (WP 4.7) and a UDF in a computed column.
@@ -447,3 +448,18 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
     the composite type; callers supply every value.
 - Established with PostgreSQL 18: a CALL argument may not be a subquery, so an array built
   with `ARRAY(SELECT …)` goes through a variable first.
+- WP 4.6 departs from the plan in these places:
+  - `JSON_MODIFY` is an mssql_compat helper over `json`, not `jsonb_set`. jsonb would reorder
+    members (by length, then name) and reformat numbers; SQL Server keeps both, and appends a new
+    member at the end.
+  - `OPENJSON … WITH` is one `json_array_elements` with a `#>` path per column, not
+    `jsonb_to_recordset`. A column of a scalar type is NULL when its path holds an object or
+    array, as in SQL Server.
+- Established with SQL Server 2022, for FOR JSON AUTO and JSON_MODIFY:
+  - FOR JSON AUTO nests tables in the order their first column appears in the select list. A
+    later column of an earlier table still goes to that table's level, and an expression joins
+    the level of the column before it.
+  - An unaliased table is keyed by its name as written (`dbo.City`).
+  - The deepest level keeps every row.
+  - A JSON_MODIFY result used directly as the new value goes in as JSON; the same text through a
+    variable goes in as a string.

@@ -261,9 +261,14 @@ public sealed partial class ExpressionTranslator
             case "JSON_QUERY":
                 Arity(1, 2);
                 return new PgCast(a.Count == 1 ? new PgCast(Arg(0), "json") : new PgBinary("#>", new PgCast(Arg(0), "json"), PgLiteral.String(JsonPath(a[1], f))), "text");
+            case "ISJSON" when a.Count == 2:
+                return IsJsonOfType(f, c);
             case "ISJSON":
                 Arity(1);
                 return Compat("isjson", [new PgCast(TextArg(0), "text")], c, f);
+            case "JSON_MODIFY":
+                Arity(3);
+                return JsonModify(f, c);
 
             // ---- hashing, random bytes, vectors (permitted extensions where core has none) ----
             case "HASHBYTES":

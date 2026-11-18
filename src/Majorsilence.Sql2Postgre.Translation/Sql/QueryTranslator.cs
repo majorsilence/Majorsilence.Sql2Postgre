@@ -252,6 +252,8 @@ public sealed partial class QueryTranslator
                     _names.Alias(f.Alias?.Value ?? f.SchemaObject.BaseIdentifier.Value), f.Columns.Select(col => _names.Alias(col.Value)).ToList());
             case GlobalFunctionTableReference g:
                 return BuiltinTableFunction(g, c);
+            case OpenJsonTableReference o:
+                return _x.OpenJson(o, c);
             case PivotedTableReference p:
                 return Pivot(p, outer);
             case UnpivotedTableReference u:

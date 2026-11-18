@@ -136,7 +136,9 @@ public class ResultAgreementTests
         return new AgreementResult(key, score, expected.Rows.Count, actual.Rows.Count, problem);
     }
 
-    private static string Row(IReadOnlyList<string> row) => string.Join('\u001f', row);
+    /// <summary>A row's values joined; a JSON object or array (FOR JSON, JSON_MODIFY) compactly, since the engines space JSON text differently.</summary>
+    private static string Row(IReadOnlyList<string> row) =>
+        string.Join('\u001f', row.Select(v => v.StartsWith('{') || v.StartsWith('[') ? BothEngines.CompactJson(v) : v));
 
     private static string Show(string? row) => row?.Replace('\u001f', '|') ?? "-";
 

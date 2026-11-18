@@ -399,6 +399,14 @@ public sealed partial class SemanticModel
                 scope.Bind(new Binding(f.Alias?.Value ?? f.SchemaObject.BaseIdentifier.Value,
                     new RelationInfo(routine?.Name, ObjectKind.Function, tvfColumns)));
                 break;
+            case OpenJsonTableReference o:
+                // OPENJSON's WITH columns, or key, value and type.
+                scope.Bind(new Binding(o.Alias?.Value ?? "openjson", new RelationInfo(null, ObjectKind.Function,
+                    o.SchemaDeclarationItems.Count > 0
+                        ? o.SchemaDeclarationItems.Select(i => new ColumnInfo(i.ColumnDefinition.ColumnIdentifier.Value,
+                            i.AsJson ? new SqlServerType("nvarchar", -1) : TypeOf(i.ColumnDefinition.DataType, contextSchema))).ToList()
+                        : [new ColumnInfo("key", new SqlServerType("nvarchar", 4000)), new ColumnInfo("value", new SqlServerType("nvarchar", -1)), new ColumnInfo("type", new SqlServerType("int"))])));
+                break;
             case GlobalFunctionTableReference g:
                 // STRING_SPLIT and GENERATE_SERIES return one column, value.
                 SqlServerType? valueType = g.Name.Value.Equals("STRING_SPLIT", StringComparison.OrdinalIgnoreCase)

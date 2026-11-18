@@ -40,7 +40,8 @@ public static class BothEngines
         });
     }
 
-    private static string CompactJson(string value)
+    /// <summary>JSON text parsed and written compactly (the engines space it differently); anything else as it is.</summary>
+    public static string CompactJson(string value)
     {
         if (value == CanonicalValue.Null)
             return value;

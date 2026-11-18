@@ -208,6 +208,9 @@ public sealed partial class ProceduralTranslator
     {
         try
         {
+            // FOR JSON returns one column of JSON text, whatever the select list.
+            if (select.QueryExpression is QuerySpecification { ForClause: JsonForClause })
+                return [new ColumnInfo(QueryTranslator.ForJsonColumn, new SqlServerType("nvarchar", -1))];
             var inner = scope.Child();
             _model.DefineCtes(select.WithCtesAndXmlNamespaces, inner, schema);
             return _model.OutputColumns(select.QueryExpression, inner, schema);

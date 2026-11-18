@@ -338,8 +338,26 @@ Stage 3 translates.
 
 ### S2P3007 JsonPathUnsupported (Error)
 
-`JSON_VALUE`/`JSON_QUERY` with a path that is not a simple literal `$.a.b[2]` path (a `strict`
-path, a wildcard, or a variable). Rewrite with PostgreSQL's `jsonb_path_query`.
+`JSON_VALUE`, `JSON_QUERY`, `JSON_MODIFY` or `OPENJSON` with a path that is not a simple literal
+`$.a.b[2]` path: a `strict` path (other than in `JSON_MODIFY`), a wildcard, or a variable. Rewrite
+it with PostgreSQL's `jsonb_path_query`.
+
+Translated forms, all over `json` rather than `jsonb`, so a document keeps its member order and
+number forms as SQL Server does:
+
+- `JSON_MODIFY` is the `mssql_compat.json_modify` helper:
+  - `lax` (the default) or `strict`, and `append`;
+  - in lax mode a NULL removes an object member (an array element becomes null), and a missing
+    member is added last;
+  - a missing array is created for `append`; a missing parent or index changes nothing;
+  - a value from `JSON_MODIFY`, `JSON_QUERY` or `FOR JSON` goes in as JSON, anything else as its
+    JSON form (a string as a string).
+- `OPENJSON` without `WITH` gives `key`, `value` and `type` in document order (the
+  `mssql_compat.openjson` helper).
+- `OPENJSON … WITH` gives one row per array element (an object is one row). Each column is read
+  by its path (`$.column` when none): a scalar converted to the column's type, NULL for an object
+  or array; under `AS JSON`, the object or array as text.
+- `ISJSON(x, VALUE | ARRAY | OBJECT | SCALAR)`.
 
 ### S2P3008 HashEncodingDiffers (Warning)
 
@@ -465,10 +483,21 @@ subquery (`WHERE id IN (SELECT id … LIMIT n)`).
 
 ### S2P4011 ForJsonUnsupported (Error)
 
-`FOR JSON AUTO` over joined tables (it nests by table), over `SELECT *`, or with an unnamed
-column. `FOR JSON PATH` (dotted names, `ROOT`, `INCLUDE_NULL_VALUES`, `WITHOUT_ARRAY_WRAPPER`) and
-`AUTO` over one table are translated; the JSON text is spaced differently (`{"a" : 1}`), the
-same JSON.
+`FOR JSON` over `SELECT *`, or with an unnamed column. The rest is translated, with the JSON text
+spaced differently (`{"a" : 1}`) but the same JSON:
+
+- `FOR JSON PATH`: dotted names, `ROOT`, `INCLUDE_NULL_VALUES` and `WITHOUT_ARRAY_WRAPPER`.
+- `AUTO` over one table.
+- `AUTO` over joined tables, nested as SQL Server nests them:
+  - one level per table, in the order its first column appears in the select list, under the
+    table's alias (its name as written when it has none);
+  - a column at its table's level wherever it stands, and an expression at the level of the
+    column before it;
+  - rows grouped into one parent while the parent's columns stay the same from row to row, in
+    the query's order;
+  - an outer join with no match is `[{}]`.
+
+A procedure's FOR JSON result is one text column, as in SQL Server.
 
 ### S2P4012 ViewOrderIgnored (Info)
 
