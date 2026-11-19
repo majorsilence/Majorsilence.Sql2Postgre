@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Remaining DML forms** (WP 4.13):
+  - `UPDATE TOP (n)` and `DELETE TOP (n)` pick the rows by ctid in a key query with `LIMIT n`
+    (S2P4009 is Info).
+  - `UPDATE`/`DELETE` whose target is inside an outer join pick the rows by ctid from the whole
+    `FROM` clause (S2P4008 is Info; an Error when `SET` reads the joined tables). An unaliased
+    target inside a join is now recognised as one.
+  - `FOR XML RAW`, `AUTO` (one table) and `PATH` build XML with `xmlelement`, `xmlattributes`,
+    `xmlforest` and `xmlagg`, with `ELEMENTS`, `ROOT` and `TYPE`. `FOR XML PATH` without a name
+    is `PATH('row')`, not the `PATH('')` concatenation.
 - **Error context through calls** (WP 4.12): a CATCH block that calls a procedure, dynamic SQL
   or a function publishes its error in `sql2pg.error_*` session settings (again after a COMMIT or
   ROLLBACK in it) and clears them when it is done; `ERROR_*()` outside a CATCH block reads them,

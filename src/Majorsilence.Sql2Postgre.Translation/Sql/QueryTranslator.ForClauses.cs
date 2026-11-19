@@ -16,10 +16,13 @@ public sealed partial class QueryTranslator
     private PgQuery ForXmlQuery(QuerySpecification spec, ExpressionContext c)
     {
         var options = ((XmlForClause)spec.ForClause).Options;
-        bool isPathEmpty = options.Any(o => o.OptionKind == XmlForClauseOptions.Path && (o.Value is null || o.Value is StringLiteral { Value: "" }));
+        // PATH('') concatenates; PATH with no name is PATH('row').
+        bool isPathEmpty = options.Any(o => o.OptionKind == XmlForClauseOptions.Path && o.Value is StringLiteral { Value: "" });
         bool type = options.Any(o => o.OptionKind == XmlForClauseOptions.Type);
-        if (!isPathEmpty || options.Any(o => o.OptionKind is not (XmlForClauseOptions.Path or XmlForClauseOptions.Type)))
-            throw ExpressionTranslator.Untranslatable(spec, "FOR XML other than PATH('') concatenation", DiagnosticCodes.ForXmlUnsupported);
+        bool concatenation = isPathEmpty && !options.Any(o => o.OptionKind is not (XmlForClauseOptions.Path or XmlForClauseOptions.Type))
+            && spec.SelectElements.All(e => e is SelectScalarExpression { ColumnName: null } or SelectScalarExpression { ColumnName.Value: "text()" or "data()" });
+        if (!concatenation)
+            return ForXmlElements(spec, options, c);
         return new PgSelect { Targets = [new PgTarget(ConcatenatedRows(spec, c, entitize: !type))] };
     }
 

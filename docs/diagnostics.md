@@ -604,21 +604,38 @@ accept explicit values. Afterwards the identity's sequence must be moved past th
 `UPDATE … SET @v = column = expression` assigns a variable row by row in an order SQL Server does
 not guarantee. Rewrite it with a window function.
 
-### S2P4008 UpdateFromOuterJoin (Error)
+### S2P4008 UpdateFromOuterJoin (Info or Error)
 
 The table an `UPDATE` or `DELETE` changes sits inside an outer join of its `FROM` clause.
-PostgreSQL names the target outside `FROM`, so only inner and cross joins can be rearranged.
-Rewrite the outer join as a subquery in `WHERE`.
+PostgreSQL names the target outside `FROM`, so the rows are picked by their `ctid` from the whole
+`FROM` clause first: `WHERE t.ctid IN (SELECT t.ctid FROM t LEFT JOIN … WHERE …)` (Info).
 
-### S2P4009 DmlTop (Error)
+It is an Error when the `UPDATE`'s `SET` reads the other tables of the join: the key query alone
+cannot give their values. Join them in a CTE that the `UPDATE` reads instead.
 
-`UPDATE`/`DELETE`/`INSERT`/`MERGE` with `TOP (n)` change an arbitrary n rows. Rewrite with a key
-subquery (`WHERE id IN (SELECT id … LIMIT n)`).
+### S2P4009 DmlTop (Info or Error)
+
+`UPDATE` and `DELETE` with `TOP (n)` change an arbitrary n rows, in SQL Server and after
+conversion alike: the rows are picked by a key query, `WHERE t.ctid IN (SELECT t.ctid … LIMIT
+n)` (Info). To choose which rows, pick them in a CTE with `ORDER BY`.
+
+It is an Error for `TOP … PERCENT` and `WITH TIES` in `UPDATE`/`DELETE`, and for `INSERT TOP` and
+`MERGE TOP`.
 
 ### S2P4010 ForXmlUnsupported (Error)
 
-`FOR XML` that builds XML (`RAW`, `AUTO`, `EXPLICIT`, or `PATH` with named elements). Only the
-`FOR XML PATH('')` string-concatenation idiom is translated (to `string_agg`).
+`FOR XML` that is not translated. What is translated:
+
+- **`PATH('')` concatenation** becomes `string_agg`.
+- **`RAW`, `AUTO` over one table, and `PATH`** become one `xmlelement` per row, joined with
+  `xmlagg` in the query's order:
+  - RAW and AUTO write the columns as attributes, or as elements with `ELEMENTS`;
+  - PATH writes elements, `@name` columns as attributes, and `text()` or unnamed columns as text;
+  - NULL columns are left out, a bit is 1 or 0, `ROOT` wraps the rows, and the result is text
+    unless `TYPE`.
+
+What gets this code: `EXPLICIT`, `AUTO` over a join (it nests the tables), `PATH` names with `/`,
+`ELEMENTS XSINIL`, `XMLDATA`/`XMLSCHEMA`, and an unnamed column in RAW or AUTO.
 
 ### S2P4011 ForJsonUnsupported (Error)
 

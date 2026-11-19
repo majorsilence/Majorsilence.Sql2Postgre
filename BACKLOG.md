@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.13 — remaining DML forms (UPDATE/DELETE TOP (n) and outer-join targets through ctid key queries; FOR XML RAW, AUTO over one table and PATH as xmlelement/xmlagg); 3 golden files changed or added and 24 both-engines cases (11 DML, 13 FOR XML). Corpus: 0 apply / copy / verify failures and no S2P9001; no count changed (the corpus has none of these forms outside dynamic SQL).
 - WP 4.12 — error context through calls (CATCH blocks that call code publish ERROR_NUMBER/MESSAGE/PROCEDURE in sql2pg.error_* settings, republished after COMMIT/ROLLBACK, cleared at the end; ERROR_*() outside CATCH reads them); 1 golden file and 5 both-engines cases of a logging procedure called from CATCH (THROW, divide by zero, RAISERROR, ROLLBACK before logging, no error). Corpus: 0 apply / copy / verify failures and no S2P9001; AdventureWorks' 13 S2P5043 Warnings are Info, and uspLogError is Converted (was ConvertedWithWarnings).
 - WP 4.11 — connection strings in configuration files (appsettings*.json with comments, web.config/app.config connectionStrings and appSettings, providerName; database projects left alone; S2P8051, S2P8052); 3 golden files and 2 unit tests (no secret in a diagnostic; folder discovery).
 - WP 4.10 — catalog queries (sys.objects/tables/views/procedures/sequences/schemas/columns and INFORMATION_SCHEMA TABLES/VIEWS/COLUMNS/ROUTINES/SCHEMATA as mssql_compat views under SQL Server names, over a converter-filled table of SQL Server and PostgreSQL names; OBJECT_ID, OBJECT_NAME, SCHEMA_NAME, SCHEMA_ID, COL_LENGTH, COLUMNPROPERTY, OBJECTPROPERTY, DB_ID, DB_NAME, IS_ROLEMEMBER, SERVERPROPERTY; S2P3043, S2P3044); 1 golden file and 21 both-engines cases. Corpus: 0 apply / copy / verify failures and no S2P9001. S2P3001: WideWorldImporters 30 → 3, WideWorldImportersDW 4 → 0. S2P3043 (catalog views not answered: sys.indexes, partitions, audits, principals): 25 and 6. S2P5060 rose (WideWorldImporters 48 → 99, WideWorldImportersDW 0 → 26) because the configuration procedures now translate past their catalog checks to the dynamic DDL they run; Manual counts are unchanged.
@@ -595,3 +596,15 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - Established with SQL Server 2022: ERROR_PROCEDURE() in a procedure called from a CATCH block is
   the schema-qualified name of the procedure whose error is handled (dbo.Work), and ERROR_*() is
   NULL there again once the CATCH block has finished.
+- WP 4.13 departs from the plan in these places:
+  - The key is the row's ctid, not its primary key, so tables without one work too. ctid is
+    unique per table and stable within a statement (a partitioned table repeats it across
+    partitions; such a target is not handled specially).
+  - An UPDATE whose target is in an outer join and whose SET reads the joined tables stays
+    S2P4008 (Error).
+  - PIVOT/UNPIVOT forms the translator does not take yet are unchanged: none were left in the
+    corpus or the BACKLOG notes to measure against.
+  - FOR XML AUTO over joins (nested elements), EXPLICIT and PATH names with `/` are not done.
+- Established with SQL Server 2022, for FOR XML: `PATH` with no name is `PATH('row')`; NULL
+  columns are left out in RAW, AUTO and PATH (as PostgreSQL's xmlattributes and xmlforest do); a
+  bit is written 1 or 0; a FOR XML query with no rows returns NULL, also with ROOT.

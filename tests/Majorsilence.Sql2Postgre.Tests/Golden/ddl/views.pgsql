@@ -73,7 +73,7 @@ LIMIT 3;
 
 -- sql2pg:object View public.v_untranslatable status=Manual
 /* sql2pg:untranslated S2P4010
-CREATE VIEW dbo.v_untranslatable AS SELECT id FROM dbo.item FOR XML RAW;
+CREATE VIEW dbo.v_untranslatable AS SELECT 1 AS Tag, NULL AS Parent, id AS [i!1!id] FROM dbo.item FOR XML EXPLICIT;
 */
 
 -- sql2pg:object View public.v_uses_blocked status=Manual

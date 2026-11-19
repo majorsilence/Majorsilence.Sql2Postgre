@@ -312,20 +312,20 @@ public sealed partial class QueryTranslator
 
     private static bool ContainsTarget(TSqlFragment from, string name)
     {
-        var finder = new NameFinder(name);
-        from.Accept(finder);
         var aliasFinder = new AliasFinder(name);
         from.Accept(aliasFinder);
-        return finder.Found || aliasFinder.Found;
+        return aliasFinder.Found;
     }
 
+    /// <summary>A table under this alias, or unaliased under this name (<c>Item</c>, <c>dbo.Item</c>).</summary>
     private sealed class AliasFinder(string alias) : TSqlFragmentVisitor
     {
         public bool Found { get; private set; }
 
         public override void Visit(NamedTableReference node)
         {
-            if (string.Equals(node.Alias?.Value, alias, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(node.Alias?.Value, alias, StringComparison.OrdinalIgnoreCase)
+                || node.Alias is null && string.Equals(node.SchemaObject.BaseIdentifier.Value, alias, StringComparison.OrdinalIgnoreCase))
                 Found = true;
         }
     }
@@ -341,20 +341,23 @@ public sealed partial class QueryTranslator
     private PgStatement Update(UpdateStatement statement, ExpressionContext c)
     {
         var spec = statement.UpdateSpecification;
-        if (spec.TopRowFilter is not null)
-            throw ExpressionTranslator.Untranslatable(spec.TopRowFilter, "UPDATE TOP (n)", DiagnosticCodes.DmlTop);
         var ctes = Ctes(statement.WithCtesAndXmlNamespaces, c, out var cteScope);
         var cc = c.With(cteScope);
         var target = TargetOf(spec.Target, cc);
         // UPDATE alias SET … FROM table alias: the written target may be an alias defined in FROM.
         if (spec.FromClause is not null && target.Source is { } written && _model.Relation(written) is null)
             target = ResolveAliasTarget(spec.Target, spec.FromClause, cc) ?? target;
+        if (spec.FromClause is { } outerFrom && IsOuterJoinTarget(target, outerFrom))
+            return OuterJoinUpdate(spec, target, outerFrom, ctes, cc);
         var (alias, from, joins, scope) = TargetAndFrom(target, spec.FromClause, cc);
         var uc = cc.With(scope);
         var set = spec.SetClauses.Select(s => Assignment(s, target, uc)).ToList();
+        var condition = spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, uc) : null;
         var where = spec.WhereClause?.Cursor is { } cursor
             ? CurrentOfCursor(spec.WhereClause, cursor, joins)
-            : And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, uc) : null]);
+            : spec.TopRowFilter is { } top
+                ? And([joins, TopRows(top, target, alias, from, And([joins, condition]), uc, "UPDATE")])
+                : And([joins, condition]);
         return OutputInto(new PgUpdate(target.Name, alias, set)
         {
             With = ctes, From = from, Where = where,
@@ -415,23 +418,135 @@ public sealed partial class QueryTranslator
     private PgStatement Delete(DeleteStatement statement, ExpressionContext c)
     {
         var spec = statement.DeleteSpecification;
-        if (spec.TopRowFilter is not null)
-            throw ExpressionTranslator.Untranslatable(spec.TopRowFilter, "DELETE TOP (n)", DiagnosticCodes.DmlTop);
         var ctes = Ctes(statement.WithCtesAndXmlNamespaces, c, out var cteScope);
         var cc = c.With(cteScope);
         var target = TargetOf(spec.Target, cc);
         if (spec.FromClause is not null && target.Source is { } written && _model.Relation(written) is null)
             target = ResolveAliasTarget(spec.Target, spec.FromClause, cc) ?? target;
+        if (spec.FromClause is { } outerFrom && IsOuterJoinTarget(target, outerFrom))
+        {
+            var (keyAlias, keys, kc) = OuterJoinKeys(target, outerFrom, spec.WhereClause, spec.TopRowFilter, cc, "DELETE");
+            return OutputInto(new PgDelete(target.Name, keyAlias)
+            {
+                With = ctes, Where = keys,
+                Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, kc, kc.Scope),
+            }, spec.OutputIntoClause, cc);
+        }
         var (alias, from, joins, scope) = TargetAndFrom(target, spec.FromClause, cc);
         var dc = cc.With(scope);
+        var condition = spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, dc) : null;
         return OutputInto(new PgDelete(target.Name, alias)
         {
             With = ctes, Using = from,
             Where = spec.WhereClause?.Cursor is { } cursor
                 ? CurrentOfCursor(spec.WhereClause, cursor, joins)
-                : And([joins, spec.WhereClause?.SearchCondition is { } w ? _x.Boolean(w, dc) : null]),
+                : spec.TopRowFilter is { } top
+                    ? And([joins, TopRows(top, target, alias, from, And([joins, condition]), dc, "DELETE")])
+                    : And([joins, condition]),
             Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, dc, scope),
         }, spec.OutputIntoClause, cc);
+    }
+
+    // ---- TOP and outer-join targets: the rows picked by their ctid ----
+
+    /// <summary>
+    /// UPDATE/DELETE TOP (n): <c>ctid IN (SELECT ctid … LIMIT n)</c>, the rows picked first and then
+    /// changed. SQL Server changes any n qualifying rows, so which n is arbitrary in both engines.
+    /// </summary>
+    private PgExpr TopRows(TopRowFilter top, DmlTarget target, string? alias, IReadOnlyList<PgFromItem> from, PgExpr? where, ExpressionContext c, string what)
+    {
+        if (top.Percent || top.WithTies)
+            throw ExpressionTranslator.Untranslatable(top, $"{what} TOP … {(top.Percent ? "PERCENT" : "WITH TIES")}", DiagnosticCodes.DmlTop);
+        c.Report(DiagnosticCodes.DmlTop, Severity.Info,
+            $"{what} TOP (n) changes the first n rows a key query picks (by ctid): as in SQL Server, which n rows is not defined. Add ORDER BY to a CTE to choose them.");
+        string qualifier = alias ?? target.Name.Name;
+        var keys = new PgSelect
+        {
+            Targets = [new PgTarget(new PgColumnRef("ctid", qualifier))],
+            From = [new PgTableRef(target.Name, alias), .. from],
+            Where = where,
+            Limit = _x.Scalar(top.Expression, c),
+        };
+        return new PgInSubquery(new PgColumnRef("ctid", qualifier), keys);
+    }
+
+    /// <summary>Whether the UPDATE/DELETE target is one side of an outer join in FROM.</summary>
+    private static bool IsOuterJoinTarget(DmlTarget target, FromClause from)
+    {
+        string written = target.Alias ?? target.Source?.Name ?? target.Name.Name;
+        var leaves = new List<TableReference>();
+        var conditions = new List<BooleanExpression>();
+        foreach (var r in from.TableReferences)
+            Flatten(r, leaves, conditions);
+        return !leaves.Any(l => l is NamedTableReference n
+                   && (string.Equals(n.Alias?.Value, written, StringComparison.OrdinalIgnoreCase)
+                       || (n.Alias is null && string.Equals(n.SchemaObject.BaseIdentifier.Value, written, StringComparison.OrdinalIgnoreCase))))
+               && ContainsTarget(from, written);
+    }
+
+    /// <summary>
+    /// The target inside an outer join: the rows to change are picked by ctid from the whole FROM
+    /// clause, <c>ctid IN (SELECT target.ctid FROM … LEFT JOIN … WHERE …)</c>. Returns the target's
+    /// alias, that condition, and a context where only the target is visible (for SET and OUTPUT).
+    /// </summary>
+    private (string Alias, PgExpr Keys, ExpressionContext TargetOnly) OuterJoinKeys(DmlTarget target, FromClause from, WhereClause? where,
+        TopRowFilter? top, ExpressionContext c, string what)
+    {
+        if (where?.Cursor is not null)
+            throw ExpressionTranslator.Untranslatable(where, $"{what} … WHERE CURRENT OF with the target inside an outer join", DiagnosticCodes.UpdateFromOuterJoin);
+        var scope = c.Scope.Child();
+        foreach (var r in from.TableReferences)
+            _model.BindTableReference(r, scope, c.Schema);
+        var fc = c.With(scope);
+        string written = target.Alias ?? target.Source?.Name ?? target.Name.Name;
+        string alias = _names.Alias(written);
+        var keys = new PgSelect
+        {
+            Targets = [new PgTarget(new PgColumnRef("ctid", alias))],
+            From = from.TableReferences.Select(r => FromItem(r, fc, c)).ToList(),
+            Where = where?.SearchCondition is { } w ? _x.Boolean(w, fc) : null,
+            Limit = top is null ? null : _x.Scalar(top.Expression, fc),
+        };
+        if (top is { Percent: true } or { WithTies: true })
+            throw ExpressionTranslator.Untranslatable(top, $"{what} TOP … PERCENT", DiagnosticCodes.DmlTop);
+        c.Report(DiagnosticCodes.UpdateFromOuterJoin, Severity.Info,
+            $"The {what} target is inside an outer join: the rows to change are picked by ctid from the whole FROM clause, then changed.");
+        var targetOnly = c.Scope.Child();
+        targetOnly.Bind(new Binding(written, target.Relation));
+        return (alias, new PgInSubquery(new PgColumnRef("ctid", alias), keys), c.With(targetOnly));
+    }
+
+    /// <summary>UPDATE with its target inside an outer join, when SET reads only the target's own columns.</summary>
+    private PgStatement OuterJoinUpdate(UpdateSpecification spec, DmlTarget target, FromClause from, IReadOnlyList<PgCte> ctes, ExpressionContext c)
+    {
+        var (alias, keys, tc) = OuterJoinKeys(target, from, spec.WhereClause, spec.TopRowFilter, c, "UPDATE");
+        var finder = new ColumnFinder();
+        foreach (var s in spec.SetClauses)
+            s.Accept(finder);
+        if (finder.Columns.Any(col => tc.Scope.ResolveColumn(col.MultiPartIdentifier.Identifiers.Select(i => i.Value).ToList()) is null))
+            throw ExpressionTranslator.Untranslatable(from, "UPDATE whose target is inside an outer join and whose SET reads the other tables", DiagnosticCodes.UpdateFromOuterJoin);
+        var set = spec.SetClauses.Select(s => Assignment(s, target, tc)).ToList();
+        return OutputInto(new PgUpdate(target.Name, alias, set)
+        {
+            With = ctes, Where = keys,
+            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, tc, tc.Scope),
+        }, spec.OutputIntoClause, c);
+    }
+
+    private sealed class ColumnFinder : TSqlFragmentVisitor
+    {
+        public List<ColumnReferenceExpression> Columns { get; } = [];
+
+        public override void Visit(ColumnReferenceExpression node)
+        {
+            if (node.ColumnType == ColumnType.Regular && node.MultiPartIdentifier is not null)
+                Columns.Add(node);
+        }
+
+        // A subquery has its own FROM; its columns are not the SET's.
+        public override void ExplicitVisit(ScalarSubquery node)
+        {
+        }
     }
 
     // ---- MERGE ----

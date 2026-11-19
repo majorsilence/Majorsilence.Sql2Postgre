@@ -145,7 +145,7 @@ public class ScriptTranslatorTests
     [Test]
     public void UntranslatableStatementIsKeptAndTheRestTranslated()
     {
-        var r = T("SELECT name FROM shop.customer FOR XML RAW;\nSELECT 1 AS one;");
+        var r = T("SELECT 1 AS Tag, NULL AS Parent, name AS [c!1!name] FROM shop.customer FOR XML EXPLICIT;\nSELECT 1 AS one;");
         Assert.Multiple(() =>
         {
             Assert.That(r.Sql, Does.StartWith("/* sql2pg:untranslated S2P4010\n"));
