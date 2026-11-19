@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **char semantics** (WP 4.9):
+  - A char(n) value keeps its trailing spaces where SQL Server makes it a string: a varchar
+    CASE/IIF/COALESCE/ISNULL branch, `+`, CAST/CONVERT to varchar or text, and the string
+    functions (UPPER, LOWER, LEFT, RIGHT, SUBSTRING, REPLACE, LTRIM, REVERSE, REPLICATE, CHARINDEX,
+    STRING_AGG). It becomes `rpad(x, n)`, which comparisons drop again, since both engines compare
+    without trailing spaces.
+  - CASE, COALESCE and IIF over strings are typed as SQL Server types them: Unicode if any branch
+    is, varying if any branch is, and the longest length (`'ALL'` beside char(12) is varchar(12),
+    not varchar(3)).
+  - LIKE on char with a non-Unicode pattern leaves off the value's trailing spaces as SQL Server
+    does: as text, as it is, or through the new `mssql_compat.char_like`, depending on how the
+    pattern ends. A char pattern keeps its padding.
+  - pubs' `reptq3` agreement query is at 100 (was 50).
 - **Spatial methods with PostGIS** (WP 4.8, with `postgis` enabled):
   - geography and geometry methods and properties become `ST_*` functions: distance, the
     predicates, area, length (a polygon's perimeter), buffer (`quad_segs=32`), the WKT/WKB output,

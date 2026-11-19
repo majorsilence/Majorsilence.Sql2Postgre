@@ -79,8 +79,18 @@ public static class TypeRules
         var wider = Wider(a, b);
         if (wider is null)
             return null;
-        if (IsString(a) && IsString(b) && Rank(a!.Name) == Rank(b!.Name))
-            return wider with { Length = a.IsMax || b.IsMax ? -1 : Math.Max(a.Length ?? 1, b.Length ?? 1), UserTypeName = null };
+        // Two strings: Unicode if either is, varying if either is, with the longer length. So
+        // CASE … THEN 'ALL' ELSE char12 END is varchar(12) and nchar(5) with varchar(10) is
+        // nvarchar(10), as SQL Server makes them (text and ntext keep their precedence).
+        if (IsString(a) && IsString(b))
+        {
+            int length = a!.IsMax || b!.IsMax ? -1 : Math.Max(a.Length ?? 1, b.Length ?? 1);
+            if (wider.Name is "text" or "ntext")
+                return wider with { Length = length, UserTypeName = null };
+            bool unicode = IsUnicode(a) || IsUnicode(b);
+            bool fixedLength = a.Name is "char" or "nchar" && b!.Name is "char" or "nchar";
+            return new SqlServerType((unicode ? "n" : "") + (fixedLength ? "char" : "varchar"), length);
+        }
         return Arithmetic(a, b);
     }
 

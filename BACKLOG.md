@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.9 — char semantics (char values padded with rpad where SQL Server makes them strings, padding dropped again in comparisons; CASE/COALESCE/IIF string typing by SQL Server's rules; non-Unicode LIKE on char through mssql_compat.char_like); 1 golden file and 70 both-engines cases. Corpus: 0 apply / copy / verify failures and no S2P9001; pubs/32-proc-reptq3 at 100 (was 50).
 - WP 4.8 — spatial methods with PostGIS (geography and geometry methods and properties as ST_* functions with postgis enabled, constructors, spatial_text for SQL Server's WKT; S2P3031; fixes to the PostGIS data copy and verify, and to spatial/xml index columns in the catalog reader); 2 golden files and a both-engines grid of 23 queries over points, lines and polygons on postgis/postgis:18-3.6, migrated, copied and verified first. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; with postgis, AdventureWorks, WideWorldImporters and WideWorldImportersDW also migrate with 0 failures (14 geography columns as PostGIS types, 6.4 million rows copied and verified as EWKB). The corpus has no spatial method outside dynamic SQL.
 - WP 4.7 — full-text search (full-text indexes as GIN indexes of one to_tsvector expression per column in its language; CONTAINS and FREETEXT per column through the contains_query and freetext_query helpers; CONTAINSTABLE and FREETEXTTABLE as key/rank derived tables with top_n; LANGUAGE through fulltext_config; SERVERPROPERTY('LCID'); S2P2021, S2P3042; bit parameter defaults as booleans); 1 golden file and 46 both-engines cases on a SQL Server image with Full-Text Search, including that PostgreSQL uses the index. Corpus: 0 apply / copy / verify failures and no S2P9001 on all six databases; AdventureWorks' 3 full-text indexes created (Production.Document's without its varbinary documents, S2P2021), Manual procedures 1 → 0 (uspSearchCandidateResumes converts), S2P3001 6 → 1 (the UDF in a computed column).
 - WP 4.6 — JSON (FOR JSON AUTO over joins with SQL Server's nesting and grouping, FOR JSON procedure results as one column, OPENJSON with and without WITH, JSON_MODIFY keeping member order, ISJSON with a type); 1 golden file and 20 both-engines cases. Corpus: 0 apply / copy / verify failures; 5 new WideWorldImporters agreement queries (the search procedures, OPENJSON and JSON_MODIFY over CustomFields), all at 100; WideWorldImporters Manual procedures 22 → 17. Agreement now compares JSON values parsed.
@@ -539,3 +540,26 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
     writes such values (within 1e-10 of ±180/±90) as the limit, so they verify.
   - PostGIS stores SRID 0 without the EWKB SRID flag; `ST_AsEWKB` has no geography form.
   - SQL Server returns NULL for a method on values with different SRIDs; PostGIS raises an error.
+- WP 4.9 departs from the plan in these places:
+  - The padding is `rpad(x, n)`, not `rpad(x::text, n)` (rpad takes text, and bpchar converts).
+    Comparisons drop it at the end of an operand, and through UPPER, LOWER, LTRIM, LEFT and
+    SUBSTRING, whose results end where their input does. Where padding stays inside an operand
+    (RIGHT, REPLACE, REVERSE), both sides are compared with rtrim, as SQL Server compares.
+  - Not done: a char value assigned to a varchar variable, parameter or column, a UNION of char
+    and varchar, and ISNULL(char(3), 'longer') (SQL Server truncates to the first argument's
+    length) still lose or keep the wrong padding. Non-Unicode LIKE on varchar values with trailing
+    spaces is not changed either.
+- Established with SQL Server 2022, for char values:
+  - A char(n) value keeps its trailing spaces wherever it becomes a string: CASE/IIF/COALESCE with
+    a varchar branch, `+`, CAST/CONVERT to varchar, UPPER, LEFT, RIGHT, SUBSTRING, REPLACE, LTRIM,
+    CONCAT, STRING_AGG, assignment to a varchar variable, UNION with varchar. `=` and LEN ignore
+    them; DATALENGTH counts them.
+  - Strings of different types combine to the Unicode type if any is Unicode, the varying type if
+    any is varying, and the longest length (nchar(5) with varchar(10) is nvarchar(10)).
+  - Non-Unicode LIKE lets the value's trailing spaces be left off, any number of them, for char
+    and varchar ('ab    ' matches 'ab', 'ab_', '______', not '_______'). Unicode LIKE (nchar,
+    nvarchar, or an N'' pattern) counts them, as PostgreSQL's LIKE on bpchar does. A pattern's own
+    trailing spaces always count.
+  - SQL_VARIANT_PROPERTY of `CASE WHEN 1 = 1 …` reports the folded branch's type, not the CASE's.
+- Established with PostgreSQL 18: bpchar keeps its padding on output, in LIKE and in concat(),
+  and drops it when it becomes text (`||`, casts, string functions).

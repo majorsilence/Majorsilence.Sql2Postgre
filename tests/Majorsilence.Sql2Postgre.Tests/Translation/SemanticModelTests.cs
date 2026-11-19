@@ -97,7 +97,8 @@ public class SemanticModelTests
     public void CaseBranchesCombine()
     {
         var cols = Columns(Shop(), "SELECT CASE WHEN 1 = 1 THEN 'ab' ELSE 'abcdef' END AS s, CASE WHEN 1 = 1 THEN N'a' ELSE 'abc' END AS u, CASE WHEN 1 = 1 THEN 1.5 ELSE 2.25 END AS d FROM shop.product");
-        Assert.That(cols.Select(T), Is.EqualTo(new[] { "varchar(6)", "nvarchar(1)", "decimal" }));
+        // Strings of different types: the higher precedence type with the longer length (the result holds 'abc').
+        Assert.That(cols.Select(T), Is.EqualTo(new[] { "varchar(6)", "nvarchar(3)", "decimal" }));
     }
 
     [Test]

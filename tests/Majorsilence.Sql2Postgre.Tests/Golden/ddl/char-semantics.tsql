@@ -1,0 +1,18 @@
+CREATE TABLE dbo.Title (TitleId char(6) NOT NULL PRIMARY KEY, Type char(12) NOT NULL, PubId char(4) NULL, Code nchar(5) NULL, Note varchar(20) NULL);
+GO
+CREATE VIEW dbo.TitleLabels AS
+SELECT TitleId,
+    CASE WHEN PubId IS NULL THEN 'ALL' ELSE PubId END AS Pub,
+    ISNULL(Note, Type) AS NoteOrType,
+    Type + '/' + TitleId AS Path,
+    CAST(Type AS varchar(20)) AS TypeText,
+    UPPER(Type) AS UpperType,
+    LEFT(Type, 3) AS Prefix,
+    LEN(Type) AS TypeLength
+FROM dbo.Title
+WHERE Type = 'business' OR Type + '' = 'mod_cook' OR CASE WHEN PubId IS NULL THEN 'ALL' ELSE PubId END IN ('ALL', '0877');
+GO
+CREATE PROCEDURE dbo.Find @pattern varchar(20) AS
+    SELECT TitleId FROM dbo.Title
+    WHERE Type LIKE 'bus%' OR Type LIKE '%cook' OR Type LIKE 'trad_' OR Type LIKE @pattern OR Code LIKE N'%y';
+GO

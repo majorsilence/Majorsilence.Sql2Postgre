@@ -60,8 +60,8 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             TryConvertCall tc when tc.Style is null => TryCast(tc.Parameter, tc.DataType, c),
             ParameterlessCall p => Parameterless(p),
             FunctionCall f => Function(f, c),
-            LeftFunctionCall l => new PgFunctionCall("left", [Text(l.Parameters[0], c), Scalar(l.Parameters[1], c)]),
-            RightFunctionCall r => new PgFunctionCall("right", [Text(r.Parameters[0], c), Scalar(r.Parameters[1], c)]),
+            LeftFunctionCall l => new PgFunctionCall("left", [PaddedText(l.Parameters[0], c), Scalar(l.Parameters[1], c)]),
+            RightFunctionCall r => new PgFunctionCall("right", [PaddedText(r.Parameters[0], c), Scalar(r.Parameters[1], c)]),
             NextValueForExpression n => NextValue(n, c),
             ScalarSubquery sq when Subquery is not null => Subquery(sq.QueryExpression, c),
             UserDefinedTypePropertyAccess p when model.SpatialProperty(p, c.Scope, c.Schema) is { } property => SpatialProperty(property, p, c),
@@ -77,7 +77,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         BooleanNotExpression n => new PgUnary("NOT", Boolean(n.Expression, c)),
         BooleanComparisonExpression cmp => Comparison(cmp, c),
         BooleanIsNullExpression isNull => new PgIsNull(Scalar(isNull.Expression, c), isNull.IsNot),
-        InPredicate { Subquery: null } inList => new PgInList(Scalar(inList.Expression, c),
+        InPredicate { Subquery: null } inList => new PgInList(Unpadded(Scalar(inList.Expression, c)),
             inList.Values.Select(v => Compared(v, inList.Expression, c)).ToList(), inList.NotDefined),
         BooleanTernaryExpression t when t.TernaryExpressionType is BooleanTernaryExpressionType.Between or BooleanTernaryExpressionType.NotBetween =>
             new PgBetween(Compared(t.FirstExpression, t.SecondExpression, c), Compared(t.SecondExpression, t.FirstExpression, c),
@@ -208,7 +208,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
                 return new PgBinary("+", ls ? ToType(b.FirstExpression, rt!, c) : Scalar(b.FirstExpression, c),
                     rs ? ToType(b.SecondExpression, lt!, c) : Scalar(b.SecondExpression, c));
             if (ls || rs)
-                return new PgBinary("||", Scalar(b.FirstExpression, c), Scalar(b.SecondExpression, c));
+                return new PgBinary("||", Padded(b.FirstExpression, Scalar(b.FirstExpression, c), c), Padded(b.SecondExpression, Scalar(b.SecondExpression, c), c));
             // A date or datetime plus a number adds days in SQL Server.
             if (TypeRules.IsDateTime(lt) && rn)
                 return DatePlusDays(Scalar(b.FirstExpression, c), Scalar(b.SecondExpression, c), lt!);
@@ -265,7 +265,25 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         };
         if (op is "<" or ">" or "<=" or ">=" && TypeOf(cmp.FirstExpression, c)?.Name == "hierarchyid" && TypeOf(cmp.SecondExpression, c)?.Name == "hierarchyid")
             return new PgBinary(op, Ordered(cmp.FirstExpression, c), Ordered(cmp.SecondExpression, c));
-        return new PgBinary(op, Compared(cmp.FirstExpression, cmp.SecondExpression, c), Compared(cmp.SecondExpression, cmp.FirstExpression, c));
+        var left = Compared(cmp.FirstExpression, cmp.SecondExpression, c);
+        var right = Compared(cmp.SecondExpression, cmp.FirstExpression, c);
+        // Padding still inside an operand (RIGHT(c, 2), REPLACE(c, …)): compare without trailing
+        // spaces on both sides, as SQL Server compares strings.
+        if (HasPadding(left) || HasPadding(right))
+            return new PgBinary(op, new PgFunctionCall("rtrim", [left]), new PgFunctionCall("rtrim", [right]));
+        return new PgBinary(op, left, right);
+    }
+
+    private static bool HasPadding(PgExpr e)
+    {
+        bool found = false;
+        PgExprRewriter.Rewrite(e, x =>
+        {
+            if (x is PgFunctionCall { Name: "rpad", Arguments: [_, PgLiteral] })
+                found = true;
+            return found ? x : null;
+        });
+        return found;
     }
 
     /// <summary>
@@ -275,7 +293,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
     /// </summary>
     public PgExpr Compared(ScalarExpression operand, ScalarExpression other, ExpressionContext c)
     {
-        var translated = Scalar(operand, c);
+        var translated = Unpadded(Scalar(operand, c));
         var otherType = TypeOf(other, c);
         if (otherType?.Name == "bit")
             return AsBoolean(translated);
@@ -297,6 +315,14 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         var wholeType = TypeOf(whole, c);
         if (wholeType?.Name == "bit")
             return AsBoolean(translated);
+        // A char branch of a varchar result keeps its padding; of a longer char result it is padded to that length.
+        if (TypeRules.IsString(wholeType) && TypeOf(branch, c) is { Name: "char" or "nchar" } branchType)
+        {
+            if (wholeType!.Name is not ("char" or "nchar"))
+                return Padded(branch, translated, c);
+            if (wholeType.Length is int length && length > 0 && branchType.Length != length)
+                return Pad(translated, length);
+        }
         if (TypeOf(branch, c)?.Name == "bit" && TypeRules.IsNumeric(wholeType))
             return new PgCast(translated, types.Map(wholeType!).PgType);
         return translated;
@@ -306,7 +332,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         sc.WhenClauses.Select(w => new PgWhen(Boolean(w.WhenExpression, c), Branch(w.ThenExpression, sc, c))).ToList(),
         sc.ElseExpression is null ? null : Branch(sc.ElseExpression, sc, c));
 
-    private PgExpr SimpleCase(SimpleCaseExpression sc, ExpressionContext c) => new PgCase(Scalar(sc.InputExpression, c),
+    private PgExpr SimpleCase(SimpleCaseExpression sc, ExpressionContext c) => new PgCase(Unpadded(Scalar(sc.InputExpression, c)),
         sc.WhenClauses.Select(w => new PgWhen(Compared(w.WhenExpression, sc.InputExpression, c), Branch(w.ThenExpression, sc, c))).ToList(),
         sc.ElseExpression is null ? null : Branch(sc.ElseExpression, sc, c));
 
@@ -329,8 +355,35 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             if (like.EscapeExpression is null && text.Contains('\\'))
                 return new PgLike(operand, PgLiteral.String(text), PgLiteral.String(""), like.NotDefined);
         }
-        return new PgLike(operand, Scalar(like.SecondExpression, c),
+        if (CharLike(like, operand, c) is { } charLike)
+            return charLike;
+        // A char pattern's padding counts, as all of a pattern does.
+        return new PgLike(operand, Padded(like.SecondExpression, Scalar(like.SecondExpression, c), c),
             like.EscapeExpression is null ? null : Scalar(like.EscapeExpression, c), like.NotDefined);
+    }
+
+    /// <summary>
+    /// LIKE on a char(n) value with a non-Unicode pattern and no ESCAPE. SQL Server lets the value's
+    /// trailing spaces be left off, any number of them; PostgreSQL's LIKE on bpchar sees them all.
+    /// A pattern ending in <c>%</c> matches either way, so the value stays as it is; one ending in
+    /// another character that is not <c>_</c>, a space or <c>]</c> can only match without them, so the
+    /// value is its text (no padding); anything else goes to <c>mssql_compat.char_like</c>, which tries
+    /// each length. Null when none of this applies (nchar compares with its padding in both engines).
+    /// </summary>
+    private PgExpr? CharLike(LikePredicate like, PgExpr operand, ExpressionContext c)
+    {
+        if (like.EscapeExpression is not null || TypeOf(like.FirstExpression, c) is not { Name: "char", Length: int n and > 0 }
+            || TypeRules.IsUnicode(TypeOf(like.SecondExpression, c)) || like.SecondExpression is StringLiteral { IsNational: true })
+            return null;
+        if (like.SecondExpression is StringLiteral { Value: var text })
+        {
+            if (text.EndsWith('%') || text.Length == 0)
+                return text.Length == 0 ? new PgLike(new PgCast(operand, "text"), PgLiteral.String(text), null, like.NotDefined) : null;
+            if (text[^1] is not ('_' or ' ' or ']'))
+                return new PgLike(new PgCast(operand, "text"), PgLiteral.String(text), null, like.NotDefined);
+        }
+        var test = Compat("char_like", [Pad(operand, n), PaddedText(like.SecondExpression, c)], c, like);
+        return like.NotDefined ? new PgUnary("NOT", test) : test;
     }
 
     /// <summary>A LIKE pattern with T-SQL character classes as a SIMILAR TO pattern (escape character backslash).</summary>
@@ -378,6 +431,42 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         var t = TypeOf(e, c);
         return t is null || TypeRules.IsString(t) || e is StringLiteral or NullLiteral ? translated : new PgCast(translated, "text");
     }
+
+    /// <summary>
+    /// A char(n) or nchar(n) value where SQL Server makes it a string (<c>+</c>, a varchar CASE or
+    /// CAST, a string function): <c>rpad(x, n)</c>, since PostgreSQL drops a bpchar's padding when it
+    /// becomes text and SQL Server keeps it. Anything else is returned as it is.
+    /// </summary>
+    public PgExpr Padded(ScalarExpression e, PgExpr translated, ExpressionContext c) =>
+        e is not (StringLiteral or NullLiteral) && TypeOf(e, c) is { Name: "char" or "nchar", Length: int n and > 0 } ? Pad(translated, n) : translated;
+
+    /// <summary>The operand as text (<see cref="Text"/>), with a char value's padding (<see cref="Padded"/>).</summary>
+    public PgExpr PaddedText(ScalarExpression e, ExpressionContext c) => Padded(e, Text(e, c), c);
+
+    private static PgExpr Pad(PgExpr e, int length) =>
+        e is PgFunctionCall { Name: "rpad" } ? e : new PgFunctionCall("rpad", [e, new PgLiteral(length.ToString(System.Globalization.CultureInfo.InvariantCulture))]);
+
+    /// <summary>
+    /// A comparison operand without the padding <see cref="Padded"/> added at its end: SQL Server
+    /// compares strings without their trailing spaces, but PostgreSQL's text comparison sees them.
+    /// Only the value's end matters, so padding inside a concatenation stays. (T-SQL has no RPAD,
+    /// so every rpad in a translation is padding.)
+    /// </summary>
+    public static PgExpr Unpadded(PgExpr e) => e switch
+    {
+        PgFunctionCall { Name: "rpad", Arguments: [var inner, PgLiteral] } => inner,
+        PgFunctionCall { Name: "COALESCE" } f => f with { Arguments = f.Arguments.Select(Unpadded).ToList() },
+        // These keep the input's trailing spaces at the end of their result (or cut them off), so
+        // without them the result differs only in trailing spaces. RIGHT, REVERSE and REPLACE do not.
+        PgFunctionCall { Name: "upper" or "lower" or "ltrim" or "left" or "substr", Arguments: [var first, ..] } f =>
+            f with { Arguments = [Unpadded(first), .. f.Arguments.Skip(1)] },
+        PgCase k => k with { Whens = k.Whens.Select(w => w with { Result = Unpadded(w.Result) }).ToList(), Else = k.Else is null ? null : Unpadded(k.Else) },
+        // x + '' (a common way to make a string) ends where x ends.
+        PgBinary { Operator: "||", Right: PgLiteral { Sql: "''" } } b => b with { Left = Unpadded(b.Left) },
+        PgBinary { Operator: "||" } b => b with { Right = Unpadded(b.Right) },
+        PgCast { Type: var t } cast when t.StartsWith("varchar", StringComparison.Ordinal) || t == "text" => cast with { Operand = Unpadded(cast.Operand) },
+        _ => e,
+    };
 
     private PgExpr ToType(ScalarExpression e, SqlServerType type, ExpressionContext c)
     {
@@ -444,6 +533,9 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         // integer, and to text as 'true'/'false' where SQL Server writes 1/0.
         if (TypeOf(operand, c)?.Name == "bit" && target is not ("boolean" or "integer"))
             inner = new PgCast(inner, "integer");
+        // char to varchar or text keeps its padding in SQL Server.
+        if (target.StartsWith("varchar", StringComparison.Ordinal) || target == "text")
+            inner = Padded(operand, inner, c);
         return new PgCast(inner, target);
     }
 

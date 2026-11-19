@@ -32,6 +32,8 @@ public sealed partial class ExpressionTranslator
         var a = f.Parameters;
         PgExpr Arg(int i) => Scalar(a[i], c);
         PgExpr TextArg(int i) => Text(a[i], c);
+        // A string function's input: a char value with its padding, as SQL Server passes it.
+        PgExpr PaddedArg(int i) => PaddedText(a[i], c);
         void Arity(params int[] allowed)
         {
             if (!allowed.Contains(a.Count))
@@ -109,22 +111,22 @@ public sealed partial class ExpressionTranslator
             case "CHARINDEX":
                 Arity(2, 3);
                 // The helper, even without a start: strpos finds an empty needle at 1, CHARINDEX never finds it (0).
-                return Compat("charindex", a.Count == 2 ? [TextArg(0), TextArg(1)] : [TextArg(0), TextArg(1), Arg(2)], c, f);
+                return Compat("charindex", a.Count == 2 ? [TextArg(0), PaddedArg(1)] : [TextArg(0), PaddedArg(1), Arg(2)], c, f);
             case "SUBSTRING":
                 Arity(3);
-                return Call("substr", TextArg(0), Arg(1), Arg(2));
+                return Call("substr", PaddedArg(0), Arg(1), Arg(2));
             case "LEFT" or "RIGHT":
                 Arity(2);
-                return Call(name.ToLowerInvariant(), TextArg(0), Arg(1));
+                return Call(name.ToLowerInvariant(), PaddedArg(0), Arg(1));
             case "REPLACE":
                 Arity(3);
-                return Call("replace", TextArg(0), TextArg(1), TextArg(2));
+                return Call("replace", PaddedArg(0), TextArg(1), TextArg(2));
             case "REVERSE":
                 Arity(1);
-                return Call("reverse", TextArg(0));
+                return Call("reverse", PaddedArg(0));
             case "REPLICATE":
                 Arity(2);
-                return Call("repeat", TextArg(0), Arg(1));
+                return Call("repeat", PaddedArg(0), Arg(1));
             case "SPACE":
                 Arity(1);
                 return Call("repeat", PgLiteral.String(" "), Arg(0));
@@ -140,10 +142,10 @@ public sealed partial class ExpressionTranslator
                         new PgTemplate("overlay({0} placing {1} from {2} for {3})", [TextArg(0), TextArg(3), Arg(1), Arg(2)]))], null);
             case "UPPER" or "LOWER":
                 Arity(1);
-                return Call(name.ToLowerInvariant(), TextArg(0));
+                return Call(name.ToLowerInvariant(), PaddedArg(0));
             case "LTRIM" or "RTRIM":
                 Arity(1, 2);
-                return a.Count == 1 ? Call(name.ToLowerInvariant(), TextArg(0)) : Call(name.ToLowerInvariant(), TextArg(0), TextArg(1));
+                return a.Count == 1 ? Call(name.ToLowerInvariant(), name == "LTRIM" ? PaddedArg(0) : TextArg(0)) : Call(name.ToLowerInvariant(), name == "LTRIM" ? PaddedArg(0) : TextArg(0), TextArg(1));
             case "TRIM":
                 Arity(1, 2);
                 return a.Count == 1 ? Call("btrim", TextArg(0)) : Call("btrim", TextArg(1), TextArg(0));
@@ -403,7 +405,7 @@ public sealed partial class ExpressionTranslator
             "VARP" => Agg("var_pop", args),
             "GROUPING" => Agg("GROUPING", args),
             "APPROX_COUNT_DISTINCT" => new PgFunctionCall("count", args) { Distinct = true },
-            "STRING_AGG" => new PgFunctionCall("string_agg", [Text(f.Parameters[0], c), args[1]])
+            "STRING_AGG" => new PgFunctionCall("string_agg", [PaddedText(f.Parameters[0], c), args[1]])
             {
                 OrderBy = f.WithinGroupClause?.OrderByClause.OrderByElements.Select(o => SortKey(o, c)).ToList() ?? [],
             },
