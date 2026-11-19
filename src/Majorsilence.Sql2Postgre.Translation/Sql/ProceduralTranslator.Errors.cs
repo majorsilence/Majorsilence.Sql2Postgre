@@ -15,7 +15,8 @@ namespace Majorsilence.Sql2Postgre.Translation.Sql;
 public sealed partial class ProceduralTranslator
 {
     /// <summary>The CATCH block being translated: its helper variables, and whether a transaction may be open in it.</summary>
-    private sealed record ErrorFrame(string Suffix, bool TransactionMayBeOpen);
+    /// <param name="Publishes">The block publishes its error for the code it calls (sql2pg.error_* settings).</param>
+    private sealed record ErrorFrame(string Suffix, bool TransactionMayBeOpen, bool Publishes = false);
 
     private static string ErrorHelper(string name, ErrorFrame frame) => $"sql2pg_error_{name}{frame.Suffix}";
 
@@ -70,14 +71,21 @@ public sealed partial class ProceduralTranslator
             st.TryDepth--;
         }
 
+        // A CATCH block that calls other code (an error-logging procedure) publishes its error for
+        // that code's ERROR_*() calls, and withdraws it when it is done.
+        bool publishes = CallsCode(tc.CatchStatements, st);
         var frame = new ErrorFrame(st.ErrorFrames.Count == 0 ? "" : $"_{st.ErrorFrames.Count + 1}",
-            beginsTransaction || st.TransactionBegun || st.TryDepth > 0);
+            beginsTransaction || st.TransactionBegun || st.TryDepth > 0, publishes);
         var handler = new List<PgPlStatement>();
         st.ErrorFrames.Push(frame);
         try
         {
-            handler.AddRange(Diagnostics(tc.CatchStatements, frame, st));
+            handler.AddRange(Diagnostics(tc.CatchStatements, frame, st, publishes));
+            if (publishes)
+                handler.Add(PublishError(frame, st));
             handler.AddRange(List(tc.CatchStatements.Statements, st));
+            if (publishes)
+                handler.Add(PublishError(null, st));
         }
         finally
         {
@@ -92,9 +100,11 @@ public sealed partial class ProceduralTranslator
     }
 
     /// <summary>GET STACKED DIAGNOSTICS for the ERROR_*() functions the CATCH block uses, then the T-SQL error number.</summary>
-    private IEnumerable<PgPlStatement> Diagnostics(StatementList catchStatements, ErrorFrame frame, BodyState st)
+    private IEnumerable<PgPlStatement> Diagnostics(StatementList catchStatements, ErrorFrame frame, BodyState st, bool all = false)
     {
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (all)
+            used.UnionWith(["ERROR_MESSAGE", "ERROR_NUMBER"]);
         var finder = new Finder(f =>
         {
             if (f is FunctionCall { CallTarget: null } call)
@@ -168,16 +178,92 @@ public sealed partial class ProceduralTranslator
         return finder.Found;
     }
 
-    /// <summary>ERROR_*() and XACT_STATE(): in a CATCH block from its helpers, elsewhere NULL (as in SQL Server outside CATCH).</summary>
+    /// <summary>The session settings a CATCH block publishes its error in, for the code it calls.</summary>
+    private const string ErrorSetting = "sql2pg.error_";
+
+    /// <summary>Whether a CATCH block runs a procedure (or dynamic SQL) or calls a function of this database.</summary>
+    private bool CallsCode(StatementList statements, BodyState st)
+    {
+        var finder = new Finder(f => f is ExecuteStatement
+            || f is FunctionCall { CallTarget: null or MultiPartIdentifierCallTarget } call
+               && _x.Model.ResolveRoutine(SchemaNameOf(call), st.C.Schema) is { } name && _x.Model.Routine(name) is not null);
+        statements.Accept(finder);
+        return finder.Found;
+    }
+
+    private static SchemaObjectName SchemaNameOf(FunctionCall call)
+    {
+        var name = new SchemaObjectName();
+        if (call.CallTarget is MultiPartIdentifierCallTarget target)
+            foreach (var part in target.MultiPartIdentifier.Identifiers)
+                name.Identifiers.Add(part);
+        name.Identifiers.Add(call.FunctionName);
+        return name;
+    }
+
+    /// <summary>
+    /// <c>PERFORM set_config('sql2pg.error_number', …, false), …</c>: the handler's error number,
+    /// message and procedure as session settings (or, for <paramref name="frame"/> null, empty again).
+    /// Session, not transaction-local: a CATCH block often rolls back before it logs the error.
+    /// </summary>
+    private PgPlStatement PublishError(ErrorFrame? frame, BodyState st)
+    {
+        PgExpr Set(string name, PgExpr value) =>
+            new PgFunctionCall("set_config", [PgLiteral.String(ErrorSetting + name), value, PgLiteral.False]);
+        PgExpr Empty() => PgLiteral.String("");
+        return new PgPerform(new PgSelect
+        {
+            Targets =
+            [
+                new PgTarget(Set("number", frame is null ? Empty() : new PgCast(new PgColumnRef(ErrorHelper("number", frame)), "text"))),
+                new PgTarget(Set("message", frame is null ? Empty() : new PgColumnRef(ErrorHelper("message", frame)))),
+                new PgTarget(Set("procedure", frame is null ? Empty() : ProcedureName(st) is { } p ? PgLiteral.String(p) : Empty())),
+            ],
+        });
+    }
+
+    /// <summary>
+    /// After a COMMIT or ROLLBACK in a publishing CATCH block: the error again, since PostgreSQL
+    /// undoes a setting made in a transaction that rolls back (session settings included).
+    /// </summary>
+    private IEnumerable<PgPlStatement> RepublishAfterTransactionEnd(BodyState st) =>
+        st.ErrorFrames.TryPeek(out var frame) && frame.Publishes ? [PublishError(frame, st)] : [];
+
+    /// <summary>The procedure ERROR_PROCEDURE() names: SQL Server 2017 and later give it schema-qualified.</summary>
+    private static string? ProcedureName(BodyState st) =>
+        st.Signature.Shape?.Name is { } procedure ? $"{procedure.Schema}.{procedure.Name}" : st.Signature.RoutineName;
+
+    /// <summary>
+    /// ERROR_*() outside a CATCH block: the error the calling CATCH block published, NULL when
+    /// there is none (as in SQL Server when no error is being handled).
+    /// </summary>
+    private static PgExpr? PublishedError(string name)
+    {
+        PgExpr Setting(string item) => new PgFunctionCall("NULLIF",
+            [new PgFunctionCall("current_setting", [PgLiteral.String(ErrorSetting + item), PgLiteral.True]), PgLiteral.String("")]);
+        PgExpr WhenError(string value) => new PgCase(null, [new PgWhen(new PgIsNull(Setting("number"), Negated: true), new PgLiteral(value))], null);
+        return name switch
+        {
+            "ERROR_MESSAGE" => Setting("message"),
+            "ERROR_NUMBER" => new PgCast(Setting("number"), "integer"),
+            "ERROR_SEVERITY" => WhenError("16"),
+            "ERROR_STATE" => WhenError("1"),
+            "ERROR_LINE" => new PgCast(PgLiteral.Null, "integer"),
+            "ERROR_PROCEDURE" => Setting("procedure"),
+            _ => null,
+        };
+    }
+
+    /// <summary>ERROR_*() and XACT_STATE(): in a CATCH block from its helpers, elsewhere the error a calling CATCH block published.</summary>
     private PgExpr? ErrorFunction(string name, ExpressionContext c, BodyState st)
     {
         if (name == "XACT_STATE")
             return TransactionState(c, st, "XACT_STATE()", "-1");
         if (!st.ErrorFrames.TryPeek(out var frame))
         {
-            c.Report(DiagnosticCodes.ErrorFunctionOutsideCatch, Severity.Warning,
-                $"{name}() outside a CATCH block is NULL. SQL Server returns the error of the CATCH block that called this code (an error-logging procedure); PostgreSQL does not pass it on.");
-            return PgLiteral.Null;
+            c.Report(DiagnosticCodes.ErrorFunctionOutsideCatch, Severity.Info,
+                $"{name}() outside a CATCH block reads the error the calling CATCH block published (sql2pg.error_* settings), NULL when none is being handled, as in SQL Server.");
+            return PublishedError(name);
         }
         switch (name)
         {
@@ -194,10 +280,7 @@ public sealed partial class ProceduralTranslator
                 c.Report(DiagnosticCodes.ErrorLineState, Severity.Info, "ERROR_LINE() is NULL: PostgreSQL reports the line in the error's context, not as a number.");
                 return new PgCast(PgLiteral.Null, "integer");
             case "ERROR_PROCEDURE":
-                // SQL Server 2017 and later return the schema-qualified name.
-                return st.Signature.Shape?.Name is { } procedure ? PgLiteral.String($"{procedure.Schema}.{procedure.Name}")
-                    : st.Signature.RoutineName is { } routine ? PgLiteral.String(routine)
-                    : new PgCast(PgLiteral.Null, "text");
+                return ProcedureName(st) is { } procedure ? PgLiteral.String(procedure) : new PgCast(PgLiteral.Null, "text");
             default:
                 return null;
         }

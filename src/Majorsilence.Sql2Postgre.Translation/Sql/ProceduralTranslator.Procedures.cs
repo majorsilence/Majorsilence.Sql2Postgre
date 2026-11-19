@@ -559,12 +559,12 @@ public sealed partial class ProceduralTranslator
                     "COMMIT or ROLLBACK inside TRY, other than a COMMIT ending it (PL/pgSQL cannot end a transaction inside a block with an exception handler)",
                     DiagnosticCodes.TransactionInTry);
             case CommitTransactionStatement:
-                return [new PgTransactionControl(true)];
+                return [new PgTransactionControl(true), .. RepublishAfterTransactionEnd(st)];
             case RollbackTransactionStatement rollback when rollback.Name?.Value is not { } rolledBack || st.TransactionNames.Contains(rolledBack):
                 if (st.TableVariableSetup.Count > 0)
                     c.Report(DiagnosticCodes.TableVariableRollback, Severity.Warning,
                         $"ROLLBACK with table variables ({string.Join(", ", st.TableVariableSetup.Keys)}): SQL Server keeps their rows, PostgreSQL rolls them back (they are created again, empty).");
-                return [new PgTransactionControl(false), .. RecreateTableVariables(st)];
+                return [new PgTransactionControl(false), .. RecreateTableVariables(st), .. RepublishAfterTransactionEnd(st)];
             case RollbackTransactionStatement:
                 throw ExpressionTranslator.Untranslatable(t, "ROLLBACK to a savepoint (PL/pgSQL has none; a BEGIN … EXCEPTION block is the nearest)", DiagnosticCodes.Savepoint);
             case SaveTransactionStatement:

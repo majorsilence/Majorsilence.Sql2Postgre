@@ -945,12 +945,23 @@ that ends a transaction. PL/pgSQL cannot end a transaction inside a block with a
 handler ("cannot commit while a subtransaction is active", "invalid transaction termination").
 Move the transaction control out of the TRY, for example ending the TRY with the `COMMIT`.
 
-### S2P5043 ErrorFunctionOutsideCatch (Warning)
+### S2P5043 ErrorFunctionOutsideCatch (Info)
 
-An `ERROR_*()` function outside a `CATCH` block is NULL. That is what SQL Server returns when no
-error is being handled. But an error-logging procedure called from a `CATCH` block (AdventureWorks'
-`uspLogError`) reads the caller's error this way, and in PostgreSQL it sees NULL. Pass the
-error number and message to such a procedure as parameters.
+An `ERROR_*()` function outside a `CATCH` block, as in an error-logging procedure that a `CATCH`
+block calls (AdventureWorks' `uspLogError`). SQL Server returns the calling block's error there,
+and NULL when no error is being handled. The converted code does the same:
+
+- A `CATCH` block that calls a procedure, dynamic SQL or a function of the database publishes its
+  error in session settings: `set_config('sql2pg.error_number' | 'sql2pg.error_message' |
+  'sql2pg.error_procedure', …, false)`.
+- When the block finishes, it sets them empty again.
+- `ERROR_*()` elsewhere reads them with `current_setting(…, true)`. `ERROR_SEVERITY()` is 16 and
+  `ERROR_STATE()` 1 while an error is published; `ERROR_LINE()` is NULL.
+
+The settings are session settings, and the block publishes its error again after each COMMIT or
+ROLLBACK in it: such a block often rolls back before it logs the error, and PostgreSQL undoes a
+setting made in a transaction that rolls back. A `CATCH` block that leaves by `RETURN` or by
+raising again leaves its error published until the next block that publishes one.
 
 ### S2P5050 GlobalCursor (Error)
 

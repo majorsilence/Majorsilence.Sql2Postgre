@@ -1,0 +1,24 @@
+CREATE TABLE dbo.ErrorLog (ErrorLogID int IDENTITY NOT NULL PRIMARY KEY, ErrorNumber int NULL, ErrorMessage nvarchar(4000) NULL, ErrorProcedure nvarchar(126) NULL);
+GO
+CREATE PROCEDURE dbo.LogError AS
+BEGIN
+    IF ERROR_NUMBER() IS NULL
+        RETURN;
+    INSERT INTO dbo.ErrorLog (ErrorNumber, ErrorMessage, ErrorProcedure) VALUES (ERROR_NUMBER(), ERROR_MESSAGE(), ERROR_PROCEDURE());
+END;
+GO
+CREATE PROCEDURE dbo.Work AS
+BEGIN
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        UPDATE dbo.ErrorLog SET ErrorNumber = ErrorNumber + 1;
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+        EXECUTE dbo.LogError;
+        THROW;
+    END CATCH;
+END;
+GO

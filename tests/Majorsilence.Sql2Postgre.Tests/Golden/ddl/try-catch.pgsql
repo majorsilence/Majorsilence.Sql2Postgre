@@ -100,7 +100,7 @@ BEGIN
 END;
 $$;
 
--- sql2pg:object Procedure public.safe_divide status=ConvertedWithWarnings
+-- sql2pg:object Procedure public.safe_divide status=Converted
 CREATE FUNCTION public.safe_divide(a integer, b integer)
 RETURNS TABLE (result integer, message varchar(4000))
 LANGUAGE plpgsql
@@ -113,7 +113,7 @@ DECLARE
     sql2pg_error_message text;
     sql2pg_error_message_2 text;
 BEGIN
-    v_message := NULL;
+    v_message := NULLIF(current_setting('sql2pg.error_message', true), '');
     BEGIN
         v_result := safe_divide.a / safe_divide.b;
     EXCEPTION

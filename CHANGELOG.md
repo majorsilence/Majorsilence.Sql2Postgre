@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Error context through calls** (WP 4.12): a CATCH block that calls a procedure, dynamic SQL
+  or a function publishes its error in `sql2pg.error_*` session settings (again after a COMMIT or
+  ROLLBACK in it) and clears them when it is done; `ERROR_*()` outside a CATCH block reads them,
+  so an error-logging procedure (AdventureWorks' `uspLogError`) logs the caller's error. S2P5043
+  is now Info.
 - **Connection strings in configuration files** (WP 4.11): `sql2pg code` converts every SQL
   Server connection string in `appsettings*.json` (comments allowed) and in `web.config`/
   `app.config` (`connectionStrings` and `appSettings`, with a SqlClient `providerName` becoming
