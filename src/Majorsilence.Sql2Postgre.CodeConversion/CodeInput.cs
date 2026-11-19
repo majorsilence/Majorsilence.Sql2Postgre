@@ -25,6 +25,7 @@ public static partial class CodeInput
         return Path.GetExtension(full).ToLowerInvariant() switch
         {
             ".cs" or ".vb" => (root, [new CodeFile(full, Path.GetFileName(full))]),
+            _ when ConfigFiles.Is(full) => (root, [new CodeFile(full, Path.GetFileName(full))]),
             ".csproj" or ".vbproj" => (root, Project(full, root)),
             ".sln" => (root, Projects(SlnProjects(full), root)),
             ".slnx" => (root, Projects(SlnxProjects(full), root)),
@@ -39,7 +40,8 @@ public static partial class CodeInput
     {
         string extension = Path.GetExtension(project).Equals(".vbproj", StringComparison.OrdinalIgnoreCase) ? ".vb" : ".cs";
         var files = Under(Path.GetDirectoryName(project)!, root)
-            .Where(f => f.FullPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase) || f.FullPath.Equals(project, StringComparison.OrdinalIgnoreCase)).ToList();
+            .Where(f => f.FullPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase) || f.FullPath.Equals(project, StringComparison.OrdinalIgnoreCase)
+                        || ConfigFiles.Is(f.FullPath)).ToList();
         // Central package versions apply to the project too.
         for (var dir = new DirectoryInfo(Path.GetDirectoryName(project)!); dir is not null; dir = dir.Parent)
         {
@@ -56,7 +58,7 @@ public static partial class CodeInput
 
     private static List<CodeFile> Under(string folder, string root) =>
         Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
-            .Where(f => (CodeLanguages.For(f) is not null || ProjectFiles.Is(f)) && !InBuildOutput(Path.GetRelativePath(folder, f)))
+            .Where(f => (CodeLanguages.For(f) is not null || ProjectFiles.Is(f) || ConfigFiles.Is(f)) && !InBuildOutput(Path.GetRelativePath(folder, f)))
             .Order(StringComparer.Ordinal)
             .Select(f => new CodeFile(f, Path.GetRelativePath(root, f)))
             .ToList();

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <connectionStrings>
+    <add name="Shop" connectionString="Server=db01;Database=Shop;User ID=web;Password=p&amp;ss;Connect Timeout=30" providerName="System.Data.SqlClient" />
+    <add name='Audit' connectionString='Data Source=.;Initial Catalog=Audit;Trusted_Connection=yes;' providerName='Microsoft.Data.SqlClient'/>
+  </connectionStrings>
+  <appSettings>
+    <add key="LegacyDb" value="Server=tcp:legacy.example.com,1500;Database=Old;User Id=u;Password=p" />
+    <add key="Theme" value="dark" />
+  </appSettings>
+</configuration>

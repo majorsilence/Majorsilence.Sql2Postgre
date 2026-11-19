@@ -67,6 +67,8 @@ public sealed class CodeConverter(CodeConversionOptions options, IReadOnlyList<I
     {
         if (ProjectFiles.Is(relativePath))
             return ProjectFiles.Convert(relativePath, text);
+        if (ConfigFiles.Is(relativePath))
+            return ConfigFiles.Convert(relativePath, text);
         var language = CodeLanguages.For(relativePath)
                        ?? throw new ArgumentException($"{relativePath} is not a .cs or .vb file.", nameof(relativePath));
         var context = new CodeContext(relativePath, language, language.Parse(text, relativePath), options);

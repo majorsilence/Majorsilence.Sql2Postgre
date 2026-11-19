@@ -455,6 +455,12 @@ public static class DiagnosticCodes
     /// <summary>A package reference in a project file changed (SqlClient or the EF Core SQL Server provider).</summary>
     public const string PackageReplaced = "S2P8044";
 
+    /// <summary>A SQL Server database project (.sqlproj, .dbproj) is left as it is.</summary>
+    public const string DatabaseProjectSkipped = "S2P8051";
+
+    /// <summary>A connection string in a configuration file (appsettings*.json, web.config, app.config) was converted.</summary>
+    public const string ConfigConnectionString = "S2P8052";
+
     /// <summary>The converter threw while converting an object: a bug. The object is left for a person.</summary>
     public const string InternalError = "S2P9001";
 

@@ -1,0 +1,13 @@
+{
+  // Local development settings.
+  "ConnectionStrings": {
+    "Default": "Server=localhost,1433;Database=Shop;User Id=app;Password=s3cr3t;TrustServerCertificate=True",
+    /* reporting reads a replica */
+    "Reporting": "Data Source=reports\\SQL2019;Initial Catalog=Shop;Integrated Security=SSPI;Encrypt=True"
+  },
+  "Logging": { "LogLevel": { "Default": "Information" } },
+  "Jobs": [
+    { "Name": "nightly", "Database": "Server=(local);Database=Jobs;User Id=jobs;Password=\"quo;ted\";" }
+  ],
+  "NotAConnectionString": "Server=nowhere"
+}

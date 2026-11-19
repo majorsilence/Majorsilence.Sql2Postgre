@@ -1381,6 +1381,25 @@ A package reference changed in a project file or `Directory.Packages.props`:
 
 It is a Warning when the matching version is not known (EF Core 7 and earlier): set it by hand.
 
+### S2P8051 DatabaseProjectSkipped (Info)
+
+A SQL Server database project (`.sqlproj`, `.dbproj`) is left as it is. Its objects are
+converted by `sql2pg schema`, from the database or from its scripts, not as a project.
+
+### S2P8052 ConfigConnectionString (Info)
+
+A connection string in a configuration file became an Npgsql connection string, with the same
+conversion as in code (S2P8005 and S2P8006 report what it could not keep):
+
+- `appsettings*.json`: any string value that is a SQL Server connection string, in
+  `ConnectionStrings` or anywhere else. Comments are allowed.
+- `web.config`, `app.config` and their transforms: `<add connectionString="…">` in
+  `connectionStrings`, and `<add value="…">` in `appSettings`. A `providerName` of
+  `System.Data.SqlClient` or `Microsoft.Data.SqlClient` becomes `Npgsql`.
+
+The file's text is edited in place, so its formatting and comments stay. The message names the
+setting (`ConnectionStrings:Default`, `'Shop'`), never its value, which may hold a password.
+
 ## S2P9xxx — internal errors
 
 ### S2P9001 InternalError (Error)

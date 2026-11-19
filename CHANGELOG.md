@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Connection strings in configuration files** (WP 4.11): `sql2pg code` converts every SQL
+  Server connection string in `appsettings*.json` (comments allowed) and in `web.config`/
+  `app.config` (`connectionStrings` and `appSettings`, with a SqlClient `providerName` becoming
+  `Npgsql`), editing the files in place (S2P8052). Diagnostics name the setting, never its value.
+  Database projects are left alone (S2P8051).
 - **Catalog queries** (WP 4.10):
   - `sys.objects`, `sys.tables`, `sys.views`, `sys.procedures`, `sys.sequences`, `sys.schemas`,
     `sys.columns` and `INFORMATION_SCHEMA.TABLES`/`VIEWS`/`COLUMNS`/`ROUTINES`/`SCHEMATA` become

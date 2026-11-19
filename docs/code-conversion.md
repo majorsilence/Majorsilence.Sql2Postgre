@@ -12,7 +12,8 @@ sql2pg code <path> --in-place ...
 
 - `<path>` is a `.cs` or `.vb` file, a folder (searched recursively, skipping `bin/` and `obj/`), a
   `.csproj`/`.vbproj` (the files under its folder), or a `.sln`/`.slnx` (its projects). Project
-  files and `Directory.Packages.props` are converted too (package references).
+  files and `Directory.Packages.props` are converted too (package references), and so are
+  configuration files: `appsettings*.json`, `web.config` and `app.config` (connection strings).
 - `--out` writes converted copies, mirroring the input tree. `--in-place` rewrites the files
   where they are. Keep them under version control, so the change can be reviewed as a diff.
 - `--source` is the same as for `sql2pg schema`. With it, the converter knows the tables, identity
@@ -44,6 +45,7 @@ The rules are added work package by work package (Stage A in the
 | Stored procedure calls | A.4 (done) |
 | Dapper and Dapper.Contrib | A.5 (done) |
 | Entity Framework Core | A.6 (done) |
+| Connection strings in configuration files | 4.11 (done) |
 
 ## ADO.NET
 
@@ -88,7 +90,11 @@ types in full:
   - Windows authentication (S2P8005) and SQL Server-only keys (S2P8006) are dropped and
     reported.
 
-  Connection strings in `appsettings.json` and `web.config` are not converted yet.
+  Configuration files are converted the same way (S2P8052): every connection string in
+  `appsettings*.json` (comments allowed), `connectionStrings` and `appSettings` entries in
+  `web.config`/`app.config` (whose SqlClient `providerName` becomes `Npgsql`). The files are
+  edited in place, and diagnostics name the setting, never its value. Database projects
+  (`.sqlproj`, `.dbproj`) are left as they are (S2P8051).
 - **Reported:** `SqlBulkCopy` (S2P8004), table-valued parameters (S2P8003), `SqlTypes` (S2P8007),
   and SqlClient-only features (S2P8008).
 

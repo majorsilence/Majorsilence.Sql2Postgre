@@ -1,0 +1,13 @@
+{
+  // Local development settings.
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Port=1433;Database=Shop;Username=app;Password=s3cr3t",
+    /* reporting reads a replica */
+    "Reporting": "Host=reports;Database=Shop;SSL Mode=Require"
+  },
+  "Logging": { "LogLevel": { "Default": "Information" } },
+  "Jobs": [
+    { "Name": "nightly", "Database": "Host=localhost;Database=Jobs;Username=jobs;Password='quo;ted'" }
+  ],
+  "NotAConnectionString": "Server=nowhere"
+}

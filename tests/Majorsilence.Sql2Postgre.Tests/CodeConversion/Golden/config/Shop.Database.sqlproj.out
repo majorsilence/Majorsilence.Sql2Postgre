@@ -1,0 +1,3 @@
+<Project DefaultTargets="Build">
+  <PropertyGroup><Name>Shop.Database</Name></PropertyGroup>
+</Project>

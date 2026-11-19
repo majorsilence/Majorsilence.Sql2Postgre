@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <connectionStrings>
+    <add name="Shop" connectionString="Host=db01;Database=Shop;Username=web;Password=p&amp;ss;Timeout=30" providerName="Npgsql" />
+    <add name='Audit' connectionString='Host=localhost;Database=Audit' providerName='Npgsql'/>
+  </connectionStrings>
+  <appSettings>
+    <add key="LegacyDb" value="Host=legacy.example.com;Port=1500;Database=Old;Username=u;Password=p" />
+    <add key="Theme" value="dark" />
+  </appSettings>
+</configuration>
