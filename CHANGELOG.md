@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Incremental data sync** (WP 4.16): `sql2pg data --since state.json` copies every table whole
+  the first time, then only what changed: by rowversion (a rowversion column and a primary key),
+  by change tracking (`CHANGETABLE(CHANGES …)`, deletes included), or the whole table again. The
+  rows are upserted (`INSERT … ON CONFLICT (pk) DO UPDATE`) from a staging table, one transaction
+  per table, and the state file records each table's high-water mark (S2P7010).
 - **SQL Server Agent jobs** (WP 4.15): with `--agent-jobs` (`assess`, `schema`, `migrate`, live
   source), the jobs with T-SQL steps in the database are read from msdb. Each becomes a procedure
   in `sql2pg_agent` that runs its steps in order, with their quit/next-step actions. With

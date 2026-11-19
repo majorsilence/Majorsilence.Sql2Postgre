@@ -44,6 +44,10 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         Description = $"PostgreSQL connection string. Default: ${TargetVariable}.",
     };
     private readonly Option<FileInfo?> _config = new("--config", "-c") { Description = "Conversion options as JSON (sql2pg.json)." };
+    private readonly Option<FileInfo?> _since = new("--since")
+    {
+        Description = "Incremental sync: copy what changed since the run that wrote this state file (rowversion, change tracking, or the whole table), and record where this run got to.",
+    };
     private readonly Option<bool> _agentJobs = new("--agent-jobs")
     {
         Description = "Also convert the SQL Server Agent jobs with T-SQL steps in this database (read from msdb; needs a live source), scheduled with pg_cron.",
@@ -99,7 +103,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         apply.SetAction((p, ct) => Guarded(() => ApplyAsync(p, ct)));
 
         var data = new Command("data", "Copy table data from SQL Server to PostgreSQL (the tables must exist).")
-            { _source, _target, _config, _tables, _parallel, _state, _verify };
+            { _source, _target, _config, _tables, _parallel, _state, _verify, _since };
         data.SetAction((p, ct) => Guarded(() => DataAsync(p, ct)));
 
         var migrate = new Command("migrate", "Schema, data, then constraints, indexes and code, then verification.")
@@ -235,7 +239,9 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         string target = Required(p.GetValue(_target), TargetVariable, "--target");
         var verify = VerifyModeFrom(p);
         var read = await ReadLiveSourceAsync(source, ct);
-        var copy = await DataCopier.CopyAsync(read.Database, options, source, target, CopyOptionsFrom(p), progress: null, ct);
+        var copy = p.GetValue(_since) is { } since
+            ? await IncrementalCopier.SyncAsync(read.Database, options, source, target, since.FullName, CopyOptionsFrom(p), ct)
+            : await DataCopier.CopyAsync(read.Database, options, source, target, CopyOptionsFrom(p), progress: null, ct);
         await WriteCopyAsync(copy);
         bool ok = copy.Succeeded;
         if (verify is { } mode)

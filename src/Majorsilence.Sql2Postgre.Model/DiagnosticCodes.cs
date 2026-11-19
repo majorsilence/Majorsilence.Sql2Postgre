@@ -188,6 +188,9 @@ public static class DiagnosticCodes
     /// <summary>A table's data (or a sequence's position) could not be copied.</summary>
     public const string TableCopyFailed = "S2P7003";
 
+    /// <summary>How an incremental sync (data --since) brought a table up to date.</summary>
+    public const string IncrementalSync = "S2P7010";
+
     /// <summary>A table has a different number of rows in PostgreSQL than in SQL Server.</summary>
     public const string RowCountMismatch = "S2P7101";
 

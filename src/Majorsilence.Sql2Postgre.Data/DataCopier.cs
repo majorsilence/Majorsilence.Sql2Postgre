@@ -110,7 +110,7 @@ public static class DataCopier
         return new DataCopyResult(results);
     }
 
-    private static bool Selected(ObjectName table, IReadOnlyList<string> filter) =>
+    internal static bool Selected(ObjectName table, IReadOnlyList<string> filter) =>
         filter.Count == 0 || filter.Any(f => string.Equals(f, table.ToString(), StringComparison.OrdinalIgnoreCase)
                                              || string.Equals(f, table.Name, StringComparison.OrdinalIgnoreCase));
 
@@ -163,24 +163,38 @@ public static class DataCopier
         await using var pg = new NpgsqlConnection(postgres);
         await pg.OpenAsync(ct);
         await ClearAsync(pg, plan, pgWhere, ct);
+        return await StreamAsync(plan.Columns, plan.SelectSql(where), plan.CopySql, sqlServer, pg, states, options.CommandTimeoutSeconds, report, ct);
+    }
 
+    /// <summary>A whole table copied again: emptied, then copied (the incremental sync's full pass).</summary>
+    internal static Task<long> CopyTableAsync(TablePlan plan, ColumnState[] states, string sqlServer, string postgres, DataCopyOptions options, CancellationToken ct) =>
+        CopyUnitAsync(new CopyUnit(plan, plan.Source.Name.ToString()), states, sqlServer, postgres, options, _ => { }, ct);
+
+    /// <summary>
+    /// Streams a SQL Server query's rows into a PostgreSQL binary COPY: <paramref name="selectSql"/>
+    /// selects each column's <see cref="ColumnPlan.SourceSelect"/> in order, and <paramref name="copySql"/>
+    /// copies into the columns' target names (of the table, or of a staging table like it).
+    /// </summary>
+    internal static async Task<long> StreamAsync(IReadOnlyList<ColumnPlan> columns, string selectSql, string copySql, string sqlServer,
+        NpgsqlConnection pg, ColumnState[] states, int commandTimeout, Action<long> report, CancellationToken ct)
+    {
         await using var sql = new SqlConnection(sqlServer);
         await sql.OpenAsync(ct);
-        await using var cmd = new SqlCommand(plan.SelectSql(where), sql) { CommandTimeout = options.CommandTimeoutSeconds };
+        await using var cmd = new SqlCommand(selectSql, sql) { CommandTimeout = commandTimeout };
         await using var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess, ct);
 
-        var ordinals = new int[plan.Columns.Count];
-        for (int i = 0, ordinal = 0; i < plan.Columns.Count; ordinal += plan.Columns[i].SourceSelect.Count, i++)
+        var ordinals = new int[columns.Count];
+        for (int i = 0, ordinal = 0; i < columns.Count; ordinal += columns[i].SourceSelect.Count, i++)
             ordinals[i] = ordinal;
 
-        await using var importer = await pg.BeginBinaryImportAsync(plan.CopySql, ct);
+        await using var importer = await pg.BeginBinaryImportAsync(copySql, ct);
         long rows = 0;
         while (await reader.ReadAsync(ct))
         {
             await importer.StartRowAsync(ct);
-            for (int i = 0; i < plan.Columns.Count; i++)
+            for (int i = 0; i < columns.Count; i++)
             {
-                var column = plan.Columns[i];
+                var column = columns[i];
                 object? value = column.Read(reader, ordinals[i], states[i]);
                 if (value is null)
                     await importer.WriteNullAsync(ct);
@@ -220,7 +234,7 @@ public static class DataCopier
     /// empty table starts at its seed), every sequence continues after SQL Server's last value, and
     /// the copied tables are analyzed for the planner.
     /// </summary>
-    private static async Task<IReadOnlyList<Diagnostic>> FinishAsync(SourceDatabase db, IReadOnlyList<TablePlan> plans, NameMapper names,
+    internal static async Task<IReadOnlyList<Diagnostic>> FinishAsync(SourceDatabase db, IReadOnlyList<TablePlan> plans, NameMapper names,
         string postgres, IReadOnlyDictionary<ObjectName, string> errors, CancellationToken ct)
     {
         var diagnostics = new List<Diagnostic>();

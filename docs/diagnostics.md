@@ -1278,6 +1278,24 @@ The table has the same number of rows on both sides, but some values differ afte
 the documented transforms (rounding, UTC, NUL removal…). Compare the table's rows to find which;
 rows changed in SQL Server after the copy are the usual cause.
 
+### S2P7010 IncrementalSync (Info)
+
+How `sql2pg data --since state.json` brought a table up to date. The state file records each
+table's mode and high-water mark; the first run copies every table whole. Later runs use:
+
+- **rowversion** (a rowversion column and a primary key): the rows whose rowversion is above the
+  database's last rowversion (`@@DBTS`) at the previous run. Deleted rows are not seen; they stay
+  in PostgreSQL.
+- **changetracking** (change tracking on the table, and a primary key): `CHANGETABLE(CHANGES …)`
+  since the previous run's version, deletes included. When the retention period has passed since
+  then, the table is copied whole again.
+- **full** (neither): the whole table again.
+
+Changed rows are upserted from a staging table (`INSERT … ON CONFLICT (pk) DO UPDATE`) and
+tracked deletes applied, in one transaction per table. Identities and sequences then move past
+the new values. Run with `--verify checksum` after the last pass, with writes to SQL Server
+stopped.
+
 ## S2P8xxx — application code (`sql2pg code`)
 
 See [code-conversion.md](code-conversion.md) for what `sql2pg code` changes. These codes point
