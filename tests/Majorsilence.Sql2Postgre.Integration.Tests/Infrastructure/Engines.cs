@@ -93,6 +93,47 @@ public static class Engines
         }
     }
 
+    private static readonly Lazy<Task<(PostgreSqlContainer? Container, string? Unavailable)>> PgCron =
+        new(StartPgCronAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>The database pg_cron runs its jobs in on the pg_cron server (cron.database_name).</summary>
+    public const string PgCronDatabase = "agentjobs";
+
+    /// <summary>
+    /// A PostgreSQL with pg_cron loaded, built from <c>Infrastructure/postgres-cron/Dockerfile</c>
+    /// on first use; ignores the test without Docker, or when the image cannot be built.
+    /// </summary>
+    public static async Task<string> PgCronAsync()
+    {
+        var (container, unavailable) = await PgCron.Value;
+        if (unavailable is not null)
+            Assert.Ignore($"PostgreSQL with pg_cron is not available: {unavailable}");
+        return container!.GetConnectionString();
+    }
+
+    private static async Task<(PostgreSqlContainer?, string?)> StartPgCronAsync()
+    {
+        try
+        {
+            var image = new ImageFromDockerfileBuilder()
+                .WithDockerfileDirectory(CommonDirectoryPath.GetProjectDirectory(), Path.Combine("Infrastructure", "postgres-cron"))
+                .WithBuildArgument("PG_VERSION", PostgresVersion)
+                .WithName($"sql2pg-postgres-cron:{PostgresVersion}")
+                .WithCleanUp(false)
+                .Build();
+            await image.CreateAsync();
+            var container = new PostgreSqlBuilder(image.FullName)
+                .WithCommand("-c", "shared_preload_libraries=pg_cron", "-c", $"cron.database_name={PgCronDatabase}")
+                .Build();
+            await container.StartAsync();
+            return (container, null);
+        }
+        catch (Exception ex) when (ex is DockerUnavailableException or DotNet.Testcontainers.Images.ImageBuildFailedException)
+        {
+            return (null, ex.Message);
+        }
+    }
+
     /// <summary>PostgreSQL connection string; ignores the test without Docker.</summary>
     public static async Task<string> PostgresAsync() => (await RequireAsync()).Postgres!.GetConnectionString();
 
@@ -127,6 +168,8 @@ public static class Engines
             await fullText.DisposeAsync();
         if (PostGis.IsValueCreated && (await PostGis.Value).Container is { } postGis)
             await postGis.DisposeAsync();
+        if (PgCron.IsValueCreated && (await PgCron.Value).Container is { } pgCron)
+            await pgCron.DisposeAsync();
         if (!Started.IsValueCreated)
             return;
         var state = await Started.Value;

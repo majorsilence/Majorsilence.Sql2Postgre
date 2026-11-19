@@ -6,7 +6,7 @@ public sealed record ObjectName(string Schema, string Name)
     public override string ToString() => $"{Schema}.{Name}";
 }
 
-public enum ObjectKind { Schema, Table, View, Function, Procedure, Trigger, Sequence, UserType, Index, Constraint, Synonym, Extension, Collation }
+public enum ObjectKind { Schema, Table, View, Function, Procedure, Trigger, Sequence, UserType, Index, Constraint, Synonym, Extension, Collation, Job }
 
 /// <summary>A SQL Server column, parameter or expression type.</summary>
 /// <param name="Name">Base type name in lower case: <c>nvarchar</c>, <c>decimal</c>, <c>datetime2</c>…</param>
@@ -115,7 +115,34 @@ public sealed record Module(ObjectName Name, ObjectKind Kind, string Definition,
 /// </summary>
 public sealed record ObjectDependency(ObjectName From, ObjectName To);
 
+/// <param name="AgentJobs">SQL Server Agent jobs with T-SQL steps in this database, read from msdb when asked for.</param>
 public sealed record SourceDatabase(string Name, string DefaultCollation, int CompatibilityLevel,
     IReadOnlyList<string> Schemas, IReadOnlyList<Table> Tables, IReadOnlyList<Sequence> Sequences,
     IReadOnlyList<UserType> UserTypes, IReadOnlyList<Module> Modules,
-    IReadOnlyList<ObjectDependency> Dependencies);
+    IReadOnlyList<ObjectDependency> Dependencies, IReadOnlyList<AgentJob>? AgentJobs = null);
+
+/// <summary>
+/// A SQL Server Agent job (msdb.dbo.sysjobs) with its steps and schedules. Its T-SQL steps in this
+/// database are converted as the procedure <see cref="Procedure"/>; the schedules become pg_cron jobs.
+/// </summary>
+public sealed record AgentJob(string Name, string? Description, bool Enabled, IReadOnlyList<AgentJobStep> Steps, IReadOnlyList<AgentSchedule> Schedules)
+{
+    /// <summary>The schema the jobs' procedures are put in.</summary>
+    public const string Schema = "sql2pg_agent";
+
+    public ObjectName Procedure => new(Schema, Name);
+}
+
+/// <summary>A job step (msdb.dbo.sysjobsteps). Actions: 1 quit with success, 2 quit with failure, 3 go to the next step, 4 go to step n.</summary>
+public sealed record AgentJobStep(int Id, string Name, string Subsystem, string Command, string? DatabaseName,
+    int OnSuccessAction, int OnSuccessStepId, int OnFailAction, int OnFailStepId)
+{
+    /// <summary>Whether the step is T-SQL run in the given database, which the converter converts.</summary>
+    public bool IsTsqlIn(string database) =>
+        Subsystem.Equals("TSQL", StringComparison.OrdinalIgnoreCase)
+        && (DatabaseName is null || DatabaseName.Equals(database, StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>A job schedule (msdb.dbo.sysschedules), in SQL Server's encoding of the freq_* columns; times are HHMMSS integers.</summary>
+public sealed record AgentSchedule(string Name, bool Enabled, int FreqType, int FreqInterval, int FreqSubdayType, int FreqSubdayInterval,
+    int FreqRelativeInterval, int FreqRecurrenceFactor, int ActiveStartTime, int ActiveEndTime);

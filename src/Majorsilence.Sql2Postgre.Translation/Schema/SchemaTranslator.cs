@@ -113,6 +113,7 @@ public sealed partial class SchemaTranslator
                 { Skipped = true });
         }
         objects.AddRange(TrigramIndexes(tables, queries.Expressions.LeadingWildcardSearches));
+        objects.AddRange(AgentJobs(db));
         objects = PropagateUnconverted(objects, model);
         foreach (var o in objects)
             _moduleCompat.UnionWith(o.CompatFunctions);

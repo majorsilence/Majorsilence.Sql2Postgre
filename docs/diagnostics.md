@@ -325,6 +325,44 @@ the extensions to leave such indexes out. It is a Warning when a column the opti
 a text column of a converted table, or is not written `schema.table.column`; then no index is
 created.
 
+### S2P2023 AgentScheduleUnmapped (Warning or Info)
+
+A SQL Server Agent job (read with `--agent-jobs`) is converted, but one of its schedules is not
+scheduled. Warning when cron cannot express the schedule:
+
+- it runs once, when SQL Server Agent starts, or when the computer is idle;
+- it runs every N days, weeks or months (N > 1), which cron cannot count from a start date;
+- it runs on a relative day ("the second Tuesday of the month");
+- it runs every N seconds, or every N minutes or hours that do not divide the hour or day.
+
+Info when the job has no schedule, or `pg_cron` is not enabled (the job is converted as a
+procedure, and not scheduled). Schedule the procedure by hand in either case.
+
+### S2P2024 AgentStepUnconverted (Warning)
+
+A SQL Server Agent job step that the job's procedure leaves out or changes:
+
+- a step that is not T-SQL (CmdExec, PowerShell, SSIS, …), or that runs in another database;
+- a step that goes on to another step by number (the procedure runs the steps in order);
+- msdb could not be read, so no job is converted.
+
+Run a left-out step another way, as a pg_cron job of its own or with the operating system's
+scheduler.
+
+### S2P2025 AgentJobScheduled (Info)
+
+A SQL Server Agent job is scheduled with pg_cron:
+
+- **The procedure.** The job's T-SQL steps in this database become one procedure in the
+  `sql2pg_agent` schema, in step order. A step that goes on to the next step when it fails runs in
+  TRY/CATCH; "quit with success" is RETURN; "quit with failure" (the default) lets the error end
+  the procedure.
+- **The schedule.** Each schedule becomes `cron.schedule('<job>', '<cron>', 'CALL
+  sql2pg_agent."<job>"()')`. A disabled job or schedule is switched off with `cron.alter_job`.
+- **Where it runs.** pg_cron runs jobs in the database `cron.database_name` names, and creates
+  its extension only there: set it to the target database. Times are UTC unless `cron.timezone`
+  says otherwise; SQL Server Agent used the server's local time.
+
 ## S2P3xxx — expressions and built-in functions
 
 ### S2P3001 UnsupportedExpression (Error)

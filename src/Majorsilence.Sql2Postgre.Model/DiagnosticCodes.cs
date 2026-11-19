@@ -137,6 +137,15 @@ public static class DiagnosticCodes
     /// <summary>A pg_trgm GIN index for a column searched with a leading-wildcard LIKE (or named in the options).</summary>
     public const string TrigramIndex = "S2P2022";
 
+    /// <summary>A SQL Server Agent schedule cron cannot express, or a job that is converted but not scheduled.</summary>
+    public const string AgentScheduleUnmapped = "S2P2023";
+
+    /// <summary>A SQL Server Agent job step that is not converted (not T-SQL, another database, a jump to a step).</summary>
+    public const string AgentStepUnconverted = "S2P2024";
+
+    /// <summary>A SQL Server Agent job scheduled with pg_cron.</summary>
+    public const string AgentJobScheduled = "S2P2025";
+
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
 

@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.15 — SQL Server Agent jobs (--agent-jobs reads msdb jobs with T-SQL steps in the database; each becomes a sql2pg_agent procedure of its steps; cron.schedule for each daily/weekly/monthly schedule; S2P2023, S2P2024, S2P2025); 21 unit tests (schedule mapping, the synthesised procedure) and a container test on PostgreSQL 18 with pg_cron: a real msdb job converted, scheduled in cron.job, and its procedure leaving the same log as its steps on SQL Server. Corpus: unchanged (it does not read Agent jobs).
 - WP 4.14 — trigram indexes (gin_trgm_ops indexes for columns searched with a leading-wildcard LIKE in converted views and routines, dynamic SQL included, and for columns the trigramIndexes option or --trigram-index names; S2P2022); 2 golden files (one changed) and a PostgreSQL 18 test that the index is created and used. Corpus: unchanged (it runs without pg_trgm).
 - WP 4.13 — remaining DML forms (UPDATE/DELETE TOP (n) and outer-join targets through ctid key queries; FOR XML RAW, AUTO over one table and PATH as xmlelement/xmlagg); 3 golden files changed or added and 24 both-engines cases (11 DML, 13 FOR XML). Corpus: 0 apply / copy / verify failures and no S2P9001; no count changed (the corpus has none of these forms outside dynamic SQL).
 - WP 4.12 — error context through calls (CATCH blocks that call code publish ERROR_NUMBER/MESSAGE/PROCEDURE in sql2pg.error_* settings, republished after COMMIT/ROLLBACK, cleared at the end; ERROR_*() outside CATCH reads them); 1 golden file and 5 both-engines cases of a logging procedure called from CATCH (THROW, divide by zero, RAISERROR, ROLLBACK before logging, no error). Corpus: 0 apply / copy / verify failures and no S2P9001; AdventureWorks' 13 S2P5043 Warnings are Info, and uspLogError is Converted (was ConvertedWithWarnings).
@@ -617,3 +618,17 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - Established with PostgreSQL 18: on a small table (20,000 short rows) the planner may scan the
   table for LIKE '%smith%' although the trigram index can serve it; with enable_seqscan off it
   uses a bitmap scan of the index.
+- WP 4.15 departs from the plan in these places:
+  - A job's procedure is synthesised as T-SQL (`CREATE PROCEDURE sql2pg_agent.[job] AS BEGIN …
+    END`, a step that goes on after failing in TRY/CATCH) and converted like any other
+    procedure, so step commands get the same translation and diagnostics.
+  - "Go to step n" is not kept (S2P2024): the steps run in order.
+  - Schedules are cron in UTC (or cron.timezone); SQL Server Agent ran them in the server's local
+    time. Active start and end dates are not kept.
+  - pg_cron installs and runs only in cron.database_name, so the target database must be that one.
+- Established with SQL Server 2022 and PostgreSQL 18:
+  - msdb's job tables can be filled with sp_add_job, sp_add_jobstep, sp_add_schedule and
+    sp_attach_schedule while SQL Server Agent is not running, as in the container.
+  - The PGDG package postgresql-18-cron installs into the postgres:18 image; the server needs
+    shared_preload_libraries=pg_cron and cron.database_name at start. A build of that image once
+    failed on an apt download and passed on the rerun; the test is skipped when it cannot be built.

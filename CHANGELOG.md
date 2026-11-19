@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **SQL Server Agent jobs** (WP 4.15): with `--agent-jobs` (`assess`, `schema`, `migrate`, live
+  source), the jobs with T-SQL steps in the database are read from msdb. Each becomes a procedure
+  in `sql2pg_agent` that runs its steps in order, with their quit/next-step actions. With
+  `pg_cron` enabled, each schedule cron can express (daily, weekly, monthly; at a time, or every
+  N minutes or hours) becomes `cron.schedule(…, 'CALL …')`, switched off when disabled (S2P2025).
+  Other schedules (S2P2023) and non-T-SQL steps or jumps to steps (S2P2024) are reported.
+  Container tests can use a PostgreSQL with pg_cron (`Infrastructure/postgres-cron/Dockerfile`).
 - **Trigram indexes** (WP 4.14, with `pg_trgm` enabled): a varchar/nvarchar/text column that
   converted views and routines search with a leading-wildcard `LIKE` gets
   `CREATE INDEX … USING gin (col gin_trgm_ops)` (S2P2022, Info), and so does each column named by

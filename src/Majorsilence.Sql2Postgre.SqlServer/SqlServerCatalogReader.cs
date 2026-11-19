@@ -10,6 +10,24 @@ namespace Majorsilence.Sql2Postgre.SqlServer;
 /// </summary>
 public static class SqlServerCatalogReader
 {
+    /// <summary>The database, with its SQL Server Agent jobs (from msdb) when <paramref name="agentJobs"/> is set.</summary>
+    public static async Task<SourceReadResult> ReadAsync(string connectionString, bool agentJobs, CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(cancellationToken);
+        var read = await ReadAsync(conn, cancellationToken);
+        if (!agentJobs)
+            return read;
+        var (jobs, modules, diagnostics) = await AgentJobReader.ReadAsync(conn, read.Database.Name, cancellationToken);
+        var db = read.Database with
+        {
+            Modules = [.. read.Database.Modules, .. modules],
+            Schemas = jobs.Count > 0 ? [.. read.Database.Schemas, AgentJob.Schema] : read.Database.Schemas,
+            AgentJobs = jobs,
+        };
+        return new SourceReadResult(db, [.. read.Diagnostics, .. diagnostics]);
+    }
+
     public static async Task<SourceReadResult> ReadAsync(string connectionString, CancellationToken cancellationToken = default)
     {
         await using var conn = new SqlConnection(connectionString);

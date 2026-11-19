@@ -44,6 +44,10 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         Description = $"PostgreSQL connection string. Default: ${TargetVariable}.",
     };
     private readonly Option<FileInfo?> _config = new("--config", "-c") { Description = "Conversion options as JSON (sql2pg.json)." };
+    private readonly Option<bool> _agentJobs = new("--agent-jobs")
+    {
+        Description = "Also convert the SQL Server Agent jobs with T-SQL steps in this database (read from msdb; needs a live source), scheduled with pg_cron.",
+    };
     private readonly Option<string[]> _trigram = new("--trigram-index")
     {
         Description = "Give this column (schema.table.column) a pg_trgm index for LIKE '%…%' searches; repeat for more. Needs pg_trgm in the extensions.",
@@ -83,11 +87,11 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         var root = new RootCommand("sql2pg: convert a SQL Server database (schema, code and data) to PostgreSQL.");
 
         var assess = new Command("assess", "Convert without writing anything and report what converts, with warnings, or needs a person.")
-            { _source, _config, _trigram, _json, _html };
+            { _source, _config, _trigram, _agentJobs, _json, _html };
         assess.SetAction((p, ct) => Guarded(() => AssessAsync(p, ct)));
 
         var schema = new Command("schema", "Write the PostgreSQL schema as one script per phase, plus report.json.")
-            { _source, _out, _config, _trigram };
+            { _source, _out, _config, _trigram, _agentJobs };
         schema.SetAction((p, ct) => Guarded(() => SchemaAsync(p, ct)));
 
         var apply = new Command("apply", "Run the scripts 'sql2pg schema' wrote against a PostgreSQL database.")
@@ -99,7 +103,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         data.SetAction((p, ct) => Guarded(() => DataAsync(p, ct)));
 
         var migrate = new Command("migrate", "Schema, data, then constraints, indexes and code, then verification.")
-            { _source, _target, _config, _trigram, _parallel, _state, _verify, _stopOnError, _applyManual, _recreate };
+            { _source, _target, _config, _trigram, _agentJobs, _parallel, _state, _verify, _stopOnError, _applyManual, _recreate };
         migrate.SetAction((p, ct) => Guarded(() => MigrateAsync(p, ct)));
 
         var path = new Argument<string>("path") { Description = "A .sql file, or a folder of them (searched recursively)." };
@@ -179,7 +183,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
     private async Task<int> AssessAsync(ParseResult p, CancellationToken ct)
     {
         var options = Options(p);
-        var read = await ReadSourceAsync(Required(p.GetValue(_source), SourceVariable, "--source"), ct);
+        var read = await ReadSourceAsync(Required(p.GetValue(_source), SourceVariable, "--source"), ct, p.GetValue(_agentJobs));
         var result = SchemaConverter.Convert(read.Database, options);
         await WriteSummaryAsync(read, result);
         if (p.GetValue(_json) is { } json)
@@ -202,7 +206,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
     private async Task<int> SchemaAsync(ParseResult p, CancellationToken ct)
     {
         var options = Options(p);
-        var read = await ReadSourceAsync(Required(p.GetValue(_source), SourceVariable, "--source"), ct);
+        var read = await ReadSourceAsync(Required(p.GetValue(_source), SourceVariable, "--source"), ct, p.GetValue(_agentJobs));
         var result = SchemaConverter.Convert(read.Database, options);
         var dir = p.GetValue(_out)!;
         ScriptPlanner.WriteFiles(result, dir.FullName);
@@ -250,7 +254,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         string source = Required(p.GetValue(_source), SourceVariable, "--source");
         string target = Required(p.GetValue(_target), TargetVariable, "--target");
         var verify = VerifyModeFrom(p) ?? VerifyMode.Count;
-        var read = await ReadLiveSourceAsync(source, ct);
+        var read = await ReadLiveSourceAsync(source, ct, p.GetValue(_agentJobs));
         var result = SchemaConverter.Convert(read.Database, options);
         await WriteSummaryAsync(read, result);
 
@@ -323,10 +327,12 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
 
     public static bool IsConnectionString(string source) => source.Contains('=');
 
-    private static async Task<SourceReadResult> ReadSourceAsync(string source, CancellationToken ct)
+    private static async Task<SourceReadResult> ReadSourceAsync(string source, CancellationToken ct, bool agentJobs = false)
     {
         if (IsConnectionString(source))
-            return await SqlServerCatalogReader.ReadAsync(source, ct);
+            return await SqlServerCatalogReader.ReadAsync(source, agentJobs, ct);
+        if (agentJobs)
+            throw new UsageException("--agent-jobs reads msdb: --source must be a connection string.");
         if (Directory.Exists(source))
             return SqlServerScriptReader.ReadDirectory(source);
         if (File.Exists(source))
@@ -334,9 +340,9 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         throw new UsageException($"--source '{source}' is not a connection string, a folder or a file.");
     }
 
-    private static Task<SourceReadResult> ReadLiveSourceAsync(string source, CancellationToken ct) =>
+    private static Task<SourceReadResult> ReadLiveSourceAsync(string source, CancellationToken ct, bool agentJobs = false) =>
         IsConnectionString(source)
-            ? SqlServerCatalogReader.ReadAsync(source, ct)
+            ? SqlServerCatalogReader.ReadAsync(source, agentJobs, ct)
             : throw new UsageException("Copying data needs a live SQL Server: --source must be a connection string.");
 
     private IReadOnlyList<string> Tables(ParseResult p) =>
