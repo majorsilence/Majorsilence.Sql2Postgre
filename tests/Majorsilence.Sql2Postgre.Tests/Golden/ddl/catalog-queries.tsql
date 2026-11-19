@@ -1,0 +1,19 @@
+CREATE SCHEMA Sales;
+GO
+CREATE TABLE Sales.Customer (CustomerID int IDENTITY(1,1) NOT NULL PRIMARY KEY, Name nvarchar(50) NOT NULL);
+GO
+CREATE SEQUENCE Sales.OrderNumbers AS bigint START WITH 100;
+GO
+CREATE PROCEDURE dbo.Reseed @sequence sysname AS
+BEGIN
+    DECLARE @current bigint = (SELECT CAST(current_value AS bigint) FROM sys.sequences WHERE name = @sequence AND SCHEMA_NAME(schema_id) = N'Sales');
+    IF NOT EXISTS (SELECT 1 FROM sys.procedures WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Reseed')
+        PRINT N'missing';
+    IF OBJECT_ID(N'Sales.Customer', N'U') IS NOT NULL AND COLUMNPROPERTY(OBJECT_ID(N'Sales.Customer'), N'CustomerID', 'IsIdentity') = 1
+        SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, COL_LENGTH(N'Sales.Customer', COLUMN_NAME) AS bytes
+        FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = N'Sales' ORDER BY ORDINAL_POSITION;
+    IF SERVERPROPERTY(N'IsXTPSupported') = 0 AND IS_ROLEMEMBER(N'db_owner') = 1
+        PRINT N'no in-memory tables';
+    SELECT name FROM sys.indexes;
+END;
+GO

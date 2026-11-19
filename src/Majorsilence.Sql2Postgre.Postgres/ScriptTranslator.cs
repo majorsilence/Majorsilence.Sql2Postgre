@@ -76,7 +76,7 @@ public static class ScriptTranslator
         }
 
         var prelude = new StringBuilder();
-        foreach (var helper in SchemaConverter.CompatObjects(compat, options))
+        foreach (var helper in SchemaConverter.CompatObjects(compat, options, schema => CatalogNames.Statement(model, names, schema)))
             prelude.Append(helper.Sql).Append('\n');
         return new ScriptTranslation(prelude.ToString(), body.ToString(), diagnostics);
     }

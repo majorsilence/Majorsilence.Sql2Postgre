@@ -537,6 +537,43 @@ Which rows match is close to SQL Server's, but not the same:
 
 The Warning form names a varbinary column that `*` leaves out (S2P2021).
 
+### S2P3043 CatalogViewUnsupported (Error)
+
+A SQL Server catalog view, or a `SERVERPROPERTY` property, the converter does not answer. The
+views it answers are `sys.objects`, `sys.tables`, `sys.views`, `sys.procedures`,
+`sys.sequences`, `sys.schemas` and `sys.columns`, and `INFORMATION_SCHEMA.TABLES`, `VIEWS`,
+`COLUMNS`, `ROUTINES` and `SCHEMATA` (see S2P3044). For anything else (`sys.indexes`,
+`sys.database_principals`, `sys.partition_schemes`, …), query PostgreSQL's own catalogs
+(`pg_catalog`, `information_schema`) instead.
+
+### S2P3044 CatalogEmulated (Info)
+
+Code that asks SQL Server about itself is answered from the converted database:
+
+- **The views.** `sys.*` and `INFORMATION_SCHEMA.*` views become views in `mssql_compat`
+  (`mssql_compat.sys_tables`, `mssql_compat.information_schema_columns`, …). They list the
+  converted objects under their **SQL Server names**, so `WHERE SCHEMA_NAME(schema_id) = N'Sales'
+  AND name = @table` works as before, with literals and variables alike.
+- **The name table.** The converter writes every converted schema, table, view, routine, sequence
+  and column, with its SQL Server and PostgreSQL names and a column's SQL Server type, into
+  `mssql_compat.object_names` when the `catalog` helper is created.
+- **The functions.** `OBJECT_ID`, `OBJECT_NAME`, `SCHEMA_NAME`, `SCHEMA_ID`, `COL_LENGTH`
+  (SQL Server's byte lengths), `COLUMNPROPERTY` (`IsIdentity`, `AllowsNull`, `ColumnId`,
+  `Precision`, `Scale`) and `OBJECTPROPERTY` (`IsUserTable`, `IsView`, `IsProcedure`, the
+  function kinds) are `mssql_compat` functions over the same table.
+- **Ids** are PostgreSQL oids: they agree between the views and the functions, not with SQL
+  Server's numbers.
+- **Without the table:**
+  - `DB_ID`, `DB_NAME` read `pg_database`.
+  - `IS_ROLEMEMBER` is `pg_has_role`; `db_owner` is the database's owner.
+  - `SERVERPROPERTY` answers `ProductVersion`, `ServerName`, `MachineName`, `InstanceName`,
+    `Collation` and `LCID` from PostgreSQL. The features PostgreSQL lacks (`IsXTPSupported`,
+    `IsPolybaseInstalled`, `IsHadrEnabled`, …) are 0, `IsFullTextInstalled` is 1 (full-text
+    search is converted), and `EngineEdition` is 3 (code tests it for 5, Azure SQL Database).
+
+Objects created after the conversion (by dynamic SQL, say) are not in the table. Neither are the
+system objects SQL Server lists: these views show only user objects (`is_ms_shipped` is 0).
+
 ## S2P4xxx — queries and DML
 
 ### S2P4001 TopPercent (Info)

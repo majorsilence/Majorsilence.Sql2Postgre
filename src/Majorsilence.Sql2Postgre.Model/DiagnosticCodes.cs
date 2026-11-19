@@ -209,6 +209,12 @@ public static class DiagnosticCodes
     /// <summary>Full-text search through PostgreSQL text search: which rows match is close, ranks and stemming differ.</summary>
     public const string FullTextSearch = "S2P3042";
 
+    /// <summary>A SQL Server catalog view, or a catalog property, the converter does not answer.</summary>
+    public const string CatalogViewUnsupported = "S2P3043";
+
+    /// <summary>sys.*, INFORMATION_SCHEMA.* or a metadata function answered from mssql_compat's catalog of converted objects.</summary>
+    public const string CatalogEmulated = "S2P3044";
+
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
 

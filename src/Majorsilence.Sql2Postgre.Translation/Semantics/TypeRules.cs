@@ -150,6 +150,9 @@ public static class TypeRules
             "DATENAME" or "FORMAT" or "ERROR_MESSAGE" or "ERROR_PROCEDURE" or "JSON_VALUE" or "SUSER_SNAME" or "SUSER_NAME"
                 or "USER_NAME" or "DB_NAME" or "HOST_NAME" or "APP_NAME" or "QUOTENAME" or "CHAR" or "NCHAR" or "SPACE" or "STR" => new SqlServerType("nvarchar", 4000),
             "JSON_QUERY" or "JSON_MODIFY" => new SqlServerType("nvarchar", -1),
+            "SCHEMA_NAME" or "OBJECT_NAME" or "OBJECT_SCHEMA_NAME" => new SqlServerType("nvarchar", 128),
+            "SCHEMA_ID" or "OBJECT_ID" or "DB_ID" or "COLUMNPROPERTY" or "OBJECTPROPERTY" or "OBJECTPROPERTYEX" or "IS_ROLEMEMBER" => new SqlServerType("int"),
+            "COL_LENGTH" => new SqlServerType("smallint"),
             "ISNULL" => First(),
             "COALESCE" => args.Aggregate((SqlServerType?)null, (acc, t) => acc is null ? t : Combine(acc, t)),
             "NULLIF" => First(),

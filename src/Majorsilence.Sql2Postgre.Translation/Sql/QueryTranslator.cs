@@ -289,6 +289,8 @@ public sealed partial class QueryTranslator
             return pseudo;
         if (n.SchemaObject.SchemaIdentifier is null && c.Scope.Cte(written) is not null)
             return new PgTableRef(new PgName("", _names.Alias(written)), alias);
+        if (n.SchemaObject is { DatabaseIdentifier: null, SchemaIdentifier: { } catalog } && CatalogViews.IsCatalogSchema(catalog.Value))
+            return _x.CatalogView(n, alias, c);
         GlobalTemp(n, written);
         if (written.StartsWith('#'))
             return new PgTableRef(new PgName("", TempTable(written)), alias);

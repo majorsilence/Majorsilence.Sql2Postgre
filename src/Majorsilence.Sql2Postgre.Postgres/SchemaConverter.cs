@@ -13,7 +13,8 @@ public static class SchemaConverter
     {
         var translator = new SchemaTranslator(options);
         var translated = translator.Translate(db);
-        var compat = CompatObjects(translator.UsedCompatFunctions, options);
+        var compat = CompatObjects(translator.UsedCompatFunctions, options,
+            schema => CatalogNames.Statement(Translation.Semantics.SemanticModel.Build(db), translator.Names, schema));
         var objects = translated.Select(o => new ConvertedObject(o.Source, o.Kind, o.TargetName, o.Phase,
                 string.Concat(o.Statements.Select(s => PgWriter.Write(s, options.TargetVersion))),
                 o.Status, o.Diagnostics, o.DependsOn)
@@ -27,8 +28,13 @@ public static class SchemaConverter
         return new ConversionResult(ordered, [.. translator.Names.Diagnostics, .. planDiagnostics]);
     }
 
-    /// <summary>The compat schema and each helper used, as objects of the Schemas and Compat phases.</summary>
-    public static IEnumerable<ConvertedObject> CompatObjects(IReadOnlyCollection<string> used, ConversionOptions options)
+    /// <summary>
+    /// The compat schema and each helper used, as objects of the Schemas and Compat phases. The
+    /// <c>catalog</c> helper is followed by its rows of SQL Server and PostgreSQL names, which
+    /// <paramref name="catalogNames"/> writes for the quoted compat schema.
+    /// </summary>
+    public static IEnumerable<ConvertedObject> CompatObjects(IReadOnlyCollection<string> used, ConversionOptions options,
+        Func<string, string>? catalogNames = null)
     {
         if (used.Count == 0)
             yield break;
@@ -37,6 +43,8 @@ public static class SchemaConverter
             Phase.Schemas, $"CREATE SCHEMA IF NOT EXISTS {schema};\n", ObjectStatus.Converted, [], []);
         foreach (string name in used.Order(StringComparer.Ordinal))
             yield return new ConvertedObject(new ObjectName(options.CompatSchemaName, name), ObjectKind.Function, $"{schema}.{name}",
-                Phase.Compat, Compat.CompatScripts.Create(name, schema), ObjectStatus.Converted, [], []);
+                Phase.Compat, Compat.CompatScripts.Create(name, schema)
+                    + (name == Translation.Sql.CatalogViews.Helper && catalogNames is not null ? "\n" + catalogNames(schema) : ""),
+                ObjectStatus.Converted, [], []);
     }
 }

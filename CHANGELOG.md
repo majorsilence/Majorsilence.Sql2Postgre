@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Catalog queries** (WP 4.10):
+  - `sys.objects`, `sys.tables`, `sys.views`, `sys.procedures`, `sys.sequences`, `sys.schemas`,
+    `sys.columns` and `INFORMATION_SCHEMA.TABLES`/`VIEWS`/`COLUMNS`/`ROUTINES`/`SCHEMATA` become
+    views in `mssql_compat` that list the converted objects under their SQL Server names, so
+    comparisons with SQL Server names keep working, variables included.
+  - The new `catalog` helper holds those views, the table of SQL Server and PostgreSQL names
+    (`mssql_compat.object_names`, filled by the converter) and the functions `OBJECT_ID`,
+    `OBJECT_NAME`, `SCHEMA_NAME`, `SCHEMA_ID`, `COL_LENGTH`, `COLUMNPROPERTY` and
+    `OBJECTPROPERTY`. Ids are PostgreSQL oids.
+  - `DB_ID`, `DB_NAME(id)`, `IS_ROLEMEMBER` and more `SERVERPROPERTY` properties are translated.
+  - S2P3043 reports a catalog view or property that is not answered; S2P3044 notes the emulation.
 - **char semantics** (WP 4.9):
   - A char(n) value keeps its trailing spaces where SQL Server makes it a string: a varchar
     CASE/IIF/COALESCE/ISNULL branch, `+`, CAST/CONVERT to varchar or text, and the string

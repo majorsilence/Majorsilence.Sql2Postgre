@@ -44,8 +44,12 @@ public sealed partial class SemanticModel
         return model;
     }
 
+    /// <summary>The database the model was built from.</summary>
+    public SourceDatabase Source { get; private set; } = null!;
+
     private void Load(SourceDatabase db)
     {
+        Source = db;
         _databaseName = db.Name;
         foreach (var t in db.Tables)
         {
@@ -463,6 +467,10 @@ public sealed partial class SemanticModel
             return cte;
         if (written.BaseIdentifier.Value.StartsWith('#'))
             return scope.Table(written.BaseIdentifier.Value);
+        if (written.DatabaseIdentifier is null && written.SchemaIdentifier is { } catalog && Sql.CatalogViews.IsCatalogSchema(catalog.Value))
+            return Sql.CatalogViews.Find(catalog.Value, written.BaseIdentifier.Value) is { } view
+                ? new RelationInfo(null, ObjectKind.Function, view.Columns)
+                : null;
         if (ResolveRelation(written, contextSchema) is not { } name)
             return null;
         if (Relation(name) is { } relation)
