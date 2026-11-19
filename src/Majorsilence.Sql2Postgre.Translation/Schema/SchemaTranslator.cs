@@ -112,6 +112,7 @@ public sealed partial class SchemaTranslator
                         $"{m.Kind} {m.Name} is not converted.")], [])
                 { Skipped = true });
         }
+        objects.AddRange(TrigramIndexes(tables, queries.Expressions.LeadingWildcardSearches));
         objects = PropagateUnconverted(objects, model);
         foreach (var o in objects)
             _moduleCompat.UnionWith(o.CompatFunctions);
@@ -132,6 +133,56 @@ public sealed partial class SchemaTranslator
                 [new PgCreateExtension(e)], [], [])).ToList();
 
         return [.. extensionObjects, .. schemaObjects, .. objects];
+    }
+
+    /// <summary>
+    /// With pg_trgm: a GIN index with gin_trgm_ops for each text column a converted view or routine
+    /// searches with a leading-wildcard LIKE, and for each column the options name.
+    /// </summary>
+    private IEnumerable<TranslatedObject> TrigramIndexes(IReadOnlyList<Table> tables, IEnumerable<(ObjectName Table, string Column)> searched)
+    {
+        if (!_options.AllowsExtension(PermittedExtensions.PgTrgm))
+            yield break;
+        var wanted = searched.Select(s => (s.Table, s.Column, Named: false)).ToList();
+        foreach (string written in _options.TrigramIndexes)
+        {
+            var parts = written.Split('.');
+            if (parts.Length != 3)
+            {
+                yield return new TranslatedObject(new ObjectName("", written), ObjectKind.Index, written, Phase.Indexes, [],
+                    [new Diagnostic(DiagnosticCodes.TrigramIndex, Severity.Warning, null, $"The trigram index '{written}' is not schema.table.column; it is not created.")], [])
+                { Skipped = true };
+                continue;
+            }
+            wanted.Add((new ObjectName(parts[0], parts[1]), parts[2], true));
+        }
+        var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (tableName, columnName, named) in wanted)
+        {
+            var table = tables.FirstOrDefault(t => ObjectNameComparer.Instance.Equals(t.Name, tableName));
+            var column = table?.Columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+            if (table is null || column is null || column.Type.Name is not ("varchar" or "nvarchar" or "text" or "ntext" or "sysname"))
+            {
+                if (named)
+                    yield return new TranslatedObject(new ObjectName(tableName.Schema, $"{tableName.Name}.{columnName}"), ObjectKind.Index, $"{tableName}.{columnName}", Phase.Indexes, [],
+                        [new Diagnostic(DiagnosticCodes.TrigramIndex, Severity.Warning, tableName,
+                            $"The trigram index on {tableName}.{columnName} is not created: it is not a varchar, nvarchar or text column of a converted table.")], [])
+                    { Skipped = true };
+                continue;
+            }
+            if (!done.Add($"{table.Name}.{column.Name}") || Missing(table.Name, [_names.Column(table.Name, column.Name)]).Count > 0)
+                continue;
+            var pgTable = _names.Relation(table.Name);
+            string name = _names.Index(table.Name, $"trgm_{table.Name.Name}_{column.Name}");
+            yield return new TranslatedObject(new ObjectName(table.Name.Schema, $"trgm_{table.Name.Name}_{column.Name}"), ObjectKind.Index,
+                $"{NameMapper.Quote(pgTable.Schema)}.{NameMapper.Quote(name)}", Phase.Indexes,
+                [new PgCreateIndex(name, pgTable, [new PgIndexKey(_names.Column(table.Name, column.Name), OperatorClass: "gin_trgm_ops")], [], Method: "gin")],
+                [new Diagnostic(DiagnosticCodes.TrigramIndex, Severity.Info, table.Name,
+                    named
+                        ? $"{table.Name}.{column.Name} gets a pg_trgm index, as the options ask: LIKE '%…%' searches can use it. It takes space and slows writes a little."
+                        : $"{table.Name}.{column.Name} gets a pg_trgm index, because converted code searches it with LIKE '%…%', which a B-tree index cannot serve. It takes space and slows writes a little; take pg_trgm out of the extensions to leave it out.")],
+                [table.Name]) { Extensions = [PermittedExtensions.PgTrgm] };
+        }
     }
 
     private bool Excluded(ObjectName name) =>

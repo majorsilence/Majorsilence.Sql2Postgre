@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Trigram indexes** (WP 4.14, with `pg_trgm` enabled): a varchar/nvarchar/text column that
+  converted views and routines search with a leading-wildcard `LIKE` gets
+  `CREATE INDEX … USING gin (col gin_trgm_ops)` (S2P2022, Info), and so does each column named by
+  the new `trigramIndexes` option or `--trigram-index schema.table.column`. Index keys can carry an
+  operator class.
 - **Remaining DML forms** (WP 4.13):
   - `UPDATE TOP (n)` and `DELETE TOP (n)` pick the rows by ctid in a key query with `LIMIT n`
     (S2P4009 is Info).

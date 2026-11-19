@@ -1,3 +1,8 @@
+-- sql2pg: phase Schemas
+
+-- sql2pg:object Extension pg_trgm status=Converted
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- sql2pg: phase Tables
 
 -- sql2pg:object Table public.item status=Converted
@@ -94,6 +99,11 @@ BEGIN
     */
 END;
 $$;
+
+-- sql2pg: phase Indexes
+
+-- sql2pg:object Index public.trgm_item_name status=Converted
+CREATE INDEX trgm_item_name ON public.item USING gin (name gin_trgm_ops);
 
 -- sql2pg: phase Constraints
 

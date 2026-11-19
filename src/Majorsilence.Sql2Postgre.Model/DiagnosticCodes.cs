@@ -134,6 +134,9 @@ public static class DiagnosticCodes
     /// <summary>A full-text index's language, stoplist or document type column has no PostgreSQL counterpart.</summary>
     public const string FullTextSettingUnmapped = "S2P2021";
 
+    /// <summary>A pg_trgm GIN index for a column searched with a leading-wildcard LIKE (or named in the options).</summary>
+    public const string TrigramIndex = "S2P2022";
+
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
 

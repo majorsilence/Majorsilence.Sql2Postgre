@@ -44,6 +44,11 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         Description = $"PostgreSQL connection string. Default: ${TargetVariable}.",
     };
     private readonly Option<FileInfo?> _config = new("--config", "-c") { Description = "Conversion options as JSON (sql2pg.json)." };
+    private readonly Option<string[]> _trigram = new("--trigram-index")
+    {
+        Description = "Give this column (schema.table.column) a pg_trgm index for LIKE '%…%' searches; repeat for more. Needs pg_trgm in the extensions.",
+        AllowMultipleArgumentsPerToken = true,
+    };
     private readonly Option<FileInfo?> _json = new("--json") { Description = "Write the full report as JSON to this file." };
     private readonly Option<FileInfo?> _html = new("--html") { Description = "Write the report as a single self-contained HTML file (summary, effort, sortable object table)." };
     private readonly Option<DirectoryInfo> _out = new("--out", "-o") { Description = "Directory for the phase scripts and report.json.", Required = true };
@@ -78,11 +83,11 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         var root = new RootCommand("sql2pg: convert a SQL Server database (schema, code and data) to PostgreSQL.");
 
         var assess = new Command("assess", "Convert without writing anything and report what converts, with warnings, or needs a person.")
-            { _source, _config, _json, _html };
+            { _source, _config, _trigram, _json, _html };
         assess.SetAction((p, ct) => Guarded(() => AssessAsync(p, ct)));
 
         var schema = new Command("schema", "Write the PostgreSQL schema as one script per phase, plus report.json.")
-            { _source, _out, _config };
+            { _source, _out, _config, _trigram };
         schema.SetAction((p, ct) => Guarded(() => SchemaAsync(p, ct)));
 
         var apply = new Command("apply", "Run the scripts 'sql2pg schema' wrote against a PostgreSQL database.")
@@ -94,7 +99,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
         data.SetAction((p, ct) => Guarded(() => DataAsync(p, ct)));
 
         var migrate = new Command("migrate", "Schema, data, then constraints, indexes and code, then verification.")
-            { _source, _target, _config, _parallel, _state, _verify, _stopOnError, _applyManual, _recreate };
+            { _source, _target, _config, _trigram, _parallel, _state, _verify, _stopOnError, _applyManual, _recreate };
         migrate.SetAction((p, ct) => Guarded(() => MigrateAsync(p, ct)));
 
         var path = new Argument<string>("path") { Description = "A .sql file, or a folder of them (searched recursively)." };
@@ -308,6 +313,8 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
                 throw new UsageException($"Config file '{file.FullName}' is not valid: {ex.Message}");
             }
         }
+        if (p.GetValue(_trigram) is { Length: > 0 } trigram)
+            options = options with { TrigramIndexes = [.. options.TrigramIndexes, .. trigram] };
         var errors = options.Validate();
         if (errors.Count > 0)
             throw new UsageException(string.Join(" ", errors));

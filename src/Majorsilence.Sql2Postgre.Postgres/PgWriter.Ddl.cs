@@ -138,7 +138,7 @@ public static partial class PgWriter
         var sb = new StringBuilder($"CREATE {(i.Unique ? "UNIQUE " : "")}INDEX {(i.Name.Length == 0 ? "" : Q(i.Name) + " ")}ON {i.Table.Qualified}");
         if (i.Method is not null)
             sb.Append($" USING {i.Method}");
-        sb.Append($" ({string.Join(", ", i.Keys.Select(k => IndexKey(k) + (k.Descending ? " DESC" : "")))})");
+        sb.Append($" ({string.Join(", ", i.Keys.Select(k => IndexKey(k) + (k.OperatorClass is null ? "" : " " + k.OperatorClass) + (k.Descending ? " DESC" : "")))})");
         if (i.Include.Count > 0)
             sb.Append($" INCLUDE ({Columns(i.Include)})");
         if (i.Where is not null)

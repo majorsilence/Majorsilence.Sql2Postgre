@@ -342,8 +342,21 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
     /// <c>[ ]</c> character class becomes SIMILAR TO, which has bracket expressions (and other
     /// metacharacters, escaped).
     /// </summary>
+    /// <summary>
+    /// Table columns searched with a leading-wildcard LIKE (<c>col LIKE '%x%'</c>), which a B-tree
+    /// cannot serve: candidates for a pg_trgm index (WP 4.14).
+    /// </summary>
+    public SortedSet<(ObjectName Table, string Column)> LeadingWildcardSearches { get; } =
+        new(Comparer<(ObjectName Table, string Column)>.Create((a, b) =>
+            string.CompareOrdinal(a.Table.ToString(), b.Table.ToString()) is var t and not 0 ? t : string.Compare(a.Column, b.Column, StringComparison.OrdinalIgnoreCase)));
+
     private PgExpr Like(LikePredicate like, ExpressionContext c)
     {
+        if (like.SecondExpression is StringLiteral { Value: [ '%' or '_', ..] }
+            && like.FirstExpression is ColumnReferenceExpression { MultiPartIdentifier: { } id }
+            && c.Scope.ResolveColumn(id.Identifiers.Select(i => i.Value).ToList()) is { Binding.Relation: { Kind: ObjectKind.Table, Name: { } table }, Column: var column }
+            && column.Type?.Name is "varchar" or "nvarchar" or "text" or "ntext" or "sysname")
+            LeadingWildcardSearches.Add((table, column.Name));
         var operand = Text(like.FirstExpression, c);
         if (like.SecondExpression is StringLiteral { Value: var text })
         {

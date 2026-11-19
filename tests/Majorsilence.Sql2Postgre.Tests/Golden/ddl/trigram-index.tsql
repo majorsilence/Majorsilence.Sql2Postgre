@@ -1,0 +1,8 @@
+-- options: {"extensions": ["pg_trgm"], "trigramIndexes": ["dbo.Customer.Email", "dbo.Customer.CustomerId", "nonsense"]}
+CREATE TABLE dbo.Customer (CustomerId int NOT NULL PRIMARY KEY, Name nvarchar(100) NOT NULL, Email varchar(200) NULL, Code char(8) NULL);
+GO
+CREATE VIEW dbo.Smiths AS SELECT CustomerId, Name FROM dbo.Customer WHERE Name LIKE N'%smith%' OR Code LIKE '%7';
+GO
+CREATE PROCEDURE dbo.FindByName @part nvarchar(50) AS
+    SELECT c.CustomerId FROM dbo.Customer AS c WHERE c.Name LIKE N'_' + @part OR c.Name LIKE @part + N'%';
+GO

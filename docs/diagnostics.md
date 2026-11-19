@@ -310,6 +310,21 @@ counterpart for:
   are not carried over. A text search dictionary built from the list can replace the
   configuration's.
 
+### S2P2022 TrigramIndex (Info or Warning)
+
+A column gets a pg_trgm index, `CREATE INDEX … USING gin (col gin_trgm_ops)`, so `LIKE '%…%'`
+searches can use an index (a B-tree serves only a fixed prefix). It is created, with `pg_trgm`
+enabled, for each varchar, nvarchar or text column of a converted table that:
+
+- the converted views and routines search with a leading-wildcard `LIKE` (a pattern that starts
+  with `%` or `_`), or
+- the options name in `trigramIndexes` (`sql2pg.json`) or `--trigram-index schema.table.column`.
+
+The index takes space and slows writes a little, so it is reported (Info). Take `pg_trgm` out of
+the extensions to leave such indexes out. It is a Warning when a column the options name is not
+a text column of a converted table, or is not written `schema.table.column`; then no index is
+created.
+
 ## S2P3xxx — expressions and built-in functions
 
 ### S2P3001 UnsupportedExpression (Error)

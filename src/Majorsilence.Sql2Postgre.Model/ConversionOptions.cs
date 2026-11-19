@@ -38,6 +38,12 @@ public sealed record ConversionOptions
     /// <summary><c>schema.name</c> patterns of objects to leave out; <c>*</c> matches any run of characters.</summary>
     public IReadOnlyList<string> ExcludeObjects { get; init; } = [];
 
+    /// <summary>
+    /// Columns (<c>schema.table.column</c>) to give a pg_trgm index, besides those the converted
+    /// views and routines search with a leading-wildcard LIKE. Needs the <c>pg_trgm</c> extension.
+    /// </summary>
+    public IReadOnlyList<string> TrigramIndexes { get; init; } = [];
+
     /// <summary>The permitted extensions the output may use (a subset of <see cref="PermittedExtensions.All"/>; empty = core only).</summary>
     [JsonConverter(typeof(SortedStringSetConverter))]
     public IReadOnlySet<string> Extensions { get; init; } = PermittedExtensions.All;
