@@ -40,7 +40,7 @@ public class IncrementalSyncTests
         try
         {
             var db = (await SqlServerCatalogReader.ReadAsync(source.ConnectionString)).Database;
-            var options = new ConversionOptions { Extensions = new HashSet<string>() };
+            var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
             var schema = SchemaConverter.Convert(db, options);
             await PgApplier.ApplyAsync(schema.Objects.Where(o => o.Phase <= Phase.Tables), target.ConnectionString);
             var first = await IncrementalCopier.SyncAsync(db, options, source.ConnectionString, target.ConnectionString, statePath);

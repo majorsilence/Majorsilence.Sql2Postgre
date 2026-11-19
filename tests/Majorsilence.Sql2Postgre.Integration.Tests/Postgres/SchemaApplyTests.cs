@@ -18,7 +18,7 @@ public class SchemaApplyTests
     {
         await using var source = await SqlServerDatabase.CreateAsync(SqlServerDatabase.Fixture("shop.sql"), "shop");
         var db = (await SqlServerCatalogReader.ReadAsync(source.ConnectionString)).Database;
-        var result = SchemaConverter.Convert(db, new ConversionOptions { Extensions = new HashSet<string>() });
+        var result = SchemaConverter.Convert(db, new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() });
         await AssertAppliesAsync(result);
     }
 
@@ -26,7 +26,7 @@ public class SchemaApplyTests
     public async Task ShopFixtureAppliesFromTheScript()
     {
         var db = SqlServerScriptReader.Read([("shop.sql", SqlServerDatabase.Fixture("shop.sql"))]).Database;
-        var result = SchemaConverter.Convert(db, new ConversionOptions { Extensions = new HashSet<string>() });
+        var result = SchemaConverter.Convert(db, new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() });
         await AssertAppliesAsync(result);
     }
 

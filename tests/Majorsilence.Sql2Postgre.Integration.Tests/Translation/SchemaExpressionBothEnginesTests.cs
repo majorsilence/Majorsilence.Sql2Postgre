@@ -52,7 +52,7 @@ public class SchemaExpressionBothEnginesTests
     [TestCase("0x00ABFF")]
     public async Task SameValue(string tsql)
     {
-        var options = new ConversionOptions();
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion };
         var names = new NameMapper(options);
         var result = new SchemaExpressionTranslator(options, names, new TypeMapper(options, names))
             .Translate(tsql, new ObjectName("dbo", "t"), []);

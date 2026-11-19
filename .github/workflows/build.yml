@@ -38,8 +38,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PostgreSQL 18 only for now; 15-17 support is revisited once 18 is in good shape.
-        pg: [18]
+        # Every supported target; each run converts for the PostgreSQL it runs on (TargetVersion).
+        pg: [15, 16, 17, 18]
     env:
       SQL2PG_PG_VERSION: ${{ matrix.pg }}
     steps:

@@ -394,7 +394,7 @@ public sealed partial class SchemaTranslator
             collation = CaseInsensitiveCollation.Qualified;
             if (_options.TargetVersion < 18)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.LikeOnNondeterministic, Severity.Warning, t.Name,
-                    $"{t.Name}.{c.Name} gets a case-insensitive collation; PostgreSQL {_options.TargetVersion} cannot use LIKE on it (18 can)."));
+                    $"{t.Name}.{c.Name} gets a case-insensitive (nondeterministic) collation. PostgreSQL {_options.TargetVersion} allows no LIKE or substring search on it (18 does): LIKE on the column is rewritten as lower(… COLLATE \"default\") LIKE lower(…), but CHARINDEX, REPLACE and other substring searches of it fail until you target 18."));
         }
 
         if (c.IsRowGuidCol)

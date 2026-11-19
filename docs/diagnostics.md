@@ -158,8 +158,16 @@ equal. PostgreSQL's default collations are case-sensitive. With
 
 ### S2P1302 LikeOnNondeterministic (Warning)
 
-PostgreSQL before 18 does not allow `LIKE` on a column with a nondeterministic collation. Target
-PostgreSQL 18, or keep the default collation for columns searched with `LIKE`.
+A column gets the case-insensitive ICU collation (`IcuCollation`), which is nondeterministic,
+and the target is before PostgreSQL 18. PostgreSQL 15–17 allow neither `LIKE` nor substring
+searches (`strpos`, `position`, `replace`, `split_part`, `string_to_array`) on such a column.
+PostgreSQL 18 allows both; no version allows regular expressions (`SIMILAR TO`, `~`).
+
+The converter rewrites `LIKE` on such a column, before 18, and `SIMILAR TO` (T-SQL's `[a-c]`
+patterns) on every version, as a case-insensitive match on the default collation:
+`lower(name COLLATE "default") LIKE lower('b%')`. Substring searches of the column
+(`CHARINDEX`, `REPLACE`, …) are not rewritten and fail at run time before 18: target
+PostgreSQL 18, or keep the default collation for those columns.
 
 ### S2P1401 ExtensionRequired (Info)
 
@@ -741,6 +749,43 @@ Parameters keep their names and are written `<routine>.<name>` in the body; loca
 become `v_<name>`, all declared at the top of the body, and `#variable_conflict use_column`
 makes a bare name a column, as it is in T-SQL. A script batch that uses variables or control
 flow becomes a `DO` block.
+
+### S2P4015 OutputBefore18 (Info, Warning or Error)
+
+`OUTPUT` for a target before PostgreSQL 18. From 18, `inserted` and `deleted` are `RETURNING`'s
+`new` and `old`. PostgreSQL 15–17 have no `old`/`new` in `RETURNING`, which sees the target row
+only: the new row of `INSERT` and `UPDATE`, the removed row of `DELETE`. So:
+
+| Statement | Before 18 |
+|---|---|
+| `INSERT … OUTPUT inserted.*`, `DELETE … OUTPUT deleted.*` | the target's columns (no diagnostic) |
+| `UPDATE … OUTPUT inserted.*` | the target's columns (no diagnostic) |
+| `UPDATE … OUTPUT deleted.*` | **Info:** the old row from a copy of the table joined by primary key, `FROM (SELECT sql2pg_old AS sql2pg_row, sql2pg_old.key AS sql2pg_k1 FROM t AS sql2pg_old) AS sql2pg_old`, read as `(sql2pg_old.sql2pg_row).column`. **Warning** when the table has no primary key and the join is on `ctid`: a row that another transaction updates while this one waits for it is skipped, because its `ctid` changes. |
+| `MERGE … OUTPUT` on 17 | `inserted.c` is `CASE WHEN merge_action() = 'DELETE' THEN NULL ELSE t.c END`, and `deleted.c` the same for `'INSERT'`, as SQL Server's pseudo-table is NULL for the rows it does not see. |
+| `MERGE … OUTPUT deleted` on 17, when the MERGE updates | **Error:** `RETURNING` sees only an updated row's new values. |
+| `MERGE … OUTPUT` on 15 and 16 | **Error:** `MERGE … RETURNING` is new in PostgreSQL 17. |
+
+Target PostgreSQL 18 to keep the plain `old`/`new` form, or rewrite the statement (for example,
+read the old values into a temporary table before the `MERGE`).
+
+### S2P4016 MergeBySource (Info)
+
+`MERGE … WHEN NOT MATCHED BY SOURCE` for a target before PostgreSQL 17, which has no such
+clause. Each by-source action runs as a data-modifying CTE of the statement, on the target rows
+that no source row matches:
+
+```sql
+WITH sql2pg_by_source_1 AS (DELETE FROM shop.product AS t
+WHERE NOT EXISTS (SELECT 1 FROM source AS s WHERE t.product_id = s.id) AND t.product_id = 5)
+MERGE INTO shop.product AS t USING source AS s ON t.product_id = s.id
+WHEN MATCHED THEN …
+```
+
+The result is the same: those rows match no source row, so the `MERGE`, which sees the same
+snapshot, leaves them alone. A later by-source clause skips the rows an earlier one's condition
+took. With only by-source clauses, the last action is the statement itself. The source is read
+twice, so a volatile source (`NEWID()`) can differ between the two reads, and `@@ROWCOUNT` after
+the statement counts only the `MERGE`'s own rows.
 
 ### S2P5001 VariableRedeclared (Error)
 

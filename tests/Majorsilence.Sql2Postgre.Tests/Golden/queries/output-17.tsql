@@ -1,0 +1,9 @@
+-- options: {"targetVersion": 17}
+INSERT INTO shop.product (product_id, name) OUTPUT inserted.product_id, inserted.name VALUES (12, N'Out');
+DELETE FROM shop.sales_fact OUTPUT deleted.* WHERE amount > 15;
+UPDATE shop.[order] SET total = total + 1 OUTPUT deleted.total AS before, inserted.total AS after WHERE order_id = 1;
+UPDATE o SET total = 0 OUTPUT deleted.total, inserted.* FROM shop.[order] o JOIN shop.customer c ON c.customer_id = o.customer_id WHERE c.name = N'x';
+UPDATE shop.sales_fact SET amount = amount * 2 OUTPUT deleted.amount, inserted.amount WHERE sale_id = 3;
+MERGE shop.product AS t USING (VALUES (2, N'Child A2'), (20, N'Fresh')) AS s (id, name) ON t.product_id = s.id WHEN MATCHED THEN UPDATE SET name = s.name WHEN NOT MATCHED THEN INSERT (product_id, name) VALUES (s.id, s.name) WHEN NOT MATCHED BY SOURCE AND t.product_id = 5 THEN DELETE OUTPUT $action, inserted.product_id;
+MERGE shop.product AS t USING (VALUES (20, N'Fresh')) AS s (id, name) ON t.product_id = s.id WHEN NOT MATCHED THEN INSERT (product_id, name) VALUES (s.id, s.name) WHEN NOT MATCHED BY SOURCE AND t.product_id = 5 THEN DELETE OUTPUT $action, deleted.product_id, inserted.*;
+MERGE shop.product AS t USING (VALUES (2, N'Child A2')) AS s (id, name) ON t.product_id = s.id WHEN MATCHED THEN UPDATE SET name = s.name OUTPUT deleted.name;

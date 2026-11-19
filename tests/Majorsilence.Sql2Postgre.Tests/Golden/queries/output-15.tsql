@@ -1,0 +1,5 @@
+-- options: {"targetVersion": 15}
+INSERT INTO shop.product (product_id, name) OUTPUT inserted.* VALUES (12, N'Out');
+DELETE p OUTPUT deleted.product_id FROM shop.product p JOIN shop.product parent ON parent.product_id = p.parent_id WHERE parent.name = N'x';
+UPDATE shop.[order] SET total = total + 1 OUTPUT deleted.* WHERE order_id = 1;
+MERGE shop.product AS t USING (VALUES (20, N'Fresh')) AS s (id, name) ON t.product_id = s.id WHEN NOT MATCHED THEN INSERT (product_id, name) VALUES (s.id, s.name) OUTPUT $action, inserted.product_id;

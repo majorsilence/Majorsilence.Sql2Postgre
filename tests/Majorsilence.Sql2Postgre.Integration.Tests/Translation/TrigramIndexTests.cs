@@ -25,7 +25,7 @@ public class TrigramIndexTests
     public async Task TheIndexIsCreatedAndUsed()
     {
         var db = SqlServerScriptReader.Read([("trgm.sql", Script)]).Database;
-        var options = new ConversionOptions { Extensions = new HashSet<string> { PermittedExtensions.PgTrgm } };
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string> { PermittedExtensions.PgTrgm } };
         var schema = SchemaConverter.Convert(db, options);
         Assert.That(schema.Objects.Where(o => o.Kind == ObjectKind.Index).Select(o => o.TargetName), Does.Contain("public.trgm_customer_name"));
 

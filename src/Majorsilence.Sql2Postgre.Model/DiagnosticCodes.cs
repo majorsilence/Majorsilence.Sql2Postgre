@@ -266,6 +266,16 @@ public static class DiagnosticCodes
     /// <summary>An OUTPUT … INTO form that is not translated (OUTPUT INTO alongside a plain OUTPUT).</summary>
     public const string OutputInto = "S2P4013";
 
+    /// <summary>
+    /// OUTPUT for a PostgreSQL before 18, which has no old/new in RETURNING: an UPDATE's deleted
+    /// read through a self-join (Info; Warning on ctid), or a MERGE … OUTPUT that cannot be
+    /// written (Error: MERGE has RETURNING from 17, and its deleted needs 18 when it updates).
+    /// </summary>
+    public const string OutputBefore18 = "S2P4015";
+
+    /// <summary>MERGE … WHEN NOT MATCHED BY SOURCE for a PostgreSQL before 17: each action runs as a data-modifying CTE.</summary>
+    public const string MergeBySource = "S2P4016";
+
     // ---- 5xxx procedural code ----
 
     /// <summary>A variable declared twice with different types (PostgreSQL has one declaration per body).</summary>

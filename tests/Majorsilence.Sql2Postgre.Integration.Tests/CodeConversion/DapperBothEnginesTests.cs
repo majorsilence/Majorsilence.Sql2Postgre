@@ -86,7 +86,7 @@ public class DapperBothEnginesTests
     [Test]
     public async Task SameOutputAfterConvertingDatabaseAndCode()
     {
-        var options = new ConversionOptions { Extensions = new HashSet<string>() };
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
         await using var source = await SqlServerDatabase.CreateAsync(Schema, "dapper");
         await using var target = await PostgresDatabase.CreateAsync("dapper");
         var db = (await SqlServerCatalogReader.ReadAsync(source.ConnectionString)).Database;

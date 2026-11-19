@@ -1,0 +1,4 @@
+-- options: {"caseInsensitive": "icuCollation", "targetVersion": 18}
+SELECT customer_id FROM shop.customer WHERE name LIKE N'b%';
+SELECT customer_id FROM shop.customer WHERE name NOT LIKE N'[a-m]%';
+SELECT customer_id FROM shop.customer WHERE email LIKE N'%@x%';

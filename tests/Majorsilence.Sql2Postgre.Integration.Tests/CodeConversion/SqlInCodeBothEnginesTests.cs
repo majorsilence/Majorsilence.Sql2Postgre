@@ -79,7 +79,7 @@ public class SqlInCodeBothEnginesTests
     [Test]
     public async Task SameOutputAfterConvertingDatabaseAndCode()
     {
-        var options = new ConversionOptions { Extensions = new HashSet<string>() };
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
         await using var source = await SqlServerDatabase.CreateAsync(Schema, "sqlincode");
         await using var target = await PostgresDatabase.CreateAsync("sqlincode");
         var db = (await SqlServerCatalogReader.ReadAsync(source.ConnectionString)).Database;

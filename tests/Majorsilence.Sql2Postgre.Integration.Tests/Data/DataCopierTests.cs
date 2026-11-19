@@ -13,7 +13,7 @@ namespace Majorsilence.Sql2Postgre.Integration.Tests.Data;
 [Category("Containers")]
 public class DataCopierTests
 {
-    private static readonly ConversionOptions Options = new() { Extensions = new HashSet<string>() };
+    private static readonly ConversionOptions Options = new() { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
 
 
     private SqlServerDatabase _source = null!;

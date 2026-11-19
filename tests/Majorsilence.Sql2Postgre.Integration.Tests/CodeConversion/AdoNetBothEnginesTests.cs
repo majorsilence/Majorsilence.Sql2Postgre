@@ -117,7 +117,7 @@ public class AdoNetBothEnginesTests
     [TestCase(VisualBasic, "Sample.vb")]
     public async Task SameOutputAfterConversion(string source, string file)
     {
-        var converted = new CodeConverter(new CodeConversionOptions(new ConversionOptions())).ConvertFile(file, source);
+        var converted = new CodeConverter(new CodeConversionOptions(new ConversionOptions { TargetVersion = Engines.TargetVersion })).ConvertFile(file, source);
         Assert.That(converted.Diagnostics.Where(d => d.Severity == Severity.Error), Is.Empty);
         Assert.That(converted.NewText, Does.Not.Contain("SqlClient").And.Not.Contain("SqlDbType."), converted.NewText);
 

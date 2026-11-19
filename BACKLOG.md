@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.17 — PostgreSQL 15, 16 and 17 (18 stays the default; `--target-version`; OUTPUT without RETURNING old/new before 18, S2P4015; WHEN NOT MATCHED BY SOURCE as CTEs before 17, S2P4016; LIKE and SIMILAR TO on the ICU case-insensitive collation; container tests convert for SQL2PG_PG_VERSION, CI on 15–18); 5 golden files and 11 both-engines cases (4 OUTPUT, 7 ICU LIKE), plus the pg_cron test image fixed. Integration: 704 tests, 0 failed on each version; all pass on 18 and 17, and on 15 and 16 one case (a procedure with MERGE … OUTPUT, S2P4015) is skipped by design. The Agent-job test, skipped below 18 in the full runs because Testcontainers could not build the pg_cron image, passed on all four after the Dockerfile fix. Corpus on all four: 223 passed (15's two WideWorldImporters scans passed on a rerun after a container read timeout), 0 apply / copy / verify failures, no S2P9001, the same object counts per database, 206 of 207 agreement queries at 100; only S2P2001 differs (STORED computed columns: AdventureWorks 3 → 8, WideWorldImporters 1 → 4 below 18).
 - WP 4.16 — incremental data sync (data --since: a whole first pass, then rowversion, change tracking or whole copies per table, upserted from a staging table with tracked deletes applied; S2P7010); a container test of three passes over a rowversion table, a change-tracked table and a plain one, verified by checksum. Stage 4 complete.
 - WP 4.15 — SQL Server Agent jobs (--agent-jobs reads msdb jobs with T-SQL steps in the database; each becomes a sql2pg_agent procedure of its steps; cron.schedule for each daily/weekly/monthly schedule; S2P2023, S2P2024, S2P2025); 21 unit tests (schedule mapping, the synthesised procedure) and a container test on PostgreSQL 18 with pg_cron: a real msdb job converted, scheduled in cron.job, and its procedure leaving the same log as its steps on SQL Server. Corpus: unchanged (it does not read Agent jobs).
 - WP 4.14 — trigram indexes (gin_trgm_ops indexes for columns searched with a leading-wildcard LIKE in converted views and routines, dynamic SQL included, and for columns the trigramIndexes option or --trigram-index names; S2P2022); 2 golden files (one changed) and a PostgreSQL 18 test that the index is created and used. Corpus: unchanged (it runs without pg_trgm).
@@ -640,3 +641,26 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
 - Established with SQL Server 2022: change tracking reports a row inserted and then updated as
   one insert and a row deleted after a change as one delete, so the net change per key is what
   the sync applies; `ALTER DATABASE CURRENT SET CHANGE_TRACKING = ON` works from a user database.
+- WP 4.17 departs from the plan in these places:
+  - The plan's list (virtual generated columns, uuidv7, MERGE RETURNING, OLD/NEW in RETURNING,
+    LIKE on nondeterministic collations) missed one 17-only form the shop tests use:
+    `WHEN NOT MATCHED BY SOURCE`. Before 17 it runs as data-modifying CTEs (S2P4016).
+  - `MERGE … OUTPUT` on 15 and 16 is reported (S2P4015), not rewritten: rebuilding RETURNING from
+    separate UPDATE/INSERT/DELETE CTEs would change which WHEN clause takes a row.
+  - The old row of an UPDATE's OUTPUT before 18 is a whole-row column of a self-joined copy,
+    `(sql2pg_old.sql2pg_row).col`, so the copy hides none of the statement's unqualified columns.
+  - `--target-version` was added to the CLI (it was a config-file setting only).
+- Established with PostgreSQL 15, 17 and 18 (scratch containers):
+  - With a nondeterministic ICU collation, 15–17 reject `LIKE` and the substring searches
+    (`strpos`, `position`, `replace`, `split_part`, `string_to_array`): "nondeterministic
+    collations are not supported for LIKE / substring searches". 18 accepts both. No version
+    accepts `SIMILAR TO` or `~` ("… for regular expressions"), so `[a-c]` patterns on such a
+    column failed on 18 too until this WP.
+  - `lower(x COLLATE "default") LIKE lower(p)` and `… SIMILAR TO lower(p)` work on all four.
+  - A data-modifying CTE on `MERGE` (`WITH d AS (DELETE …) MERGE …`) works on 15.
+  - The official postgres images set `ENV PG_VERSION=16.16-1.pgdg13+1` (and `PG_MAJOR=16`). In
+    the classic builder (Testcontainers, `DOCKER_BUILDKIT=0`) that overrides a Dockerfile
+    `ARG PG_VERSION` after `FROM`, so `postgresql-${PG_VERSION}-cron` was not found; BuildKit
+    builds had hidden it. The Agent-job test had been skipped wherever the image was not cached.
+  - MERGE's `merge_action()` and `RETURNING` exist from 17; on 17 a deleted row's `RETURNING t.col`
+    is the old value and an inserted row's the new one.

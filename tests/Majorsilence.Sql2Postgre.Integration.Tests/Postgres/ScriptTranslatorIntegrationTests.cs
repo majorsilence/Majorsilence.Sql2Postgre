@@ -18,7 +18,7 @@ public class ScriptTranslatorIntegrationTests
             GO
             SELECT DATEDIFF(month, '2024-01-31', '2024-03-01') AS months, ISNUMERIC('1e5') AS n, CHARINDEX('b', 'abcb', 3) AS pos;
             """;
-        var translation = ScriptTranslator.Translate(script, SemanticModel.Build(new SourceDatabase("", "", 160, [], [], [], [], [], [])), new ConversionOptions());
+        var translation = ScriptTranslator.Translate(script, SemanticModel.Build(new SourceDatabase("", "", 160, [], [], [], [], [], [])), new ConversionOptions { TargetVersion = Engines.TargetVersion });
         var expected = await BothEngines.RunSqlServerAsync("SELECT DATEDIFF(month, '2024-01-31', '2024-03-01') AS months, ISNUMERIC('1e5') AS n, CHARINDEX('b', 'abcb', 3) AS pos");
 
         await using var db = await PostgresDatabase.CreateAsync("script");

@@ -16,6 +16,12 @@ public static class Engines
     public static string PostgresVersion =>
         Environment.GetEnvironmentVariable("SQL2PG_PG_VERSION") is { Length: > 0 } v ? v : "18";
 
+    /// <summary>
+    /// <see cref="PostgresVersion"/> as the converter's <c>TargetVersion</c>: every container test
+    /// converts for the PostgreSQL it runs on.
+    /// </summary>
+    public static int TargetVersion => int.Parse(PostgresVersion, System.Globalization.CultureInfo.InvariantCulture);
+
     private static readonly Lazy<Task<State>> Started = new(StartAsync, LazyThreadSafetyMode.ExecutionAndPublication);
 
     private sealed record State(MsSqlContainer? SqlServer, PostgreSqlContainer? Postgres, string? Unavailable);

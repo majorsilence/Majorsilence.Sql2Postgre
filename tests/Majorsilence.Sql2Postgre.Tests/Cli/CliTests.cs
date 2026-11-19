@@ -133,6 +133,31 @@ public class CliTests
         Directory.Delete(dir, recursive: true);
     }
 
+    [TestCase(18, "line_tax numeric GENERATED ALWAYS AS (qty * unit_price * 0.1) VIRTUAL")]
+    [TestCase(15, "line_tax numeric GENERATED ALWAYS AS (qty * unit_price * 0.1) STORED")]
+    public async Task TargetVersionSetsTheOutput(int version, string lineTax)
+    {
+        string dir = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"schema-{Guid.NewGuid():N}");
+        var (code, _, _) = await Run("schema", "--source", FixturePath, "--out", dir, "--target-version", version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Multiple(() =>
+        {
+            Assert.That(code, Is.EqualTo(ExitCodes.Success));
+            Assert.That(File.ReadAllText(Path.Combine(dir, "05-tables.sql")), Does.Contain(lineTax));
+        });
+        Directory.Delete(dir, recursive: true);
+    }
+
+    [Test]
+    public async Task UnsupportedTargetVersionIsAUsageError()
+    {
+        var (code, _, error) = await Run("assess", "--source", FixturePath, "--target-version", "14");
+        Assert.Multiple(() =>
+        {
+            Assert.That(code, Is.EqualTo(ExitCodes.UsageError));
+            Assert.That(error, Does.Contain("targetVersion"));
+        });
+    }
+
     [Test]
     public async Task UnreachableServerIsAnUnexpectedErrorWithThePasswordMasked()
     {

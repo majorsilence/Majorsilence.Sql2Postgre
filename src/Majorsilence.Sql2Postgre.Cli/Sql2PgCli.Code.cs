@@ -16,7 +16,7 @@ public sealed partial class Sql2PgCli
     {
         var path = new Argument<string>("path") { Description = "A .cs/.vb file, a configuration file, a folder, a .csproj/.vbproj, or a .sln/.slnx." };
         var code = new Command("code", "Convert C# and VB.NET code from SQL Server (ADO.NET, Dapper, Dapper.Contrib, EF Core) to PostgreSQL (Npgsql).")
-            { path, _codeOut, _inPlace, _source, _config, _json };
+            { path, _codeOut, _inPlace, _source, _config, _targetVersion, _json };
         code.SetAction((p, ct) => Guarded(() => CodeAsync(p, p.GetValue(path)!, ct)));
         return code;
     }

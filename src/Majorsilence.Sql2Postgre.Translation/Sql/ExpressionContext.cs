@@ -1,4 +1,5 @@
 using Majorsilence.Sql2Postgre.Model;
+using Majorsilence.Sql2Postgre.Translation.PgAst;
 using Majorsilence.Sql2Postgre.Translation.Semantics;
 
 namespace Majorsilence.Sql2Postgre.Translation.Sql;
@@ -49,25 +50,28 @@ public sealed class ExpressionContext
     /// <summary>Inside a FOR JSON query: a nested FOR JSON subquery is JSON, not a string.</summary>
     public bool InsideJson { get; init; }
 
-    /// <summary>In an OUTPUT clause: <c>inserted</c> and <c>deleted</c> are written as RETURNING's <c>new</c> and <c>old</c>.</summary>
-    public bool ReturningPseudoTables { get; init; }
+    /// <summary>
+    /// In an OUTPUT clause: how a column of <c>inserted</c> or <c>deleted</c> (the pseudo-table's
+    /// name in lower case, the column's PostgreSQL name) is written in RETURNING. Null elsewhere.
+    /// </summary>
+    public Func<string, string, PgExpr>? ReturningColumn { get; init; }
 
     public ExpressionContext With(Scope scope) =>
         new(scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions)
         {
-            QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable, InsideJson = InsideJson, ReturningPseudoTables = ReturningPseudoTables,
+            QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable, InsideJson = InsideJson, ReturningColumn = ReturningColumn,
         };
 
     public ExpressionContext WithInsideJson() =>
         new(Scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions)
         {
-            QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable, InsideJson = true, ReturningPseudoTables = ReturningPseudoTables,
+            QualifyColumns = QualifyColumns, RequireImmutable = RequireImmutable, InsideJson = true, ReturningColumn = ReturningColumn,
         };
 
-    public ExpressionContext WithReturning(Scope scope) =>
+    public ExpressionContext WithReturning(Scope scope, Func<string, string, PgExpr> column) =>
         new(scope, Schema, Owner, Diagnostics, Extensions, CompatFunctions)
         {
-            QualifyColumns = true, RequireImmutable = RequireImmutable, InsideJson = InsideJson, ReturningPseudoTables = true,
+            QualifyColumns = true, RequireImmutable = RequireImmutable, InsideJson = InsideJson, ReturningColumn = column,
         };
 
     public void Report(string code, Severity severity, string message) =>

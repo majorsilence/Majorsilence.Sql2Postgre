@@ -18,7 +18,7 @@ public class TypeMapperIntegrationTests
     {
         string script = SqlServerDatabase.Fixture("shop.sql");
         var table = SqlServerScriptReader.Read([("shop.sql", script)]).Database.Tables.Single(t => t.Name.Name == "all_types");
-        var options = new ConversionOptions { Extensions = new HashSet<string>() };
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
         var names = new NameMapper(options);
         var mapper = new TypeMapper(options, names);
 

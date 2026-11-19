@@ -102,26 +102,152 @@ public sealed partial class QueryTranslator
 
     // ---- OUTPUT ----
 
-    /// <summary>The RETURNING list of OUTPUT, or of OUTPUT … INTO (whose rows <see cref="OutputInto"/> then writes).</summary>
-    private IReadOnlyList<PgTarget> Returning(OutputClause? output, OutputIntoClause? into, DmlTarget target, ExpressionContext c, Scope? scope = null)
+    private enum Dml { Insert, Update, Delete, Merge }
+
+    /// <summary>The alias of the target's old row, joined to an UPDATE whose OUTPUT reads deleted before PostgreSQL 18.</summary>
+    private const string OldRowAlias = "sql2pg_old";
+
+    /// <summary>The old row as one composite column of <see cref="OldRowAlias"/>, so its column names hide no others.</summary>
+    private const string OldRowColumn = "sql2pg_row";
+
+    private static PgExpr OldRow => new PgColumnRef(OldRowColumn, OldRowAlias);
+
+    /// <summary>
+    /// The RETURNING list of OUTPUT, or of OUTPUT … INTO (whose rows <see cref="OutputInto"/> then
+    /// writes). <paramref name="qualifier"/> is the name the target goes by in the statement.
+    /// From PostgreSQL 18, <c>inserted</c> and <c>deleted</c> are RETURNING's <c>new</c> and
+    /// <c>old</c>. Before 18, RETURNING sees the target row only: the new row of INSERT and
+    /// UPDATE, the removed row of DELETE. So an UPDATE's <c>deleted</c> reads a self-joined copy
+    /// of the old row (<paramref name="oldRow"/> is then set, and <see cref="JoinOldRow"/> adds
+    /// it); MERGE has RETURNING from 17, where the target's columns are NULL for the rows the
+    /// pseudo-table does not see.
+    /// </summary>
+    private IReadOnlyList<PgTarget> Returning(OutputClause? output, OutputIntoClause? into, DmlTarget target, ExpressionContext c, Scope? scope,
+        Dml kind, string? qualifier, out bool oldRow, bool mergeUpdates = false)
     {
+        oldRow = false;
         if (into is not null && output is not null)
             throw ExpressionTranslator.Untranslatable(into, "OUTPUT … INTO together with a plain OUTPUT", DiagnosticCodes.OutputInto);
         var columns = into?.SelectColumns ?? output?.SelectColumns;
         if (columns is null)
             return [];
-        var pseudo = (scope ?? c.Scope).Child();
-        pseudo.Bind(new Binding("inserted", target.Relation));
-        pseudo.Bind(new Binding("deleted", target.Relation));
-        var rc = c.WithReturning(pseudo);
-        return columns.Select(e => e switch
+        int version = _x.Options.TargetVersion;
+        if (kind == Dml.Merge && version < 17)
+            throw ExpressionTranslator.Untranslatable((TSqlFragment?)into ?? output!,
+                $"MERGE … OUTPUT on PostgreSQL {version} (MERGE has RETURNING from PostgreSQL 17)", DiagnosticCodes.OutputBefore18);
+        bool usesOld = false;
+
+        PgExpr Column(string pseudo, string column)
+        {
+            if (version >= 18)
+                return new PgColumnRef(column, pseudo == "inserted" ? "new" : "old");
+            switch (kind)
+            {
+                case Dml.Update when pseudo == "deleted":
+                    usesOld = true;
+                    return new PgTemplate("({0})." + NameMapper.Quote(column), [OldRow]);
+                case Dml.Merge when pseudo == "deleted" && mergeUpdates:
+                    throw new UntranslatableException(DiagnosticCodes.OutputBefore18,
+                        $"OUTPUT deleted.{column} in a MERGE that updates cannot be translated for PostgreSQL {version}: its RETURNING sees only the new row of an update (old is PostgreSQL 18's).");
+                case Dml.Merge:
+                    // SQL Server's inserted is NULL for a deleted row, and deleted for an inserted one.
+                    return new PgCase(null,
+                        [new PgWhen(new PgBinary("=", new PgFunctionCall("merge_action", []), PgLiteral.String(pseudo == "inserted" ? "DELETE" : "INSERT")), PgLiteral.Null)],
+                        new PgColumnRef(column, qualifier));
+                default:
+                    return new PgColumnRef(column, qualifier);
+            }
+        }
+
+        // inserted.* / deleted.*: one star, except in MERGE before 18, where each column is wrapped.
+        IReadOnlyList<PgTarget> Star(string pseudo)
+        {
+            if (version >= 18)
+                return [PgTarget.All(pseudo == "deleted" ? "old" : "new")];
+            if (kind == Dml.Update && pseudo == "deleted")
+            {
+                usesOld = true;
+                return [new PgTarget(new PgTemplate("({0}).*", [OldRow]))];
+            }
+            if (kind != Dml.Merge)
+                return [PgTarget.All(qualifier ?? target.Name.Name)];
+            if (target.Relation.Columns.Count == 0)
+                throw new UntranslatableException(DiagnosticCodes.OutputBefore18,
+                    $"OUTPUT {pseudo}.* in a MERGE into a table whose columns are not known cannot be translated for PostgreSQL {version}.");
+            var binding = new Binding(pseudo, target.Relation);
+            return target.Relation.Columns.Select(col =>
+            {
+                string mapped = _x.TargetColumn(binding, col.Name);
+                return new PgTarget(Column(pseudo, mapped), mapped);
+            }).ToList();
+        }
+
+        var pseudoScope = (scope ?? c.Scope).Child();
+        pseudoScope.Bind(new Binding("inserted", target.Relation));
+        pseudoScope.Bind(new Binding("deleted", target.Relation));
+        var rc = c.WithReturning(pseudoScope, Column);
+        var targets = columns.SelectMany(e => e switch
         {
             SelectScalarExpression { Expression: ColumnReferenceExpression { ColumnType: ColumnType.PseudoColumnAction } } s =>
-                new PgTarget(new PgFunctionCall("merge_action", []), s.ColumnName is null ? null : _names.Alias(s.ColumnName.Value)),
-            SelectScalarExpression s => new PgTarget(_x.Scalar(s.Expression, rc), s.ColumnName is null ? null : _names.Alias(s.ColumnName.Value)),
-            SelectStarExpression { Qualifier.Identifiers: [var q] } => PgTarget.All(q.Value.ToLowerInvariant() == "deleted" ? "old" : "new"),
+                [new PgTarget(new PgFunctionCall("merge_action", []), s.ColumnName is null ? null : _names.Alias(s.ColumnName.Value))],
+            SelectScalarExpression s => [ReturningTarget(s, rc)],
+            SelectStarExpression { Qualifier.Identifiers: [var q] } => Star(q.Value.ToLowerInvariant()),
             _ => throw ExpressionTranslator.Untranslatable(e, "this OUTPUT item"),
         }).ToList();
+        oldRow = usesOld;
+        return targets;
+    }
+
+    /// <summary>An OUTPUT expression; a column wrapped for MERGE keeps the column's name, as SQL Server's does.</summary>
+    private PgTarget ReturningTarget(SelectScalarExpression s, ExpressionContext rc)
+    {
+        var value = _x.Scalar(s.Expression, rc);
+        string? alias = s.ColumnName is not null ? _names.Alias(s.ColumnName.Value)
+            : value is PgCase && s.Expression is ColumnReferenceExpression { MultiPartIdentifier.Identifiers: [.., var last] } ? _names.Alias(last.Value)
+            : null;
+        return new PgTarget(value, alias);
+    }
+
+    /// <summary>
+    /// Before PostgreSQL 18: an UPDATE whose OUTPUT reads deleted joins the target to a copy of
+    /// itself, by primary key (or by ctid when the table has none), so RETURNING can read the row
+    /// as it was before the SET: <c>FROM (SELECT sql2pg_old AS sql2pg_row, sql2pg_old.key AS
+    /// sql2pg_k1 FROM t AS sql2pg_old) AS sql2pg_old WHERE sql2pg_old.sql2pg_k1 = t.key</c>. The
+    /// copy shows only those names, so the statement's unqualified columns stay unambiguous.
+    /// </summary>
+    private PgUpdate JoinOldRow(PgUpdate update, DmlTarget target, string qualifier, ExpressionContext c)
+    {
+        int version = _x.Options.TargetVersion;
+        if (update.Where is PgKeyword { Sql: var w } && w.StartsWith("CURRENT OF", StringComparison.Ordinal))
+            throw new UntranslatableException(DiagnosticCodes.OutputBefore18,
+                $"OUTPUT deleted in UPDATE … WHERE CURRENT OF cannot be translated for PostgreSQL {version} (it reads the old row through a join).");
+        IReadOnlyList<string>? key = target.Source is { } source && _model.Table(source)?.PrimaryKey is { Columns.Count: > 0 } pk
+            ? pk.Columns.Select(col => Column(target, col.Name)).ToList()
+            : null;
+        var keys = key ?? ["ctid"];
+        var names = keys.Select((_, i) => $"sql2pg_k{i + 1}").ToList();
+        PgExpr? on = null;
+        for (int i = 0; i < keys.Count; i++)
+        {
+            PgExpr eq = new PgBinary("=", new PgColumnRef(names[i], OldRowAlias), new PgColumnRef(keys[i], qualifier));
+            on = on is null ? eq : new PgBinary("AND", on, eq);
+        }
+        var copy = new PgSelect
+        {
+            Targets = [new PgTarget(new PgColumnRef(OldRowAlias), OldRowColumn), .. keys.Select((k, i) => new PgTarget(new PgColumnRef(k, OldRowAlias), names[i]))],
+            From = [new PgTableRef(target.Name, OldRowAlias)],
+        };
+        if (key is null)
+            c.Report(DiagnosticCodes.OutputBefore18, Severity.Warning,
+                $"OUTPUT deleted in this UPDATE reads the old row through a self-join on ctid (PostgreSQL {version} has no old in RETURNING, and {target.Name.Name} has no primary key): a row that another transaction updates while this one waits for it is skipped. Add a primary key, or target PostgreSQL 18.");
+        else
+            c.Report(DiagnosticCodes.OutputBefore18, Severity.Info,
+                $"OUTPUT deleted in this UPDATE reads the old row through a self-join on the primary key (PostgreSQL {version} has no old in RETURNING).");
+        return update with
+        {
+            From = [.. update.From, new PgSubqueryRef(copy, OldRowAlias, [])],
+            Where = update.Where is null ? on : new PgBinary("AND", on!, update.Where),
+        };
     }
 
     /// <summary>
@@ -215,7 +341,7 @@ public sealed partial class QueryTranslator
         return OutputInto(new PgInsert(target.Name, source is null ? [] : columns.Select(col => Column(target, col)).ToList(), source)
         {
             With = Ctes(statement.WithCtesAndXmlNamespaces, c, out _),
-            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, c),
+            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, c, null, Dml.Insert, target.Name.Name, out _),
         }, spec.OutputIntoClause, c);
     }
 
@@ -358,11 +484,13 @@ public sealed partial class QueryTranslator
             : spec.TopRowFilter is { } top
                 ? And([joins, TopRows(top, target, alias, from, And([joins, condition]), uc, "UPDATE")])
                 : And([joins, condition]);
-        return OutputInto(new PgUpdate(target.Name, alias, set)
+        string qualifier = alias ?? target.Name.Name;
+        var update = new PgUpdate(target.Name, alias, set)
         {
             With = ctes, From = from, Where = where,
-            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, uc, scope),
-        }, spec.OutputIntoClause, cc);
+            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, uc, scope, Dml.Update, qualifier, out bool oldRow),
+        };
+        return OutputInto(oldRow ? JoinOldRow(update, target, qualifier, uc) : update, spec.OutputIntoClause, cc);
     }
 
     /// <summary>When the UPDATE/DELETE target is an alias, the table it stands for in FROM.</summary>
@@ -429,7 +557,7 @@ public sealed partial class QueryTranslator
             return OutputInto(new PgDelete(target.Name, keyAlias)
             {
                 With = ctes, Where = keys,
-                Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, kc, kc.Scope),
+                Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, kc, kc.Scope, Dml.Delete, keyAlias, out _),
             }, spec.OutputIntoClause, cc);
         }
         var (alias, from, joins, scope) = TargetAndFrom(target, spec.FromClause, cc);
@@ -443,7 +571,7 @@ public sealed partial class QueryTranslator
                 : spec.TopRowFilter is { } top
                     ? And([joins, TopRows(top, target, alias, from, And([joins, condition]), dc, "DELETE")])
                     : And([joins, condition]),
-            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, dc, scope),
+            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, dc, scope, Dml.Delete, alias ?? target.Name.Name, out _),
         }, spec.OutputIntoClause, cc);
     }
 
@@ -526,11 +654,12 @@ public sealed partial class QueryTranslator
         if (finder.Columns.Any(col => tc.Scope.ResolveColumn(col.MultiPartIdentifier.Identifiers.Select(i => i.Value).ToList()) is null))
             throw ExpressionTranslator.Untranslatable(from, "UPDATE whose target is inside an outer join and whose SET reads the other tables", DiagnosticCodes.UpdateFromOuterJoin);
         var set = spec.SetClauses.Select(s => Assignment(s, target, tc)).ToList();
-        return OutputInto(new PgUpdate(target.Name, alias, set)
+        var update = new PgUpdate(target.Name, alias, set)
         {
             With = ctes, Where = keys,
-            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, tc, tc.Scope),
-        }, spec.OutputIntoClause, c);
+            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, tc, tc.Scope, Dml.Update, alias, out bool oldRow),
+        };
+        return OutputInto(oldRow ? JoinOldRow(update, target, alias, tc) : update, spec.OutputIntoClause, c);
     }
 
     private sealed class ColumnFinder : TSqlFragmentVisitor
@@ -579,11 +708,65 @@ public sealed partial class QueryTranslator
                 InsertMergeAction ins => MergeInsert(ins, target, mc),
                 var other => throw ExpressionTranslator.Untranslatable(other, "this MERGE action"),
             })).ToList();
-        return OutputInto(new PgMerge(target.Name, target.Alias is null ? null : _names.Alias(target.Alias), source, _x.Boolean(spec.SearchCondition, mc), whens)
+        var merge = new PgMerge(target.Name, target.Alias is null ? null : _names.Alias(target.Alias), source, _x.Boolean(spec.SearchCondition, mc), whens)
         {
             With = ctes,
-            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, mc, scope),
-        }, spec.OutputIntoClause, cc);
+            Returning = Returning(spec.OutputClause, spec.OutputIntoClause, target, mc, scope, Dml.Merge,
+                target.Alias is null ? target.Name.Name : _names.Alias(target.Alias), out _, spec.ActionClauses.Any(a => a.Action is UpdateMergeAction)),
+        };
+        return OutputInto(_x.Options.TargetVersion < 17 && whens.Any(w => w.Condition == BySource) ? MergeBySource(merge, mc) : merge, spec.OutputIntoClause, cc);
+    }
+
+    private const string BySource = "NOT MATCHED BY SOURCE";
+
+    /// <summary>
+    /// MERGE … WHEN NOT MATCHED BY SOURCE before PostgreSQL 17, which has no such clause. Each
+    /// by-source action becomes a data-modifying CTE on the MERGE: <c>WITH sql2pg_by_source_1 AS
+    /// (DELETE FROM t WHERE NOT EXISTS (SELECT 1 FROM source WHERE on) AND condition) MERGE …</c>,
+    /// a later clause skipping the rows an earlier one's condition took. Exact, because those rows
+    /// match no source row, so the MERGE (which sees the same snapshot) leaves them alone. With
+    /// only by-source clauses, the last one is the statement.
+    /// </summary>
+    private PgStatement MergeBySource(PgMerge merge, ExpressionContext c)
+    {
+        var unmatched = new PgExists(new PgSelect { Targets = [new PgTarget(new PgLiteral("1"))], From = [merge.Source], Where = merge.On }, Negated: true);
+        var actions = new List<PgStatement>();
+        PgExpr? taken = null;
+        foreach (var w in merge.Whens.Where(w => w.Condition == BySource))
+        {
+            PgExpr where = unmatched;
+            if (taken is not null)
+                where = new PgBinary("AND", where, new PgUnary("NOT", new PgFunctionCall("COALESCE", [taken, PgLiteral.False])));
+            if (w.And is not null)
+                where = new PgBinary("AND", where, w.And);
+            actions.Add(w.Action switch
+            {
+                PgMergeUpdate u => new PgUpdate(merge.Table, merge.Alias, u.Set) { Where = where },
+                PgMergeDelete => new PgDelete(merge.Table, merge.Alias) { Where = where },
+                var other => throw new UntranslatableException(DiagnosticCodes.MergeBySource, $"WHEN NOT MATCHED BY SOURCE THEN {other} cannot be translated."),
+            });
+            if (w.And is null)
+                break; // later by-source clauses never apply
+            taken = taken is null ? w.And : new PgBinary("OR", taken, w.And);
+        }
+        c.Report(DiagnosticCodes.MergeBySource, Severity.Info,
+            $"WHEN NOT MATCHED BY SOURCE (new in PostgreSQL 17) runs as {(actions.Count == 1 ? "an UPDATE or DELETE" : "UPDATEs or DELETEs")} of the target rows no source row matches, in a CTE of the statement for PostgreSQL {_x.Options.TargetVersion}; @@ROWCOUNT counts only the MERGE's own rows.");
+        var remaining = merge.Whens.Where(w => w.Condition != BySource).ToList();
+        if (remaining.Count == 0)
+        {
+            var last = actions[^1];
+            var before = Ctes(actions.Take(actions.Count - 1));
+            return last switch
+            {
+                PgUpdate u => u with { With = [.. merge.With, .. before] },
+                PgDelete d => d with { With = [.. merge.With, .. before] },
+                _ => last,
+            };
+        }
+        return merge with { Whens = remaining, With = [.. merge.With, .. Ctes(actions)] };
+
+        static IEnumerable<PgCte> Ctes(IEnumerable<PgStatement> statements) =>
+            statements.Select((d, i) => new PgCte($"sql2pg_by_source_{i + 1}", [], new PgModifyingQuery(d)));
     }
 
     private PgMergeAction MergeInsert(InsertMergeAction ins, DmlTarget target, ExpressionContext c)

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **PostgreSQL 15, 16 and 17** (WP 4.17): the output runs on every version from 15 to 18; 18
+  stays the default. Pick the version with `targetVersion` in the config or the new
+  `--target-version` option (`assess`, `schema`, `migrate`, `translate`, `code`).
+  - `OUTPUT` before 18, which has no `old`/`new` in `RETURNING` (S2P4015): `inserted` and
+    `deleted` read the target row (`INSERT`, `DELETE`, an `UPDATE`'s new values); an `UPDATE`'s
+    `deleted` reads the old row from a copy of the table joined by primary key (by ctid, with a
+    Warning, when there is none); `MERGE … OUTPUT` on 17 NULLs the columns of the rows the
+    pseudo-table does not see, and on 15 and 16 it is reported (`MERGE … RETURNING` is new in 17).
+  - `MERGE … WHEN NOT MATCHED BY SOURCE` before 17: each by-source `UPDATE`/`DELETE` runs as a
+    data-modifying CTE of the statement on the target rows no source row matches (S2P4016).
+  - With `IcuCollation`, `LIKE` on a case-insensitive column becomes
+    `lower(col COLLATE "default") LIKE lower(pattern)` before 18, which allows no `LIKE` on a
+    nondeterministic collation. `SIMILAR TO` (T-SQL `[a-c]` patterns) on such a column does so on
+    every version, 18 included, since no version allows regular expressions on it (S2P1302).
+  - Container tests convert for the PostgreSQL they run on (`SQL2PG_PG_VERSION`), and CI runs
+    them on 15, 16, 17 and 18.
+  - The pg_cron test image names its package by the base image's `PG_MAJOR`: built by
+    Testcontainers (the classic builder), the image's own `PG_VERSION` environment variable
+    overrode the build argument, the build failed, and the Agent-job test was skipped.
 - **Incremental data sync** (WP 4.16): `sql2pg data --since state.json` copies every table whole
   the first time, then only what changed: by rowversion (a rowversion column and a primary key),
   by change tracking (`CHANGETABLE(CHANGES …)`, deletes included), or the whole table again. The

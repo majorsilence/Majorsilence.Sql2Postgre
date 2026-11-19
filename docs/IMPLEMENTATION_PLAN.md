@@ -45,7 +45,7 @@ These apply to every WP. A PR that breaks one is not mergeable.
    SQL Server. Package dependencies listed under [Dependencies](#dependencies) are allowed;
    adding any other package needs the reviewer's OK in the PR description.
 2. **Pure, unmodified PostgreSQL output.** Everything emitted must run on stock community
-   PostgreSQL 18 (see *Target version* below): core features, plus only these permitted extensions —
+   PostgreSQL 15–18 (see *Target version* below): core features, plus only these permitted extensions —
 
    | Extension | `CREATE EXTENSION` name | Used for |
    |---|---|---|
@@ -89,10 +89,11 @@ These apply to every WP. A PR that breaks one is not mergeable.
 
 ## Target version
 
-**PostgreSQL 18 only, for the foreseeable future** (maintainer's decision, 2026-11-15). New work
-targets 18 and tests run against 18; do not add fallbacks for 15–17. The version switches that
-already exist (Stage 1) stay. Once 18 is in good shape, a separate pass decides what 15, 16 and
-17 need. Where this plan says "PostgreSQL 15–18", read "PostgreSQL 18" until then.
+**PostgreSQL 15–18, with 18 the default** (`TargetVersion`, default 18). From 2026-11-15 to
+2026-11-19 the target was 18 alone; WP 4.17 then made the output work on 15, 16 and 17 as well.
+New work targets 18 first and gives each 18-only form a fallback (or a diagnostic) for 15–17,
+with a golden case at the older version. Container tests convert for the PostgreSQL they run on
+(`SQL2PG_PG_VERSION`), and CI runs them on all four.
 
 ## Defaults for open decisions
 
@@ -105,7 +106,7 @@ ROADMAP.md lists five decisions. Until the maintainer says otherwise, implement 
 | Case-insensitive collation | Report only (diagnostic `S2P1301` per CI text column) | `CaseInsensitive = Report \| IcuCollation` |
 | Procedures returning rows | `FUNCTION … RETURNS TABLE` (single result set); `PROCEDURE` with `refcursor` params (several) | `ResultSetStyle = Function \| Refcursor` |
 | Compat schema | On; schema name `mssql_compat` | `UseCompatSchema`, `CompatSchemaName` |
-| Target PostgreSQL | 18 only for now (see *Target version*); the 15–17 switches from Stage 1 remain | `TargetVersion = 15..18` |
+| Target PostgreSQL | 18 (see *Target version*); 15, 16 and 17 supported | `TargetVersion = 15..18` |
 | `dbo` schema | Mapped to `public` | `SchemaMap` dictionary |
 | Extensions | All permitted ones allowed; only those needed are emitted | `Extensions` set (empty = core only) |
 
@@ -607,7 +608,8 @@ for everything except modules (modules are listed as `Skipped` with `S2P0201 Not
 - `IcuCollation` option: emit once `CREATE COLLATION IF NOT EXISTS sql2pg_ci (provider = icu,
   locale = 'und-u-ks-level2', deterministic = false);` in `Types` and add `COLLATE sql2pg_ci` to
   CI text columns; if `TargetVersion < 18` add `S2P1302 LikeOnNondeterministic` (Warning) for
-  each such column (LIKE is unsupported there before 18).
+  each such column (LIKE and substring searches are unsupported there before 18; WP 4.17 rewrites
+  LIKE on it).
 - `ScriptPlanner`: orders objects by phase, then topologically by `DependsOn` inside a phase
   (ties by name), and writes the phase files + `report.json` (`ConversionResult` serialized).
   A dependency cycle → emit in name order and `S2P0202 DependencyCycle` (Warning).
@@ -1487,15 +1489,29 @@ short outage:
 - Tests: a container test runs a full copy, changes rows on SQL Server, runs an incremental copy,
   and verifies.
 
+#### WP 4.17 — PostgreSQL 15, 16 and 17 (M)
+
+The maintainer chose this on 2026-11-19. PostgreSQL 18 stays the default target; `TargetVersion`
+15–17 gives output that runs on those versions:
+
+- Generated columns: VIRTUAL on 18, STORED before (S2P2001), as since Stage 1.
+- `NEWSEQUENTIALID()`: `uuidv7()` on 18, `gen_random_uuid()` before (S2P3002), as since Stage 1.
+- OUTPUT: 18 writes `inserted`/`deleted` as `RETURNING`'s `new`/`old`. Before 18, `RETURNING`
+  sees the target row only: `INSERT`/`DELETE` and an `UPDATE`'s `inserted` read the target's
+  columns, an `UPDATE`'s `deleted` reads a copy of the table joined by primary key (ctid without
+  one), and `MERGE … OUTPUT` needs 17 (S2P4015).
+- `MERGE … WHEN NOT MATCHED BY SOURCE` (new in 17): before 17, each by-source action is a
+  data-modifying CTE on the rows no source row matches (S2P4016).
+- LIKE on the case-insensitive ICU collation (`IcuCollation`): before 18 it becomes
+  `lower(x COLLATE "default") LIKE lower(p)`; SIMILAR TO does on every version (S2P1302).
+- Tests: container tests take `TargetVersion` from `SQL2PG_PG_VERSION`; CI runs them on 15, 16, 17
+  and 18; golden cases at 15 and 17; the corpus scan is clean on all four.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package
   ([microsoft/DacFx](https://github.com/microsoft/DacFx), as a dependency only, its license
   reviewed first). It is on hold; it becomes a WP when the maintainer asks.
-- PostgreSQL 15–17. PostgreSQL 18 is the target until the maintainer decides it is in good
-  shape. Then a WP checks what 15, 16 and 17 need: virtual generated columns, `uuidv7`, MERGE
-  RETURNING, OLD/NEW in RETURNING, LIKE on nondeterministic collations. The scan runs on each
-  version.
 
 ## Definition of done
 

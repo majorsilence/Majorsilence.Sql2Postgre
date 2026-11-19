@@ -117,8 +117,8 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         if (c.Scope.ResolveColumn(parts) is { } resolved)
         {
             string? qualifier = c.QualifyColumns && parts.Count >= 2 ? AliasFor(resolved.Binding) : null;
-            if (c.ReturningPseudoTables && resolved.Binding.Alias is { } pseudo)
-                qualifier = pseudo.ToLowerInvariant() switch { "inserted" => "new", "deleted" => "old", _ => qualifier };
+            if (c.ReturningColumn is { } returning && resolved.Binding.Alias?.ToLowerInvariant() is "inserted" or "deleted")
+                return returning(resolved.Binding.Alias.ToLowerInvariant(), TargetColumn(resolved.Binding, resolved.Column.Name));
             return new PgColumnRef(TargetColumn(resolved.Binding, resolved.Column.Name), qualifier);
         }
         if (model.SpatialProperty(col, c.Scope, c.Schema) is { } property)
@@ -351,6 +351,29 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             string.CompareOrdinal(a.Table.ToString(), b.Table.ToString()) is var t and not 0 ? t : string.Compare(a.Column, b.Column, StringComparison.OrdinalIgnoreCase)));
 
     private PgExpr Like(LikePredicate like, ExpressionContext c)
+    {
+        var result = LikeAsWritten(like, c);
+        return result is PgLike l && OnCaseInsensitiveCollation(like.FirstExpression, l.Similar, c)
+            ? l with { Operand = new PgFunctionCall("lower", [new PgTemplate("{0} COLLATE \"default\"", [l.Operand])]), Pattern = new PgFunctionCall("lower", [l.Pattern]) }
+            : result;
+    }
+
+    /// <summary>
+    /// Whether a LIKE (or, with <paramref name="similar"/>, SIMILAR TO) operand is a column that
+    /// gets the case-insensitive ICU collation (<see cref="CaseInsensitiveStrategy.IcuCollation"/>).
+    /// That collation is nondeterministic: PostgreSQL before 18 allows no LIKE on it, and no
+    /// version allows regular expressions. Such a match is then made case-insensitive by hand:
+    /// <c>lower(x COLLATE "default") LIKE lower(pattern)</c>.
+    /// </summary>
+    private bool OnCaseInsensitiveCollation(ScalarExpression operand, bool similar, ExpressionContext c) =>
+        options.CaseInsensitive == CaseInsensitiveStrategy.IcuCollation
+        && (similar || options.TargetVersion < 18)
+        && operand is ColumnReferenceExpression
+        && TypeOf(operand, c) is { Collation: { } collation } type
+        && collation.Contains("_CI", StringComparison.OrdinalIgnoreCase)
+        && TypeRules.IsString(type);
+
+    private PgExpr LikeAsWritten(LikePredicate like, ExpressionContext c)
     {
         if (like.SecondExpression is StringLiteral { Value: [ '%' or '_', ..] }
             && like.FirstExpression is ColumnReferenceExpression { MultiPartIdentifier: { } id }

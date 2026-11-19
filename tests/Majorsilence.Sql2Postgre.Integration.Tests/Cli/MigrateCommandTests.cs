@@ -7,8 +7,11 @@ namespace Majorsilence.Sql2Postgre.Integration.Tests.Cli;
 [Category("Containers")]
 public class MigrateCommandTests
 {
+    /// <summary>Runs the CLI; the verbs that convert get <c>--target-version</c> for the PostgreSQL under test.</summary>
     private static async Task<(int Code, string Out, string Err)> Run(params string[] args)
     {
+        if (args is ["migrate" or "schema", ..])
+            args = [.. args, "--target-version", Engines.PostgresVersion];
         var output = new StringWriter();
         var error = new StringWriter();
         int code = await new Sql2PgCli(output, error).InvokeAsync(args);

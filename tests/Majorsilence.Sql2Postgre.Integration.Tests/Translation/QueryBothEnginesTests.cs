@@ -30,7 +30,7 @@ public class QueryBothEnginesTests
         DISABLE TRIGGER shop.trg_order_line_total ON shop.order_line;
         """;
 
-    private static readonly ConversionOptions Options = new() { Extensions = new HashSet<string>() };
+    private static readonly ConversionOptions Options = new() { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
     private SqlServerDatabase _source = null!;
     private PostgresDatabase _target = null!;
     private SemanticModel _model = null!;
@@ -159,6 +159,20 @@ public class QueryBothEnginesTests
     [TestCase("INSERT INTO shop.product (product_id, name) OUTPUT inserted.product_id, inserted.name VALUES (12, N'out')")]
     [TestCase("UPDATE shop.[order] SET total = total + 1 OUTPUT deleted.total AS before, inserted.total AS after WHERE order_id = 1")]
     [TestCase("DELETE FROM shop.sales_fact OUTPUT deleted.sale_id, deleted.amount WHERE amount > 15")]
+    [TestCase("UPDATE shop.sales_fact SET amount = amount * 2 OUTPUT deleted.amount AS before, inserted.amount AS after WHERE sale_id = 1")]
+    [TestCase("UPDATE o SET total = 5 OUTPUT deleted.order_id, deleted.total, inserted.total FROM shop.[order] o JOIN shop.customer c ON c.customer_id = o.customer_id WHERE c.name = N'alice'")]
+    [TestCase("UPDATE shop.product SET name = name + N'!' OUTPUT deleted.*, inserted.name WHERE product_id IN (1, 2)")]
+    [TestCase("MERGE shop.product AS t USING (VALUES (5), (30)) AS s (id) ON t.product_id = s.id WHEN MATCHED THEN DELETE WHEN NOT MATCHED THEN INSERT (product_id, name) VALUES (s.id, N'thirty') OUTPUT $action AS act, deleted.product_id AS gone, inserted.product_id AS added;")]
     [TestCase("MERGE shop.product AS t USING (VALUES (2, N'child a2'), (21, N'new')) AS s (id, name) ON t.product_id = s.id WHEN MATCHED THEN UPDATE SET name = s.name WHEN NOT MATCHED THEN INSERT (product_id, name) VALUES (s.id, s.name) OUTPUT $action AS act, inserted.product_id;")]
-    public Task Returning(string dml) => Same(dml);
+    public Task Returning(string dml)
+    {
+        // MERGE … RETURNING is new in PostgreSQL 17: before it, MERGE … OUTPUT is reported.
+        if (dml.StartsWith("MERGE", StringComparison.Ordinal) && Engines.TargetVersion < 17)
+        {
+            var ex = Assert.Throws<UntranslatableException>(() => Translate(dml));
+            Assert.That(ex!.Code, Is.EqualTo(DiagnosticCodes.OutputBefore18));
+            return Task.CompletedTask;
+        }
+        return Same(dml);
+    }
 }

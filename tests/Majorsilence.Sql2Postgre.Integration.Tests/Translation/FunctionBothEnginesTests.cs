@@ -64,7 +64,7 @@ public class FunctionBothEnginesTests
     {
         var fragment = new TSql160Parser(true).ParseExpression(new StringReader(tsql), out var errors);
         Assert.That(errors, Is.Empty, $"'{tsql}' does not parse");
-        var options = new ConversionOptions();
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion };
         var names = new NameMapper(options);
         var model = SemanticModel.Build(new SourceDatabase("", "", 160, [], [], [], [], [], []));
         var translator = new ExpressionTranslator(options, names, new TypeMapper(options, names), model);

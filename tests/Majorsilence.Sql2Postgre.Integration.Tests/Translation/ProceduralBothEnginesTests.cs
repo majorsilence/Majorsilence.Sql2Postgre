@@ -27,7 +27,7 @@ public class ProceduralBothEnginesTests
         DISABLE TRIGGER shop.trg_order_line_total ON shop.order_line;
         """;
 
-    private static readonly ConversionOptions Options = new() { Extensions = new HashSet<string>() };
+    private static readonly ConversionOptions Options = new() { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
     private SqlServerDatabase _source = null!;
     private PostgresDatabase _target = null!;
     private SemanticModel _model = null!;

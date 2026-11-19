@@ -127,7 +127,9 @@ public class TempTableBothEnginesTests
         GO
         """;
 
-    private static readonly ConversionOptions Options = new() { Extensions = new HashSet<string>() };
+    private static readonly ConversionOptions Options = new() { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
+
+    private static bool MergeOutputUnsupported => Engines.TargetVersion < 17;
     private SqlServerDatabase _source = null!;
     private PostgresDatabase _target = null!;
     private SemanticModel _model = null!;
@@ -141,6 +143,13 @@ public class TempTableBothEnginesTests
         _target = await PostgresDatabase.CreateAsync("temptables");
         var schema = SchemaConverter.Convert(db, Options);
         var procedures = schema.Objects.Where(o => o.Kind == ObjectKind.Procedure).ToList();
+        if (MergeOutputUnsupported)
+        {
+            // MERGE … RETURNING is new in PostgreSQL 17: before it, merge_prices' MERGE … OUTPUT INTO is reported.
+            var merge = procedures.Single(o => o.Source.Name == "merge_prices");
+            Assert.That((merge.Status, merge.Diagnostics.Any(d => d.Code == DiagnosticCodes.OutputBefore18)), Is.EqualTo((ObjectStatus.Manual, true)));
+            procedures.Remove(merge);
+        }
         Assert.That(procedures.Select(o => $"{o.Source} {o.Status}"), Has.None.EndsWith(" Manual"),
             string.Join("\n", procedures.SelectMany(o => o.Diagnostics).Select(d => d.ToString())));
         await PgApplier.ApplyAsync(schema.Objects.Where(o => o.Phase <= Phase.Tables), _target.ConnectionString);
@@ -171,6 +180,8 @@ public class TempTableBothEnginesTests
     [TestCase("DECLARE @gone TABLE (id int);\nDELETE FROM dbo.plain OUTPUT deleted.n INTO @gone (id);\nINSERT INTO dbo.plain (n) VALUES (7), (8);\nTRUNCATE TABLE dbo.plain;\nSELECT COUNT(*) AS left_over FROM dbo.plain;")]
     public async Task SameOnTheSecondRun(string tsql)
     {
+        if (MergeOutputUnsupported && tsql.Contains("merge_prices", StringComparison.Ordinal))
+            Assert.Ignore("merge_prices has MERGE … OUTPUT, which needs PostgreSQL 17 (S2P4015).");
         var translation = ScriptTranslator.Translate(tsql, _model, Options);
         Assert.That(translation.Diagnostics.Where(d => d.Severity == Severity.Error), Is.Empty, translation.Sql);
 

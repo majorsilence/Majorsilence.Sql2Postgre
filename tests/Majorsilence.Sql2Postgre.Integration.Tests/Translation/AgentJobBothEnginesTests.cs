@@ -50,7 +50,7 @@ public class AgentJobBothEnginesTests
         {
             var read = await SqlServerCatalogReader.ReadAsync(source.ConnectionString, agentJobs: true);
             Assert.That(read.Database.AgentJobs!.Select(j => j.Name), Is.EqualTo(new[] { job }));
-            var options = new ConversionOptions { Extensions = new HashSet<string> { PermittedExtensions.PgCron } };
+            var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string> { PermittedExtensions.PgCron } };
             var schema = SchemaConverter.Convert(read.Database, options);
             var diagnostics = schema.Objects.SelectMany(o => o.Diagnostics).Select(d => $"{d.Code} {d.Severity}").ToList();
             Assert.That(diagnostics, Is.SupersetOf(new[] { "S2P2023 Warning", "S2P2024 Warning", "S2P2025 Info" }));

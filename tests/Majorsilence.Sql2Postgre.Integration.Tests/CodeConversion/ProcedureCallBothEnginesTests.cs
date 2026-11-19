@@ -105,7 +105,7 @@ public class ProcedureCallBothEnginesTests
     [TestCase(VisualBasic, "Sample.vb")]
     public async Task SameOutputAfterConvertingDatabaseAndCode(string program, string file)
     {
-        var options = new ConversionOptions { Extensions = new HashSet<string>() };
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
         await using var source = await SqlServerDatabase.CreateAsync(Schema, "proccalls");
         await using var target = await PostgresDatabase.CreateAsync("proccalls");
         var db = (await SqlServerCatalogReader.ReadAsync(source.ConnectionString)).Database;

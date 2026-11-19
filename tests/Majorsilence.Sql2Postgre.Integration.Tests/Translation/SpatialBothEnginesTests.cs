@@ -43,7 +43,7 @@ public class SpatialBothEnginesTests
         GO
         """;
 
-    private static readonly ConversionOptions Options = new() { Extensions = new HashSet<string> { PermittedExtensions.PostGis } };
+    private static readonly ConversionOptions Options = new() { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string> { PermittedExtensions.PostGis } };
     private SqlServerDatabase _source = null!;
     private PostgresDatabase _target = null!;
     private SemanticModel _model = null!;

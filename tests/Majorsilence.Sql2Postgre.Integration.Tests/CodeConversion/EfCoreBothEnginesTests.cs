@@ -91,7 +91,7 @@ public class EfCoreBothEnginesTests
     [Test]
     public async Task SameOutputAfterConvertingDatabaseAndCode()
     {
-        var options = new ConversionOptions { Extensions = new HashSet<string>() };
+        var options = new ConversionOptions { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
         await using var source = await SqlServerDatabase.CreateAsync(Schema, "efcore");
         await using var target = await PostgresDatabase.CreateAsync("efcore");
         var db = (await SqlServerCatalogReader.ReadAsync(source.ConnectionString)).Database;

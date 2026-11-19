@@ -18,7 +18,7 @@ public sealed record MigratedDatabase(CorpusEntry Entry, string SourceConnection
 /// </summary>
 public static class CorpusMigration
 {
-    public static readonly ConversionOptions DefaultOptions = new() { Extensions = new HashSet<string>() };
+    public static readonly ConversionOptions DefaultOptions = new() { TargetVersion = Engines.TargetVersion, Extensions = new HashSet<string>() };
 
     private static readonly Dictionary<string, Task<MigratedDatabase>> Shared = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Lock SharedLock = new();
