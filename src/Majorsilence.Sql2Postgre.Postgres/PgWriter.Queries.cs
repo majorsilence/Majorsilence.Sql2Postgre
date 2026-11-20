@@ -44,6 +44,8 @@ public static partial class PgWriter
             sb.Append(nl).Append("GROUP BY ").Append(string.Join(", ", s.GroupBy.Select(GroupItem)));
         if (s.Having is not null)
             sb.Append(nl).Append("HAVING ").Append(Expression(s.Having));
+        if (s.Windows.Count > 0)
+            sb.Append(nl).Append("WINDOW ").Append(string.Join(", ", s.Windows.Select(w => $"{Q(w.Name)} AS ({WindowSpec(w.Window)})")));
         AppendTail(sb, s.OrderBy, s.Limit, s.Offset, s.WithTies, nl);
         if (s.ForUpdate)
             sb.Append(nl).Append("FOR UPDATE");
@@ -88,7 +90,8 @@ public static partial class PgWriter
 
     public static string FromItem(PgFromItem f) => f switch
     {
-        PgTableRef t => t.Name.Schema.Length == 0 ? Q(t.Name.Name) + AliasClause(t.Alias) : t.Name.Qualified + AliasClause(t.Alias),
+        PgTableRef t => (t.Name.Schema.Length == 0 ? Q(t.Name.Name) : t.Name.Qualified) + AliasClause(t.Alias)
+                         + (t.Sample is { } sample ? $" TABLESAMPLE SYSTEM ({Expression(sample.Percent)})" + (sample.Seed is null ? "" : $" REPEATABLE ({Expression(sample.Seed)})") : ""),
         PgSubqueryRef s => $"{(s.Lateral ? "LATERAL " : "")}({Query(s.Query, inline: true)}) AS {Q(s.Alias)}" + (s.Columns.Count > 0 ? $" ({Columns(s.Columns)})" : ""),
         PgFunctionRef fn => $"{(fn.Lateral ? "LATERAL " : "")}{fn.Name}({string.Join(", ", fn.Arguments.Select(Expression))})"
                             + AliasClause(fn.Alias) + (fn.Columns.Count > 0 ? $" ({Columns(fn.Columns)})" : ""),

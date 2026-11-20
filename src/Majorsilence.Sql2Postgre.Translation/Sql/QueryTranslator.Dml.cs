@@ -361,6 +361,7 @@ public sealed partial class QueryTranslator
     private IReadOnlyList<PgCte> Ctes(WithCtesAndXmlNamespaces? with, ExpressionContext c, out Scope scope)
     {
         scope = c.Scope;
+        RejectXmlNamespaces(with);
         if (with is not { CommonTableExpressions.Count: > 0 })
             return [];
         scope = c.Scope.Child();

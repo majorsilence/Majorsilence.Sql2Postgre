@@ -69,7 +69,7 @@ public static class CommandTranslator
                     throw new UntranslatableException(DiagnosticCodes.ProceduralSqlInCommand,
                         $"Procedural T-SQL in a command ({s.GetType().Name.Replace("Statement", "")}): a PostgreSQL command is one or more plain statements. Move it into a function or procedure, or into the application code.");
                 else if (s is PredicateSetStatement or SetCommandStatement)
-                    c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"'{ExpressionTranslator.Text(s).Trim()}' sets a SQL Server session option and is dropped.");
+                    SessionOptions.ReportDropped(s, c);
                 else if (s is SelectStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement)
                     parts.Add(Write(IntegerAggregates(s, queries.Statement(s, c), c, expressions), options));
                 else

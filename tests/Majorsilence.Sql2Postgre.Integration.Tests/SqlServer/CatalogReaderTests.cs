@@ -28,6 +28,31 @@ public class CatalogReaderTests
     private Table T(string name) => Db.Tables.Single(t => t.Name == new ObjectName("shop", name));
     private static Column C(Table t, string name) => t.Columns.Single(c => c.Name == name);
 
+    /// <summary>HIDDEN and masked columns, which PostgreSQL columns cannot be, are read from the catalog as from a script.</summary>
+    [Test]
+    public async Task HiddenAndMaskedColumnsAreRead()
+    {
+        const string script = """
+            CREATE TABLE dbo.Person (Id int NOT NULL PRIMARY KEY, Email nvarchar(100) MASKED WITH (FUNCTION = 'email()') NULL,
+                ValidFrom datetime2 GENERATED ALWAYS AS ROW START HIDDEN NOT NULL, ValidTo datetime2 GENERATED ALWAYS AS ROW END HIDDEN NOT NULL,
+                PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.PersonHistory));
+            """;
+        await using var db = await SqlServerDatabase.CreateAsync(script, "features");
+        var fromCatalog = (await SqlServerCatalogReader.ReadAsync(db.ConnectionString)).Database;
+        var fromScript = SqlServerScriptReader.Read([("person.sql", script)]).Database;
+        foreach (var source in new[] { fromCatalog, fromScript })
+        {
+            var person = source.Tables.Single(t => t.Name == new ObjectName("dbo", "Person"));
+            Assert.Multiple(() =>
+            {
+                Assert.That(person.Columns.Single(c => c.Name == "Email").Features, Is.EqualTo(new ColumnFeatures(MaskingFunction: "email()")));
+                Assert.That(person.Columns.Single(c => c.Name == "ValidFrom").Features, Is.EqualTo(new ColumnFeatures(Hidden: true)));
+                Assert.That(person.Columns.Single(c => c.Name == "ValidTo").Features, Is.EqualTo(new ColumnFeatures(Hidden: true)));
+                Assert.That(person.Columns.Single(c => c.Name == "Id").Features, Is.Null);
+            });
+        }
+    }
+
     [Test]
     public void DatabaseProperties()
     {

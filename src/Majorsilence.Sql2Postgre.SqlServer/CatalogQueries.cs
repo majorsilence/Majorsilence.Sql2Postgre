@@ -49,12 +49,14 @@ internal static class CatalogQueries
                c.is_rowguidcol, c.is_sparse,
                CAST(ic.seed_value AS bigint) AS identity_seed, CAST(ic.increment_value AS bigint) AS identity_increment,
                dc.definition AS default_definition, CASE WHEN dc.is_system_named = 0 THEN dc.name END AS default_name,
-               cc.definition AS computed_definition, cc.is_persisted
+               cc.definition AS computed_definition, cc.is_persisted,
+               c.is_hidden, mc.masking_function, c.encryption_type_desc
         FROM sys.columns c
         JOIN sys.types ut ON ut.user_type_id = c.user_type_id
         LEFT JOIN sys.identity_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
         LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
         LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
+        LEFT JOIN sys.masked_columns mc ON mc.object_id = c.object_id AND mc.column_id = c.column_id AND mc.is_masked = 1
         JOIN sys.objects o ON o.object_id = c.object_id
         WHERE (o.type = 'U' AND o.is_ms_shipped = 0) OR o.type = 'TT'
         ORDER BY c.object_id, c.column_id;

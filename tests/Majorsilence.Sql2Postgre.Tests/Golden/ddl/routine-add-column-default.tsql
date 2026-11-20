@@ -1,0 +1,8 @@
+CREATE TABLE dbo.Ledger (Id int NOT NULL PRIMARY KEY);
+GO
+CREATE PROCEDURE dbo.AddLedgerColumns AS
+BEGIN
+    ALTER TABLE dbo.Ledger ADD Flag int NULL DEFAULT 0;
+    ALTER TABLE dbo.Ledger ADD Kept int NULL CONSTRAINT DF_Ledger_Kept DEFAULT 1 WITH VALUES;
+    ALTER TABLE dbo.Ledger ADD Required int NOT NULL CONSTRAINT DF_Ledger_Required DEFAULT 2;
+END;

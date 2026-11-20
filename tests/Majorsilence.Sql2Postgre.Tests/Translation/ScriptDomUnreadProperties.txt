@@ -1,0 +1,104 @@
+# ScriptDom properties the converter's source never reads, each with the reason that is safe.
+# ScriptDomCoverageTests fails when a node type the source names gets a property that is neither
+# read nor listed here (a ScriptDom upgrade, or a new node type handled), and when a listed one
+# is read after all. Before adding a line, probe the syntax: translate it, or report it with a
+# diagnostic code, unless it cannot change results. Lines: Type.Property  reason.
+
+# Spelling only: the value it records is read elsewhere.
+BinaryLiteral.IsLargeObject  how long the literal is; its value is read
+BinaryLiteral.LiteralType  the class says the type
+DefaultLiteral.LiteralType  the class says the type
+IdentifierLiteral.LiteralType  the class says the type
+IntegerLiteral.LiteralType  the class says the type
+Literal.LiteralType  the class says the type
+MaxLiteral.LiteralType  the class says the type
+MoneyLiteral.LiteralType  the class says the type
+NullLiteral.LiteralType  the class says the type
+NumericLiteral.LiteralType  the class says the type
+RealLiteral.LiteralType  the class says the type
+StringLiteral.IsLargeObject  how long the literal is; its value is read
+StringLiteral.LiteralType  the class says the type
+Identifier.QuoteType  [x], "x" or x: names are mapped by their value
+IdentifierLiteral.QuoteType  [x], "x" or x: names are mapped by their value
+MultiPartIdentifier.Item  an indexer over Identifiers, which is read
+DeclareTableVariableBody.AsDefined  DECLARE @t AS TABLE: AS is optional
+InsertSpecification.InsertOption  INSERT INTO: INTO is optional (OVER is Parallel Data Warehouse only)
+LikePredicate.OdbcEscape  the {ESCAPE 'c'} spelling of ESCAPE, whose expression is read
+TSqlScript.TrailingGoCount  GO separators after the last batch
+CreateIndexStatement.Translated80SyntaxTo90  the parser's note that it rewrote SQL Server 2000 syntax
+ColumnEncryptionDefinitionParameter.ParameterKind  the parameter's class says the kind (ColumnFeatureReader)
+ExecuteContext.Principal  printed in the S2P5063 message with the rest of the AS USER / LOGIN clause
+XmlNamespaces.XmlNamespacesElements  WITH XMLNAMESPACES is reported as a whole (S2P3048)
+
+# Replication: PostgreSQL has no SQL Server replication agents for these to exempt.
+CheckConstraintDefinition.NotForReplication  NOT FOR REPLICATION exempts replication agents only
+ForeignKeyConstraintDefinition.NotForReplication  NOT FOR REPLICATION exempts replication agents only
+IdentityOptions.IsIdentityNotForReplication  NOT FOR REPLICATION exempts replication agents only
+ProcedureStatementBody.IsForReplication  FOR REPLICATION: run by replication agents only
+SecurityPolicyStatement.NotForReplication  NOT FOR REPLICATION exempts replication agents only
+
+# Storage and physical options: PostgreSQL has no filegroups, FILESTREAM or index tuning of these kinds.
+CreateIndexStatement.FileStreamOn  FILESTREAM_ON: a filegroup
+CreateTableStatement.FileStreamOn  FILESTREAM_ON: a filegroup
+CreateTableStatement.TextImageOn  TEXTIMAGE_ON: a filegroup
+IndexDefinition.FileStreamOn  FILESTREAM_ON: a filegroup
+UniqueConstraintDefinition.FileStreamOn  FILESTREAM_ON: a filegroup
+CreateSpatialIndexStatement.OnFileGroup  ON filegroup
+CreateSpatialIndexStatement.SpatialIndexOptions  grid options; a GiST index has none
+CreateSpatialIndexStatement.SpatialIndexingScheme  GEOMETRY_GRID / GEOGRAPHY_GRID; a GiST index has none
+AlterIndexStatement.Partition  PARTITION = n of REBUILD: REINDEX rebuilds the whole index
+AlterIndexStatement.PromotedPaths  selective XML indexes are not created (S2P2003)
+CreateSelectiveXmlIndexStatement.IsSecondary  selective XML indexes are not created (S2P2003)
+CreateSelectiveXmlIndexStatement.PathName  selective XML indexes are not created (S2P2003)
+CreateSelectiveXmlIndexStatement.PromotedPaths  selective XML indexes are not created (S2P2003)
+CreateSelectiveXmlIndexStatement.UsingXmlIndexName  selective XML indexes are not created (S2P2003)
+CreateXmlIndexStatement.SecondaryXmlIndexName  XML indexes are not created (S2P2003)
+CreateXmlIndexStatement.SecondaryXmlIndexType  XML indexes are not created (S2P2003)
+CreateColumnStoreIndexStatement.OrderedColumns  columnstore indexes are not created (S2P2003)
+CreateFullTextIndexStatement.CatalogAndFileGroup  a full-text index becomes a GIN index, which has no catalog (S2P3042)
+CommitTransactionStatement.DelayedDurabilityOption  DELAYED_DURABILITY: when the log is flushed, not what commits
+BeginTransactionStatement.MarkDefined  WITH MARK: a log mark for restores
+BeginTransactionStatement.MarkDescription  WITH MARK: a log mark for restores
+WithCtesAndXmlNamespaces.ChangeTrackingContext  WITH CHANGE_TRACKING_CONTEXT tags change-tracking rows; PostgreSQL has no change tracking
+
+# Reached only in code the converter reports or does not convert.
+FunctionCall.AbsentOrNullOnNull  JSON_OBJECT / JSON_ARRAY, which are reported (S2P3001)
+FunctionCall.JsonOrderByClause  JSON_ARRAYAGG, which is reported (S2P3001)
+FunctionCall.JsonParameters  JSON_OBJECT, which is reported (S2P3001)
+FunctionCall.WithArrayWrapper  JSON_QUERY … WITH ARRAY WRAPPER (SQL Server 2025), which the TSql160 parser rejects
+FromClause.PredictTableReference  PREDICT, which is reported (S2P3001)
+AdHocDataSource.InitString  OPENDATASOURCE, which is reported (S2P3001)
+AdHocDataSource.ProviderName  OPENDATASOURCE, which is reported (S2P3001)
+GoToStatement.LabelName  GOTO, which is reported (S2P5005)
+WaitForStatement.Timeout  WAITFOR (RECEIVE …) TIMEOUT: WAITFOR other than DELAY is reported (S2P0206)
+MethodSpecifier.AssemblyName  EXTERNAL NAME of a CLR routine, which is not converted
+MethodSpecifier.ClassName  EXTERNAL NAME of a CLR routine, which is not converted
+MethodSpecifier.MethodName  EXTERNAL NAME of a CLR routine, which is not converted
+FunctionStatementBody.OrderHint  ORDER of a CLR table-valued function, which is not converted
+ProcedureParameter.IsVarying  CURSOR VARYING OUTPUT: cursor parameters are not converted
+SetVariableStatement.SeparatorType  SET @udt.Property / @udt::Method of a CLR type, which is not converted
+TableReferenceWithAlias.ForPath  FOR PATH of graph MATCH queries, which are not converted
+WithinGroupClause.HasGraphPath  STRING_AGG … WITHIN GROUP (GRAPH PATH) of graph MATCH queries, which are not converted
+QualifiedJoin.JoinHintColumnsCount  join hints are dropped and reported (S2P4002)
+RaiseErrorStatement.ThirdParameter  the state: ERROR_STATE() is reported as always 1 (S2P5040)
+RaiseErrorStatement.RaiseErrorOptions  WITH LOG (the server log), NOWAIT (RAISE sends at once) and SETERROR (@@ERROR is reported, S2P5004)
+TriggerStatementBody.WithAppend  WITH APPEND: SQL Server 6.5 compatibility, the default since
+
+# Not SQL Server syntax, or not syntax the TSql160 parser (SQL Server 2022) accepts.
+CreateTableStatement.CloneSource  CREATE TABLE … AS CLONE OF: Microsoft Fabric
+CreateTableStatement.ClonePointInTime  CREATE TABLE … AS CLONE OF: Microsoft Fabric
+CreateTableStatement.CtasColumns  CREATE TABLE AS SELECT: Azure Synapse
+CreateTableStatement.FederationScheme  FEDERATED ON: Azure SQL Database federations, retired
+ExpressionGroupingSpecification.DistributedAggregation  WITH (DISTRIBUTED_AGG): Azure Synapse
+ForeignKeyConstraintDefinition.IsEnforced  NOT ENFORCED: Azure Synapse and Fabric
+UniqueConstraintDefinition.IsEnforced  NOT ENFORCED: Azure Synapse and Fabric
+ViewStatementBody.IsMaterialized  CREATE MATERIALIZED VIEW: Azure Synapse
+OffsetClause.WithApproximate  WITH APPROXIMATE: SQL Server 2025, which the TSql160 parser rejects
+TopRowFilter.WithApproximate  WITH APPROXIMATE: SQL Server 2025, which the TSql160 parser rejects
+OrderByClause.AllSortOrder  ORDER BY ALL: SQL Server 2025, which the TSql160 parser rejects
+SelectStatement.ComputeClauses  COMPUTE: removed in SQL Server 2012, and the TSql160 parser rejects it
+
+# Not covered yet (BACKLOG): the converted column or table keeps fewer guarantees.
+SystemVersioningTableOption.RetentionPeriod  HISTORY_RETENTION_PERIOD: PostgreSQL keeps the history rows
+XmlDataTypeReference.XmlDataTypeOption  xml(CONTENT | DOCUMENT schema): typed xml is not validated
+XmlDataTypeReference.XmlSchemaCollection  xml(schema collection): typed xml is not validated

@@ -1,0 +1,2 @@
+WITH XMLNAMESPACES ('urn:shop' AS s)
+SELECT product_id AS 's:id' FROM shop.product FOR XML PATH('s:product');

@@ -232,6 +232,7 @@ public sealed partial class ProceduralTranslator
                         translated.Add(_queries.Statement(s, inner));
                         break;
                     case PredicateSetStatement or SetCommandStatement:
+                        SessionOptions.ReportDropped(s, inner);
                         break;
                     case ProcedureStatementBody or FunctionStatementBody or TriggerStatementBody:
                         translated.AddRange(CreatedModuleStatements(s, template, parameters, source));
@@ -317,6 +318,10 @@ public sealed partial class ProceduralTranslator
         var spec = e.ExecuteSpecification;
         if (spec.Variable is not null)
             throw DynamicUntranslatable(e, "with a status code (EXEC @rc = sp_executesql …)");
+        if (spec.ExecuteContext is { } context)
+            st.C.Report(DiagnosticCodes.DynamicSqlContext, Severity.Warning,
+                $"EXEC (…) AS {ExpressionTranslator.Text(context).Trim()} runs the SQL as that user in SQL Server; the converted EXECUTE runs it as the caller, with the caller's privileges. " +
+                "To run it as a role, put SET ROLE before it and RESET ROLE after (the caller must be a member of the role).");
         var (text, at) = DynamicSqlText.Text(e, st.Frames.Select(f => (f.List, f.Index)).ToList())
                          ?? throw DynamicUntranslatable(e, "whose text cannot be followed back to a SET or DECLARE in this code");
         var parameters = DynamicParameters(spec, e, st.C.Schema);

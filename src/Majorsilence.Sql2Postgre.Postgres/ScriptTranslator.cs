@@ -91,7 +91,7 @@ public static class ScriptTranslator
                 c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"USE {use.DatabaseName.Value} is dropped: a PostgreSQL connection stays in its database.");
                 return "";
             case PredicateSetStatement or SetCommandStatement or SetRowCountStatement or SetTransactionIsolationLevelStatement:
-                c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"'{original.Trim()}' sets a SQL Server session option and is dropped.");
+                SessionOptions.ReportDropped(statement, c);
                 return "";
             case SetIdentityInsertStatement ins:
                 return IdentityInsert(ins, c, names, model);

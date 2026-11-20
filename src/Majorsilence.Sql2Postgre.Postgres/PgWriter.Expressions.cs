@@ -102,15 +102,23 @@ public static partial class PgWriter
             call += $" FILTER (WHERE {Expression(f.Filter)})";
         if (f.IgnoreNulls)
             call += " IGNORE NULLS";
-        return f.Over is null ? call : $"{call} OVER ({Window(f.Over)})";
+        if (f.Over is null)
+            return call;
+        // OVER w, without parentheses, when the window is the named one as it is.
+        return f.Over is { Name: { } name, PartitionBy.Count: 0, OrderBy.Count: 0, Frame: null } ? $"{call} OVER {Q(name)}" : $"{call} OVER ({Window(f.Over)})";
     }
 
     public static string SortKeys(IEnumerable<PgSortKey> keys) => string.Join(", ", keys.Select(k =>
         Expression(k.Expression) + (k.Descending ? " DESC" : "") + (k.NullsFirst switch { true => " NULLS FIRST", false => " NULLS LAST", null => "" })));
 
+    /// <summary>A window's specification, inside its parentheses (also in a WINDOW clause).</summary>
+    public static string WindowSpec(PgWindow w) => Window(w);
+
     private static string Window(PgWindow w)
     {
         var parts = new List<string>();
+        if (w.Name is not null)
+            parts.Add(Q(w.Name));
         if (w.PartitionBy.Count > 0)
             parts.Add("PARTITION BY " + string.Join(", ", w.PartitionBy.Select(Expression)));
         if (w.OrderBy.Count > 0)

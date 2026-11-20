@@ -74,7 +74,11 @@ public sealed record PgFunctionCall(string Name, IReadOnlyList<PgExpr> Arguments
 public sealed record PgSortKey(PgExpr Expression, bool Descending = false, bool? NullsFirst = null);
 
 /// <param name="Frame">The frame clause as PostgreSQL writes it (<c>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</c>), or null.</param>
-public sealed record PgWindow(IReadOnlyList<PgExpr> PartitionBy, IReadOnlyList<PgSortKey> OrderBy, string? Frame = null);
+/// <param name="Name">A window of the query's WINDOW clause this one starts from: <c>OVER w</c>, <c>OVER (w ORDER BY …)</c>.</param>
+public sealed record PgWindow(IReadOnlyList<PgExpr> PartitionBy, IReadOnlyList<PgSortKey> OrderBy, string? Frame = null, string? Name = null);
+
+/// <summary>A window of a query's WINDOW clause: <c>WINDOW name AS (…)</c>.</summary>
+public sealed record PgNamedWindow(string Name, PgWindow Window);
 
 /// <summary><c>x AT TIME ZONE zone</c>.</summary>
 public sealed record PgAtTimeZone(PgExpr Operand, PgExpr Zone) : PgExpr;

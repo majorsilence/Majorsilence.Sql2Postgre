@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <Compile Include="../Shared/ScriptDomTypes.cs" Link="Shared/ScriptDomTypes.cs" />
+    <Compile Include="../Shared/ColumnFeatureReader.cs" Link="Shared/ColumnFeatureReader.cs" />
   </ItemGroup>
 
   <PropertyGroup>

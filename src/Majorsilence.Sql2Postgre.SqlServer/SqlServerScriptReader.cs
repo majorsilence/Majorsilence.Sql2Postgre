@@ -290,7 +290,7 @@ public static partial class SqlServerScriptReader
                 computed is null ? nullable : true, identity,
                 c.DefaultConstraint is null ? null : TextOf(c.DefaultConstraint.Expression),
                 c.DefaultConstraint?.ConstraintIdentifier?.Value, computed, c.IsRowGuidCol,
-                c.StorageOptions?.SparseOption == SparseColumnOption.Sparse);
+                c.StorageOptions?.SparseOption == SparseColumnOption.Sparse, ColumnFeatureReader.Of(c));
         }
 
         private void AddConstraint(TableBuilder table, ConstraintDefinition constraint, IReadOnlyList<string> columnScope, bool trusted)

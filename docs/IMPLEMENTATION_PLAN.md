@@ -1595,6 +1595,44 @@ maintainer asked for it on 2026-11-20. 18 stays the default target.
 - Tests: golden cases at 18 and 19; a both-engines test of `IGNORE NULLS`; the container tests
   and the corpus scan on 15–19.
 
+#### WP 4.21 — Syntax the translator reads past (M)
+
+WP 4.20 found `IGNORE NULLS` dropped without a diagnostic: the translator never read
+`FunctionCall.IgnoreRespectNulls`. A reflection inventory of the ScriptDom node types the
+translator names, against the property names its source uses, found more of the same, and a
+probe of each that could change results confirmed these:
+
+- **Named windows.** `WINDOW w AS (…)` was dropped and `OVER w` became `OVER ()`. Written as
+  PostgreSQL's `WINDOW` clause and `OVER w` / `OVER (w ORDER BY …)`.
+- **`TRIM(LEADING | TRAILING | BOTH chars FROM s)`** became `btrim` whatever the option. Now
+  `ltrim`, `rtrim` or `btrim`.
+- **`TABLESAMPLE`** was dropped, so the query read the whole table. `TABLESAMPLE (n PERCENT)
+  [REPEATABLE (seed)]` becomes `TABLESAMPLE SYSTEM (n) [REPEATABLE (seed)]`, which samples pages
+  as SQL Server does; `n ROWS` is reported (S2P4017).
+- **`ALTER TABLE … ADD c … NULL DEFAULT x`** without `WITH VALUES` in a routine leaves the existing
+  rows NULL in SQL Server; PostgreSQL's `ADD COLUMN … DEFAULT x` fills them. Now the column is
+  added, then its default set.
+- **`WITH XMLNAMESPACES`** was dropped (the prefixes stayed, undeclared): reported (S2P3048).
+- **`EXEC ('…') AS USER = 'name'`** ran as the caller without a word: reported (S2P5063).
+- **HIDDEN, masked and Always Encrypted columns** were neither read nor reported: `SELECT *`
+  leaves a hidden column out in SQL Server, masking hides values from readers without `UNMASK`,
+  and an encrypted column's values are ciphertext the server cannot read. The readers now record
+  them and the column is reported (S2P2027).
+- **Session options that change results** (`SET DATEFIRST`, `DATEFORMAT`, `LANGUAGE`,
+  `ROWCOUNT` in a script, `ANSI_NULLS OFF`, `CONCAT_NULL_YIELDS_NULL OFF`, `QUOTED_IDENTIFIER
+  OFF`, `IMPLICIT_TRANSACTIONS ON`, …) were dropped with an Info (and in dynamic SQL without one);
+  now a Warning that says what changes.
+- **A guard.** A unit test repeats the inventory and fails when a node type the translator
+  names has a property the source never reads and that is not on a reviewed list
+  (`tests/…/Translation/ScriptDomUnreadProperties.txt`), each entry with the reason it cannot change results or is
+  not SQL Server syntax. A ScriptDom upgrade that adds properties shows up there.
+- Not covered: typed `xml` (an XML schema collection's validation), a temporal table's
+  `HISTORY_RETENTION_PERIOD`; properties shared by name with one the translator reads are not
+  found by the inventory.
+- Tests: golden files for each translation and report; both-engines cases for named windows,
+  `TRIM`, `TABLESAMPLE (100 PERCENT)` and `ADD … DEFAULT` with and without `WITH VALUES`; the
+  catalog and script readers on HIDDEN and masked columns; corpus scans on 15–19.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package

@@ -415,9 +415,25 @@ public sealed partial class SchemaTranslator
             diagnostics.Add(new Diagnostic(DiagnosticCodes.RowGuidColIgnored, Severity.Info, t.Name, $"ROWGUIDCOL on {t.Name}.{c.Name} is dropped."));
         if (c.IsSparse)
             diagnostics.Add(new Diagnostic(DiagnosticCodes.SparseIgnored, Severity.Info, t.Name, $"SPARSE on {t.Name}.{c.Name} is dropped."));
+        if (c.Features is { } features)
+            diagnostics.AddRange(FeatureDiagnostics(t, c, features));
 
         return new PgColumnDef(column, type, NotNull: !c.IsNullable && generated is null, Default: defaultValue,
             Identity: identity, Generated: generated, Collation: collation);
+    }
+
+    /// <summary>A column's HIDDEN, masking and Always Encrypted, which PostgreSQL columns do not have (S2P2027).</summary>
+    private static IEnumerable<Diagnostic> FeatureDiagnostics(Table t, Column c, ColumnFeatures features)
+    {
+        if (features.Hidden)
+            yield return new Diagnostic(DiagnosticCodes.ColumnFeatureDropped, Severity.Warning, t.Name,
+                $"{t.Name}.{c.Name} is HIDDEN: SQL Server's SELECT * leaves it out, PostgreSQL's returns it (PostgreSQL has no hidden columns). List the columns in queries that must not see it.");
+        if (features.MaskingFunction is { } masking)
+            yield return new Diagnostic(DiagnosticCodes.ColumnFeatureDropped, Severity.Warning, t.Name,
+                $"{t.Name}.{c.Name} is masked ({masking}): in SQL Server a reader without UNMASK sees masked values; PostgreSQL has no data masking, so every reader with SELECT on the table sees the values. Restrict the column with column privileges, or a view that masks it.");
+        if (features.Encryption is { } encryption)
+            yield return new Diagnostic(DiagnosticCodes.ColumnFeatureDropped, Severity.Warning, t.Name,
+                $"{t.Name}.{c.Name} is Always Encrypted ({encryption}): SQL Server stores only ciphertext and the client holds the keys; PostgreSQL stores the column in the clear. The data copy reads it as SQL Server sends it, which is ciphertext unless the source connection string has Column Encryption Setting=Enabled and the client can reach the keys.");
     }
 
     /// <summary>Whether an index, the primary key, a unique constraint or a foreign key (either side) uses the column.</summary>

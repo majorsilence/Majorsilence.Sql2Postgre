@@ -1,0 +1,3 @@
+SELECT TRIM(LEADING N'x' FROM name) AS a, TRIM(TRAILING N'x' FROM name) AS b, TRIM(BOTH N'x' FROM name) AS c,
+       TRIM(N'x' FROM name) AS d, TRIM(name) AS e
+FROM shop.product;

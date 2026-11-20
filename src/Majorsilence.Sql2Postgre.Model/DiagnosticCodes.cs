@@ -152,6 +152,9 @@ public static class DiagnosticCodes
     /// </summary>
     public const string IncludedColumnDropped = "S2P2026";
 
+    /// <summary>A HIDDEN, masked or Always Encrypted column: PostgreSQL has no such column property.</summary>
+    public const string ColumnFeatureDropped = "S2P2027";
+
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
 
@@ -251,6 +254,9 @@ public static class DiagnosticCodes
     /// </summary>
     public const string IgnoreNulls = "S2P3047";
 
+    /// <summary>WITH XMLNAMESPACES: the namespaces it declares for FOR XML and xml methods are not translated.</summary>
+    public const string XmlNamespaces = "S2P3048";
+
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
 
@@ -296,6 +302,9 @@ public static class DiagnosticCodes
 
     /// <summary>MERGE … WHEN NOT MATCHED BY SOURCE for a PostgreSQL before 17: each action runs as a data-modifying CTE.</summary>
     public const string MergeBySource = "S2P4016";
+
+    /// <summary>TABLESAMPLE: PostgreSQL's SYSTEM method samples pages, as SQL Server does; ROWS has no core equivalent.</summary>
+    public const string TableSample = "S2P4017";
 
     // ---- 5xxx procedural code ----
 
@@ -394,6 +403,9 @@ public static class DiagnosticCodes
 
     /// <summary>Dynamic SQL splices text from a variable in as it stands.</summary>
     public const string DynamicSqlSpliced = "S2P5062";
+
+    /// <summary>EXEC (…) AS USER / LOGIN = '…': the converted EXECUTE runs as the caller.</summary>
+    public const string DynamicSqlContext = "S2P5063";
 
     /// <summary>DDL (CREATE, ALTER, DROP) inside a procedure, function or trigger.</summary>
     public const string DdlInRoutine = "S2P5070";

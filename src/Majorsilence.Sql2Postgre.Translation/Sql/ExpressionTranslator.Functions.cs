@@ -150,8 +150,19 @@ public sealed partial class ExpressionTranslator
                 Arity(1, 2);
                 return a.Count == 1 ? Call(name.ToLowerInvariant(), name == "LTRIM" ? PaddedArg(0) : TextArg(0)) : Call(name.ToLowerInvariant(), name == "LTRIM" ? PaddedArg(0) : TextArg(0), TextArg(1));
             case "TRIM":
+            {
                 Arity(1, 2);
-                return a.Count == 1 ? Call("btrim", TextArg(0)) : Call("btrim", TextArg(1), TextArg(0));
+                // TRIM([LEADING | TRAILING | BOTH] [characters FROM] s) (SQL Server 2022): LEADING keeps
+                // the end of the value, so its char padding too, as LTRIM does.
+                string trim = f.TrimOptions?.Value.ToUpperInvariant() switch
+                {
+                    "LEADING" => "ltrim",
+                    "TRAILING" => "rtrim",
+                    _ => "btrim",
+                };
+                PgExpr value = trim == "ltrim" ? PaddedArg(a.Count - 1) : TextArg(a.Count - 1);
+                return a.Count == 1 ? Call(trim, value) : Call(trim, value, TextArg(0));
+            }
             case "CONCAT" when c.RequireImmutable && a.All(x => TypeRules.IsString(TypeOf(x, c)) || TypeRules.IsExactNumeric(TypeOf(x, c)) || x is StringLiteral):
                 // concat() is only STABLE in PostgreSQL (it formats any type); in a generated column
                 // the same result for strings and numbers is coalesce(…, '') || ….
@@ -487,15 +498,25 @@ public sealed partial class ExpressionTranslator
         return new PgCase(null, [new PgWhen(exists, value)], args.Count > 2 ? args[2] : null);
     }
 
-    private PgWindow Window(OverClause over, ExpressionContext c)
+    private PgWindow Window(OverClause over, ExpressionContext c) =>
+        Window(over.WindowName, over.Partitions, over.OrderByClause, over.WindowFrameClause, c);
+
+    /// <summary>A window of a query's WINDOW clause (SQL Server 2022): <c>WINDOW w AS ([base] PARTITION BY … ORDER BY … frame)</c>.</summary>
+    public PgNamedWindow NamedWindow(WindowDefinition w, ExpressionContext c) =>
+        new(WindowName(w.WindowName), Window(w.RefWindowName, w.Partitions, w.OrderByClause, w.WindowFrameClause, c));
+
+    /// <summary>A window name as PostgreSQL writes it: folded like an alias.</summary>
+    private string WindowName(Identifier name) => names.Alias(name.Value);
+
+    private PgWindow Window(Identifier? name, IList<ScalarExpression> partitions, OrderByClause? orderBy, WindowFrameClause? frameClause, ExpressionContext c)
     {
-        string? frame = over.WindowFrameClause is { } wf
+        string? frame = frameClause is { } wf
             ? $"{(wf.WindowFrameType == WindowFrameType.Rows ? "ROWS" : "RANGE")} " + (wf.Bottom is null
                 ? Delimiter(wf.Top, c)
                 : $"BETWEEN {Delimiter(wf.Top, c)} AND {Delimiter(wf.Bottom, c)}")
             : null;
-        return new PgWindow(over.Partitions.Select(p => Scalar(p, c)).ToList(),
-            over.OrderByClause?.OrderByElements.Select(o => SortKey(o, c)).ToList() ?? [], frame);
+        return new PgWindow(partitions.Select(p => Scalar(p, c)).ToList(),
+            orderBy?.OrderByElements.Select(o => SortKey(o, c)).ToList() ?? [], frame, name is null ? null : WindowName(name));
     }
 
     private string Delimiter(WindowDelimiter d, ExpressionContext c) => d.WindowDelimiterType switch

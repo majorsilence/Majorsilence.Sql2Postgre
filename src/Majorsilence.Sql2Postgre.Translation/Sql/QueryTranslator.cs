@@ -38,6 +38,7 @@ public sealed partial class QueryTranslator
         var scope = c.Scope;
         IReadOnlyList<PgCte> ctes = [];
         bool recursive = false;
+        RejectXmlNamespaces(with);
         if (with is { CommonTableExpressions.Count: > 0 })
         {
             scope = c.Scope.Child();
@@ -106,6 +107,7 @@ public sealed partial class QueryTranslator
             Where = spec.WhereClause?.SearchCondition is { } where ? _x.Boolean(where, c) : null,
             GroupBy = GroupBy(spec.GroupByClause, c),
             Having = spec.HavingClause?.SearchCondition is { } having ? _x.Boolean(having, c) : null,
+            Windows = spec.WindowClause?.WindowDefinition.Select(w => _x.NamedWindow(w, c)).ToList() ?? [],
             OrderBy = OrderBy(spec.OrderByClause, c, aliases),
             Offset = spec.OffsetClause is null ? null : _x.Scalar(spec.OffsetClause.OffsetExpression, c),
             Limit = spec.OffsetClause?.FetchExpression is null ? null : _x.Scalar(spec.OffsetClause.FetchExpression, c),
@@ -292,16 +294,48 @@ public sealed partial class QueryTranslator
         if (n.SchemaObject is { DatabaseIdentifier: null, SchemaIdentifier: { } catalog } && CatalogViews.IsCatalogSchema(catalog.Value))
             return _x.CatalogView(n, alias, c);
         GlobalTemp(n, written);
+        var sample = Sample(n.TableSampleClause, c);
         if (written.StartsWith('#'))
-            return new PgTableRef(new PgName("", TempTable(written)), alias);
+            return new PgTableRef(new PgName("", TempTable(written)), alias) { Sample = sample };
         if (_model.IsExternal(n.SchemaObject))
             throw ExpressionTranslator.Untranslatable(n, "a table in another database or on a linked server", DiagnosticCodes.ExternalReference);
         var name = _model.ResolveRelation(n.SchemaObject, c.Schema)!;
         if (_model.Relation(name) is null)
             c.Report(DiagnosticCodes.UnresolvedColumn, Severity.Warning, $"{name} is not a table or view this database has; it is written as {_names.Relation(name).Qualified}.");
         if (n.TemporalClause is { } temporal)
+        {
+            if (sample is not null)
+                throw ExpressionTranslator.Untranslatable(n, "TABLESAMPLE with FOR SYSTEM_TIME", DiagnosticCodes.TableSample);
             return SystemTime(n, temporal, name, alias, c);
-        return new PgTableRef(_names.Relation(name), alias);
+        }
+        return new PgTableRef(_names.Relation(name), alias) { Sample = sample };
+    }
+
+    /// <summary>
+    /// <c>TABLESAMPLE [SYSTEM] (n [PERCENT]) [REPEATABLE (seed)]</c> as PostgreSQL's SYSTEM method,
+    /// which, like SQL Server's, takes whole pages; <c>n ROWS</c> has no core equivalent.
+    /// </summary>
+    private PgTableSample? Sample(TableSampleClause? sample, ExpressionContext c)
+    {
+        if (sample is null)
+            return null;
+        if (sample.TableSampleClauseOption == TableSampleClauseOption.Rows)
+            throw new UntranslatableException(DiagnosticCodes.TableSample,
+                $"TABLESAMPLE (n ROWS): PostgreSQL's core sampling takes a percentage (SYSTEM), and the method that takes a row count (tsm_system_rows) is not a permitted extension; write it as a percentage: {ExpressionTranslator.Text(sample)}");
+        c.Report(DiagnosticCodes.TableSample, Severity.Info,
+            "TABLESAMPLE (n PERCENT) becomes TABLESAMPLE SYSTEM (n): both engines take whole pages, so which rows, and how many, differ from run to run and between them; REPEATABLE repeats a sample only on the same engine and data.");
+        return new PgTableSample(_x.Scalar(sample.SampleNumber, c), sample.RepeatSeed is null ? null : _x.Scalar(sample.RepeatSeed, c));
+    }
+
+    /// <summary>
+    /// <c>WITH XMLNAMESPACES</c> declares prefixes for FOR XML's element names and the xml methods'
+    /// paths; dropping it would leave the prefixes undeclared.
+    /// </summary>
+    public static void RejectXmlNamespaces(WithCtesAndXmlNamespaces? with)
+    {
+        if (with?.XmlNamespaces is { } namespaces)
+            throw new UntranslatableException(DiagnosticCodes.XmlNamespaces,
+                $"WITH XMLNAMESPACES is not translated: without the namespaces it declares, FOR XML would write its prefixes undeclared and the xml methods' paths would not match: {ExpressionTranslator.Text(namespaces)}");
     }
 
     /// <summary>

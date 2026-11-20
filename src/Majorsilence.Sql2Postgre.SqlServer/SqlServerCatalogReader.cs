@@ -164,7 +164,8 @@ public static class SqlServerCatalogReader
         ComputedSpec? computed = r.IsDBNull(16) ? null : new ComputedSpec(r.GetString(16), r.GetBoolean(17));
         return new Column(r.GetString(2), r.GetInt32(1), type, r.GetBoolean(9), identity,
             r.IsDBNull(14) ? null : r.GetString(14), r.IsDBNull(15) ? null : r.GetString(15),
-            computed, r.GetBoolean(10), r.GetBoolean(11));
+            computed, r.GetBoolean(10), r.GetBoolean(11),
+            ColumnFeatures.Of(r.GetBoolean(18), r.IsDBNull(19) ? null : r.GetString(19), r.IsDBNull(20) ? null : r.GetString(20)));
     }
 
     /// <summary>

@@ -31,6 +31,9 @@ public sealed record PgSelect : PgQuery
     public PgExpr? Where { get; init; }
     public IReadOnlyList<PgGroupItem> GroupBy { get; init; } = [];
     public PgExpr? Having { get; init; }
+
+    /// <summary>The WINDOW clause.</summary>
+    public IReadOnlyList<PgNamedWindow> Windows { get; init; } = [];
     public IReadOnlyList<PgSortKey> OrderBy { get; init; } = [];
     public PgExpr? Limit { get; init; }
     public PgExpr? Offset { get; init; }
@@ -59,7 +62,13 @@ public sealed record PgValues(IReadOnlyList<IReadOnlyList<PgExpr>> Rows) : PgQue
 public abstract record PgFromItem;
 
 /// <param name="Name">The table, view or CTE (a CTE or temp table has an empty schema).</param>
-public sealed record PgTableRef(PgName Name, string? Alias = null) : PgFromItem;
+public sealed record PgTableRef(PgName Name, string? Alias = null) : PgFromItem
+{
+    /// <summary><c>TABLESAMPLE SYSTEM (percent) [REPEATABLE (seed)]</c> after the alias.</summary>
+    public PgTableSample? Sample { get; init; }
+}
+
+public sealed record PgTableSample(PgExpr Percent, PgExpr? Seed);
 
 public sealed record PgSubqueryRef(PgQuery Query, string Alias, IReadOnlyList<string> Columns, bool Lateral = false) : PgFromItem;
 

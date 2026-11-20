@@ -310,6 +310,14 @@ public sealed partial class ProceduralTranslator
         {
             if (AddColumn(table, pg, col, st) is not { } add)
                 return null;
+            if (add.Column is { Default: { } value, NotNull: false, Identity: null } column && col.DefaultConstraint is { WithValues: false })
+            {
+                // SQL Server fills a new nullable column's existing rows with its default only WITH
+                // VALUES (they are NULL otherwise); PostgreSQL's ADD COLUMN … DEFAULT always does.
+                result.Add(new PgSqlStatement(add with { Column = column with { Default = null } }));
+                result.Add(new PgSqlStatement(new PgSetDefault(pg, column.Name, value)));
+                continue;
+            }
             result.Add(new PgSqlStatement(add));
         }
         var added = new List<(string Key, PgStatement Statement, bool IsKey)>();
@@ -368,7 +376,8 @@ public sealed partial class ProceduralTranslator
     /// <summary>A column added by ALTER TABLE … ADD: type, NOT NULL, default and identity (not computed or with inline constraints).</summary>
     private PgAddColumn? AddColumn(ObjectName table, PgName pg, ColumnDefinition col, BodyState st)
     {
-        if (col.ComputedColumnExpression is not null || col.DataType is null || col.Constraints.Any(c => c is not NullableConstraintDefinition))
+        if (col.ComputedColumnExpression is not null || col.DataType is null || col.Constraints.Any(c => c is not NullableConstraintDefinition)
+            || Shared.ColumnFeatureReader.Of(col) is not null)
             return null;
         var type = _model.TypeOf(col.DataType, st.C.Schema);
         var mapped = _x.Types.Map(type with { UserTypeName = null }, st.C.Owner);
@@ -431,6 +440,9 @@ public sealed partial class ProceduralTranslator
     /// <summary>ALTER TABLE … ALTER COLUMN c type [NULL | NOT NULL].</summary>
     private List<PgPlStatement>? AlterColumn(AlterTableAlterColumnStatement a, BodyState st)
     {
+        // ENCRYPTED WITH, MASKED, HIDDEN and GENERATED ALWAYS have no PostgreSQL column equivalent (S2P2027).
+        if (a.Encryption is not null || a.IsMasked || a.IsHidden || a.GeneratedAlways is not null)
+            return null;
         if (a.DataType is null || a.AlterTableAlterColumnOption is not (AlterTableAlterColumnOption.NoOptionDefined
                 or AlterTableAlterColumnOption.Null or AlterTableAlterColumnOption.NotNull))
             return null;

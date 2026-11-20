@@ -442,10 +442,10 @@ public sealed partial class ProceduralTranslator
                 if ((p.Options & SetOptions.XactAbort) != 0)
                     st.XactAbortOn = p.IsOn;
                 if ((p.Options & ~(SetOptions.NoCount | SetOptions.XactAbort)) != 0)
-                    c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"'{ExpressionTranslator.Text(s).Trim()}' sets a SQL Server session option and is dropped.");
+                    SessionOptions.ReportDropped(s, c);
                 return [];
             case SetCommandStatement or SetTransactionIsolationLevelStatement:
-                c.Report(DiagnosticCodes.SessionStatementDropped, Severity.Info, $"'{ExpressionTranslator.Text(s).Trim()}' sets a SQL Server session option and is dropped.");
+                SessionOptions.ReportDropped(s, c);
                 return [];
             case SetRowCountStatement { NumberRows: IntegerLiteral { Value: "0" } }:
                 st.RowLimit = null;

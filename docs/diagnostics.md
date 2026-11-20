@@ -53,11 +53,30 @@ The view uses something that is not converted: a function or procedure (routines
 in Stage 3), or another view that needs a person. It cannot be created until that exists, so it
 is held back, and the views built on it with it.
 
-### S2P0204 SessionStatementDropped (Info)
+### S2P0204 SessionStatementDropped (Info or Warning)
 
 A script's `USE` or session `SET` option (`NOCOUNT`, `ANSI_NULLS`, `DATEFORMAT`, `ROWCOUNT`,
-`TRANSACTION ISOLATION LEVEL`, …) is dropped. A PostgreSQL connection stays in one database; set
-an isolation level with `BEGIN ISOLATION LEVEL …` where it matters.
+`TRANSACTION ISOLATION LEVEL`, …) is dropped, in a script, a routine or dynamic SQL. A PostgreSQL
+connection stays in one database; set an isolation level with `BEGIN ISOLATION LEVEL …` where it
+matters.
+
+The converted code behaves as SQL Server does with its defaults (`us_english`, `ANSI_NULLS ON`,
+…). An option that changes the results of the statements after it is a **Warning**, and the
+message says what it changes:
+
+| Option | Changes |
+|---|---|
+| `SET DATEFIRST` | `DATEPART(weekday, …)`, `DATETRUNC(week, …)`, `@@DATEFIRST` |
+| `SET DATEFORMAT` | how strings convert to dates |
+| `SET LANGUAGE` | `DATENAME`, month and day names in conversions, the date format |
+| `SET ROWCOUNT n` in a script | how many rows later statements return or change (in a routine it is translated, as `LIMIT` on its result sets) |
+| `ANSI_NULLS`, `CONCAT_NULL_YIELDS_NULL`, `ANSI_WARNINGS`, `ARITHABORT`, `ANSI_DEFAULTS` `OFF` | comparisons and concatenation with NULL, arithmetic errors |
+| `QUOTED_IDENTIFIER OFF` | double-quoted text is a string; the converter reads it as a name |
+| `IMPLICIT_TRANSACTIONS`, `NUMERIC_ROUNDABORT` `ON` | transactions; rounding errors |
+| `NOEXEC`, `FMTONLY`, `PARSEONLY` `ON` | whether the statements run at all |
+
+The rest (`NOCOUNT`, `LOCK_TIMEOUT`, `DEADLOCK_PRIORITY`, `TRANSACTION ISOLATION LEVEL`, the
+`ON` defaults, …) are an Info.
 
 ### S2P0205 DdlInScript (Error)
 
@@ -392,6 +411,26 @@ on 19.
 
 Queries give the same results. An index-only scan cannot return the columns left out, so a query
 that read only the index in SQL Server also reads the table.
+
+### S2P2027 ColumnFeatureDropped (Warning)
+
+A column has a SQL Server property PostgreSQL columns do not have; the column is created without
+it:
+
+- **HIDDEN** (a temporal table's period columns): SQL Server's `SELECT *` leaves the column out,
+  PostgreSQL's returns it. List the columns in queries that must not see it.
+- **Dynamic data masking** (`MASKED WITH (FUNCTION = 'email()')`): SQL Server shows a reader
+  without `UNMASK` masked values; PostgreSQL shows every reader with `SELECT` on the table the
+  values. Restrict the column with column privileges (`REVOKE SELECT (col)`), or a view that
+  masks it.
+- **Always Encrypted** (`ENCRYPTED WITH (…)`): SQL Server stores only ciphertext and the client
+  holds the keys; PostgreSQL stores the column in the clear. The data copy reads it as SQL Server
+  sends it, which is ciphertext unless the source connection string has
+  `Column Encryption Setting=Enabled` and the client can reach the keys.
+
+The catalog reader takes these from `sys.columns` (`is_hidden`, `encryption_type_desc`) and
+`sys.masked_columns`; the script reader from the column definition. In a routine,
+`ALTER TABLE … ADD` or `ALTER COLUMN` with one of them is not translated (S2P5070).
 
 ## S2P3xxx — expressions and built-in functions
 
@@ -743,6 +782,14 @@ CASE WHEN lead(true, 2, false) OVER w
 
 The offset must then be a number (`LEAD(x, @n) IGNORE NULLS` is reported, on 19 too).
 
+### S2P3048 XmlNamespaces (Error)
+
+`WITH XMLNAMESPACES ('urn:x' AS x) …` declares namespace prefixes for the query's `FOR XML` element
+names and its xml methods' paths. It is not translated: without it, `FOR XML` would write the
+prefixes (`x:row`) with no declaration, and the paths would not match. Write the namespace into
+the PostgreSQL query (`xmlattributes('urn:x' AS "xmlns:x")` on the root element, or
+`xpath(…, ARRAY[ARRAY['x', 'urn:x']])`).
+
 Target PostgreSQL 19, or rewrite the query without `IGNORE NULLS`. Carrying the last non-NULL
 value forward, for example, is `max(x) OVER (PARTITION BY grp)` over a subquery that numbers the
 groups with `count(x) OVER (ORDER BY …) AS grp`.
@@ -854,6 +901,16 @@ start and end the period columns:
 
 It is a Warning when the table has no history table in the source: only the current rows are
 read. Times are UTC, as in SQL Server.
+
+### S2P4017 TableSample (Info or Error)
+
+`TABLESAMPLE (n PERCENT) [REPEATABLE (seed)]` (or `TABLESAMPLE SYSTEM (n)`) becomes
+`TABLESAMPLE SYSTEM (n) [REPEATABLE (seed)]`, an Info: both engines sample whole pages, so which
+rows, and how many, differ from run to run and between the engines, and `REPEATABLE` repeats a
+sample only on the same engine and data. `TABLESAMPLE (100 PERCENT)` reads every row on both.
+
+`TABLESAMPLE (n ROWS)` is an Error: PostgreSQL's core sampling takes a percentage, and the method
+that takes a row count (`tsm_system_rows`) is not a permitted extension. Write it as a percentage.
 
 ## S2P5xxx — procedural code
 
@@ -1280,6 +1337,13 @@ statement fails, SQL Server keeps the changes already made, because each was com
 own, and only the failing statement is undone. PostgreSQL's exception block undoes everything
 the TRY did. Wrap the TRY's work in `BEGIN TRAN … COMMIT` if all-or-nothing is what the code
 means. If it is not, split the TRY.
+
+### S2P5063 DynamicSqlContext (Warning)
+
+`EXEC ('…') AS USER = 'name'` (or `AS LOGIN`) runs the SQL as that user in SQL Server. The
+converted `EXECUTE` runs it as the caller, with the caller's privileges: it may succeed where SQL
+Server's would fail, or the other way round. To run it as a role, put `SET ROLE name` before it
+and `RESET ROLE` after; the caller must be a member of the role.
 
 ### S2P5070 DdlInRoutine (Error)
 

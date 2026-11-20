@@ -33,10 +33,22 @@ public sealed record IdentitySpec(long Seed, long Increment);
 
 public sealed record ComputedSpec(string Expression, bool IsPersisted);
 
+/// <param name="Features">HIDDEN, masking or Always Encrypted, which PostgreSQL columns do not have.</param>
 public sealed record Column(
     string Name, int Ordinal, SqlServerType Type, bool IsNullable,
     IdentitySpec? Identity = null, string? DefaultExpression = null, string? DefaultConstraintName = null,
-    ComputedSpec? Computed = null, bool IsRowGuidCol = false, bool IsSparse = false);
+    ComputedSpec? Computed = null, bool IsRowGuidCol = false, bool IsSparse = false, ColumnFeatures? Features = null);
+
+/// <summary>Column properties of SQL Server that a PostgreSQL column does not have.</summary>
+/// <param name="Hidden">HIDDEN: a period column that <c>SELECT *</c> leaves out.</param>
+/// <param name="MaskingFunction">Dynamic data masking: <c>default()</c>, <c>email()</c>, <c>partial(…)</c>, <c>random(…)</c>.</param>
+/// <param name="Encryption">Always Encrypted: <c>DETERMINISTIC</c> or <c>RANDOMIZED</c>.</param>
+public sealed record ColumnFeatures(bool Hidden = false, string? MaskingFunction = null, string? Encryption = null)
+{
+    /// <summary>The features, or null when the column has none.</summary>
+    public static ColumnFeatures? Of(bool hidden, string? maskingFunction, string? encryption) =>
+        hidden || maskingFunction is not null || encryption is not null ? new(hidden, maskingFunction, encryption) : null;
+}
 
 public sealed record IndexColumn(string Name, bool Descending = false);
 

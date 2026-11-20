@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Syntax the translator read past** (WP 4.21). These were dropped without a diagnostic, and
+  are now translated or reported:
+  - Named windows: `WINDOW w AS (…)` with `OVER w` / `OVER (w ORDER BY …)` lost the window
+    (`OVER ()`); now PostgreSQL's `WINDOW` clause.
+  - `TRIM(LEADING | TRAILING chars FROM s)` trimmed both ends; now `ltrim` / `rtrim`.
+  - `TABLESAMPLE (n PERCENT) [REPEATABLE (seed)]` read the whole table; now `TABLESAMPLE SYSTEM`
+    (S2P4017; `n ROWS` is reported).
+  - In a routine, `ALTER TABLE … ADD c … NULL DEFAULT x` without `WITH VALUES` filled the existing
+    rows with the default; now they stay NULL, as in SQL Server.
+  - `WITH XMLNAMESPACES` (S2P3048) and `EXEC (…) AS USER = …` (S2P5063) are reported.
+  - HIDDEN, masked and Always Encrypted columns are read from the catalog and scripts and
+    reported (S2P2027).
+  - `SET` options that change results (`DATEFIRST`, `DATEFORMAT`, `LANGUAGE`, `ROWCOUNT` in a
+    script, `ANSI_NULLS OFF`, …) are a Warning that says what changes, not an Info; in dynamic
+    SQL they were not reported at all.
+  - A unit test fails when a ScriptDom node type the converter handles has a property the source
+    never reads and that is not on a reviewed list with its reason.
 - **PostgreSQL 19** (WP 4.20):
   - `targetVersion` (and `--target-version`) accepts 19; 18 stays the default. CI runs the
     container tests on 15–19.

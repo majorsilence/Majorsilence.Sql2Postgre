@@ -68,6 +68,8 @@ public class RoutineDdlBothEnginesTests
         BEGIN
             SET NOCOUNT ON;
             ALTER TABLE dbo.Sale ADD Note nvarchar(20) NULL, Rank int NOT NULL CONSTRAINT DF_Sale_Rank DEFAULT 3;
+            -- Without WITH VALUES the existing rows' Flag stays NULL; with it they get the default.
+            ALTER TABLE dbo.Sale ADD Flag int NULL CONSTRAINT DF_Sale_Flag DEFAULT 0, Kept int NULL CONSTRAINT DF_Sale_Kept DEFAULT 1 WITH VALUES;
             ALTER TABLE dbo.Sale DROP CONSTRAINT DF_Sale_Region;
             ALTER TABLE dbo.Sale ADD CONSTRAINT DF_Sale_Region DEFAULT N'south' FOR Region;
             ALTER TABLE dbo.Sale ALTER COLUMN Note nvarchar(40) NULL;
@@ -159,6 +161,9 @@ public class RoutineDdlBothEnginesTests
         await AssertSameAsync(
             "SELECT Region, Note, Rank FROM dbo.Sale WHERE Note IS NOT NULL",
             "SELECT region, note, rank FROM public.sale WHERE note IS NOT NULL");
+        await AssertSameAsync(
+            "SELECT Note, Flag, Kept FROM dbo.Sale ORDER BY SaleId",
+            "SELECT note, flag, kept FROM public.sale ORDER BY saleid");
         await AssertSameAsync(
             "SELECT COUNT(*) FROM sys.procedures WHERE name = 'Scratch'",
             "SELECT COUNT(*) FROM pg_proc WHERE proname = 'scratch'");
