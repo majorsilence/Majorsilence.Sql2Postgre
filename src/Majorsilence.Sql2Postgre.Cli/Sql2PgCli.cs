@@ -59,7 +59,7 @@ public sealed partial class Sql2PgCli(TextWriter output, TextWriter error)
     };
     private readonly Option<int?> _targetVersion = new("--target-version")
     {
-        Description = "The PostgreSQL major version the output must run on: 15, 16, 17 or 18 (the default). Overrides targetVersion in --config.",
+        Description = "The PostgreSQL major version the output must run on: 15, 16, 17, 18 (the default) or 19. Overrides targetVersion in --config.",
     };
     private readonly Option<FileInfo?> _json = new("--json") { Description = "Write the full report as JSON to this file." };
     private readonly Option<FileInfo?> _html = new("--html") { Description = "Write the report as a single self-contained HTML file (summary, effort, sortable object table)." };

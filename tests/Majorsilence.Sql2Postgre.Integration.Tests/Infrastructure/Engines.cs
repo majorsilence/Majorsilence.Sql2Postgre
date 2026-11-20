@@ -70,8 +70,14 @@ public static class Engines
     private static readonly Lazy<Task<(PostgreSqlContainer? Container, string? Unavailable)>> PostGis =
         new(StartPostGisAsync, LazyThreadSafetyMode.ExecutionAndPublication);
 
-    /// <summary>The PostGIS image for <see cref="PostgresVersion"/> (<c>postgis/postgis:18-3.6</c>).</summary>
-    public static string PostGisImage => $"postgis/postgis:{PostgresVersion}-3.6";
+    /// <summary>
+    /// The PostGIS image for <see cref="PostgresVersion"/> (<c>postgis/postgis:18-3.6</c>), or null
+    /// for a version postgis/postgis has no image of yet (19), which is built instead.
+    /// </summary>
+    public static string? PostGisImage => int.TryParse(PostgresVersion, out int v) && v >= 19 ? null : $"postgis/postgis:{PostgresVersion}-3.6";
+
+    /// <summary>This file's folder, where the Dockerfiles are (the corpus tests link the file).</summary>
+    private static string Infrastructure([System.Runtime.CompilerServices.CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
 
     /// <summary>
     /// A second PostgreSQL, with PostGIS available (the stock image has none), started on first use;
@@ -89,14 +95,28 @@ public static class Engines
     {
         try
         {
-            var container = new PostgreSqlBuilder(PostGisImage).Build();
+            string image = PostGisImage ?? await BuildAsync("postgres-postgis", $"sql2pg-postgis:{PostgresVersion}");
+            var container = new PostgreSqlBuilder(image).Build();
             await container.StartAsync();
             return (container, null);
         }
-        catch (DockerUnavailableException ex)
+        catch (Exception ex) when (ex is DockerUnavailableException or DotNet.Testcontainers.Images.ImageBuildFailedException)
         {
             return (null, ex.Message);
         }
+    }
+
+    /// <summary>Builds the image of <c>Infrastructure/{folder}/Dockerfile</c> for <see cref="PostgresVersion"/>.</summary>
+    private static async Task<string> BuildAsync(string folder, string name)
+    {
+        var image = new ImageFromDockerfileBuilder()
+            .WithDockerfileDirectory(Path.Combine(Infrastructure(), folder))
+            .WithBuildArgument("PG_VERSION", PostgresVersion)
+            .WithName(name)
+            .WithCleanUp(false)
+            .Build();
+        await image.CreateAsync();
+        return image.FullName;
     }
 
     private static readonly Lazy<Task<(PostgreSqlContainer? Container, string? Unavailable)>> PgCron =
@@ -121,14 +141,8 @@ public static class Engines
     {
         try
         {
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(CommonDirectoryPath.GetProjectDirectory(), Path.Combine("Infrastructure", "postgres-cron"))
-                .WithBuildArgument("PG_VERSION", PostgresVersion)
-                .WithName($"sql2pg-postgres-cron:{PostgresVersion}")
-                .WithCleanUp(false)
-                .Build();
-            await image.CreateAsync();
-            var container = new PostgreSqlBuilder(image.FullName)
+            string image = await BuildAsync("postgres-cron", $"sql2pg-postgres-cron:{PostgresVersion}");
+            var container = new PostgreSqlBuilder(image)
                 .WithCommand("-c", "shared_preload_libraries=pg_cron", "-c", $"cron.database_name={PgCronDatabase}")
                 .Build();
             await container.StartAsync();

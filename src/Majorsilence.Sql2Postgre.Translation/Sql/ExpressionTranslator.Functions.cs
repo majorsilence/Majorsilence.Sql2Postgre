@@ -449,7 +449,42 @@ public sealed partial class ExpressionTranslator
         };
         if (pg is null)
             throw Untranslatable(f, $"the window function {name}");
-        return new PgFunctionCall(pg, f.Parameters.Select(p => Scalar(p, c)).ToList()) { Over = over };
+        // RESPECT NULLS is the default on both engines; IGNORE NULLS is new in PostgreSQL 19.
+        bool ignoreNulls = f.IgnoreRespectNulls is [{ Value: var first }, ..]
+            && first.Equals("IGNORE", StringComparison.OrdinalIgnoreCase);
+        if (ignoreNulls && options.TargetVersion < 19)
+            throw new UntranslatableException(DiagnosticCodes.IgnoreNulls,
+                $"{name} … IGNORE NULLS needs PostgreSQL 19 (the target is {options.TargetVersion}): target 19, or rewrite it without IGNORE NULLS: {Text(f)}");
+        var args = f.Parameters.Select(p => Scalar(p, c)).ToList();
+        if (ignoreNulls && name is "LAG" or "LEAD" && !(args.Count == 1 || (args.Count == 2 && f.Parameters[1] is IntegerLiteral { Value: "1" })))
+            return OffsetIgnoringNulls(f, name, args, over);
+        return new PgFunctionCall(pg, args) { Over = over, IgnoreNulls = ignoreNulls };
+    }
+
+    /// <summary>
+    /// <c>LAG</c>/<c>LEAD(x, n, default) IGNORE NULLS</c> with an offset other than 1, or a default.
+    /// SQL Server goes to the row n away: past the partition's edge it is the default, otherwise the
+    /// first non-NULL value from that row on (away from the current row), or NULL. PostgreSQL 19
+    /// counts n non-NULL rows instead (the standard's rule), so the two agree only for
+    /// <c>lag(x) IGNORE NULLS</c>. Here the row n away is tested with <c>lag(true, n, false)</c>, and the
+    /// value is <c>last_value(x) IGNORE NULLS</c> over the rows from it on.
+    /// </summary>
+    private static PgCase OffsetIgnoringNulls(FunctionCall f, string name, List<PgExpr> args, PgWindow over)
+    {
+        if (f.Parameters[1] is not IntegerLiteral { Value: var n })
+            throw new UntranslatableException(DiagnosticCodes.IgnoreNulls,
+                $"{name} … IGNORE NULLS with an offset that is not a number: PostgreSQL's frame needs it written out: {Text(f)}");
+        bool lead = name == "LEAD";
+        var exists = new PgFunctionCall(lead ? "lead" : "lag", [new PgKeyword("true"), args[1], new PgKeyword("false")]) { Over = over };
+        var value = new PgFunctionCall(lead ? "first_value" : "last_value", [args[0]])
+        {
+            IgnoreNulls = true,
+            Over = over with
+            {
+                Frame = lead ? $"ROWS BETWEEN {n} FOLLOWING AND UNBOUNDED FOLLOWING" : $"ROWS BETWEEN UNBOUNDED PRECEDING AND {n} PRECEDING",
+            },
+        };
+        return new PgCase(null, [new PgWhen(exists, value)], args.Count > 2 ? args[2] : null);
     }
 
     private PgWindow Window(OverClause over, ExpressionContext c)

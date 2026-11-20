@@ -1,5 +1,7 @@
 # PostgreSQL keywords that are not unreserved, as PostgreSQL 18.7 reports them:
 #   SELECT word, catcode FROM pg_get_keywords() WHERE catcode <> 'U' ORDER BY word;
+# PostgreSQL 19.0 reports the same list: its new keywords (ignore, lsn, repack, respect, wait)
+# are all unreserved. 15, 16 and 17 reserve none that 18 does not.
 # catcode R = reserved, T = reserved (can be function or type), C = non-reserved (cannot be
 # function or type). See the PostgreSQL manual, appendix "SQL Key Words". A name equal to one
 # of these is quoted. Regenerate when a new PostgreSQL major version is supported.

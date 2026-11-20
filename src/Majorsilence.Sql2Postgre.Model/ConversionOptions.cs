@@ -13,9 +13,9 @@ public enum ResultSetStyle { Function, Refcursor }
 public sealed record ConversionOptions
 {
     public const int MinTargetVersion = 15;
-    public const int MaxTargetVersion = 18;
+    public const int MaxTargetVersion = 19;
 
-    /// <summary>The PostgreSQL major version the output is written for (15–18).</summary>
+    /// <summary>The PostgreSQL major version the output is written for (15–19; 18 by default).</summary>
     public int TargetVersion { get; init; } = 18;
 
     public NameStyle NameStyle { get; init; } = NameStyle.Lower;

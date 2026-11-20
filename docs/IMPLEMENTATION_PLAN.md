@@ -45,7 +45,7 @@ These apply to every WP. A PR that breaks one is not mergeable.
    SQL Server. Package dependencies listed under [Dependencies](#dependencies) are allowed;
    adding any other package needs the reviewer's OK in the PR description.
 2. **Pure, unmodified PostgreSQL output.** Everything emitted must run on stock community
-   PostgreSQL 15–18 (see *Target version* below): core features, plus only these permitted extensions —
+   PostgreSQL 15–19 (see *Target version* below): core features, plus only these permitted extensions —
 
    | Extension | `CREATE EXTENSION` name | Used for |
    |---|---|---|
@@ -89,11 +89,13 @@ These apply to every WP. A PR that breaks one is not mergeable.
 
 ## Target version
 
-**PostgreSQL 15–18, with 18 the default** (`TargetVersion`, default 18). From 2026-11-15 to
-2026-11-19 the target was 18 alone; WP 4.17 then made the output work on 15, 16 and 17 as well.
-New work targets 18 first and gives each 18-only form a fallback (or a diagnostic) for 15–17,
-with a golden case at the older version. Container tests convert for the PostgreSQL they run on
-(`SQL2PG_PG_VERSION`), and CI runs them on all four.
+**PostgreSQL 15–19, with 18 the default** (`TargetVersion`, default 18). From 2026-11-15 to
+2026-11-19 the target was 18 alone; WP 4.17 then made the output work on 15, 16 and 17 as well,
+and WP 4.20 added 19 (released 2026-11-19). New work targets 18 first and gives each 18-only form
+a fallback (or a diagnostic) for 15–17, with a golden case at the older version; a 19-only form
+is used only for 19, with the 18 form (or a diagnostic) otherwise. Whether 19 becomes the default
+is the maintainer's decision. Container tests convert for the PostgreSQL they run on
+(`SQL2PG_PG_VERSION`), and CI runs them on all five.
 
 ## Defaults for open decisions
 
@@ -1565,6 +1567,34 @@ and `sys.indexes`, audits, partitioning and filegroups came up in the configurat
   of `sys.indexes` for keys, a filtered index and a heap, and of feature checks; corpus scans on
   15–18.
 
+#### WP 4.20 — PostgreSQL 19 (S)
+
+PostgreSQL 19 was released on 2026-11-19 (the image was on Docker Hub the next day), and the
+maintainer asked for it on 2026-11-20. 18 stays the default target.
+
+- `TargetVersion` 19, in the options, `--target-version` and CI (`pg: [15, 16, 17, 18, 19]`).
+- **Keywords.** 19's new keywords (`ignore`, `lsn`, `repack`, `respect`, `wait`) are all
+  unreserved, so names are quoted as for 18 (checked with `pg_get_keywords()` on each version).
+- **Window functions with `IGNORE NULLS`.** 19 adds `IGNORE NULLS` to `first_value`,
+  `last_value`, `lag`, `lead` and `nth_value`; SQL Server 2022 has it on the first four. Written
+  as it is for 19; before 19 it is reported (S2P3047). The converter used to drop it without a
+  diagnostic, on every version. With an offset other than 1, or a default, SQL Server's `LAG`/`LEAD`
+  do not count non-NULL rows as the standard (and PostgreSQL) does, so those are written as a
+  frame from the row n away.
+- The rest of the 19 release notes was checked against what the output relies on: no change to
+  the catalogs mssql_compat reads, to MERGE or RETURNING, or to `to_char`.
+  `standard_conforming_strings` can no longer be off, which the output never needs;
+  `json_array()` over no rows (not used) now gives `[]`.
+- **Included columns.** 19 compresses with lz4 by default (`default_toast_compression`), which
+  left AdventureWorks' `IX_ProductReview_ProductID_Name` (`INCLUDE (Comments)`, an
+  `nvarchar(3850)`) with rows over btree's 2704 bytes. SQL Server does not limit included columns,
+  so an incompressible comment failed the INSERT on every version. Included columns that could
+  make the row too long are now left out, widest first (S2P2026).
+- **Images.** postgis/postgis has no 19 image yet, so the container tests build one from PGDG's
+  `postgresql-19-postgis-3` (as they build the pg_cron image).
+- Tests: golden cases at 18 and 19; a both-engines test of `IGNORE NULLS`; the container tests
+  and the corpus scan on 15–19.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package
@@ -1576,7 +1606,7 @@ and `sys.indexes`, audits, partitioning and filegroups came up in the configurat
 Every PR, in addition to its WP's own list:
 
 - [ ] Builds with 0 warnings on net10.0 and net11.0.
-- [ ] Unit tests pass on Windows and Linux; container tests pass in CI on PostgreSQL 15–18.
+- [ ] Unit tests pass on Windows and Linux; container tests pass in CI on PostgreSQL 15–19.
 - [ ] New translation rules have golden tests; behavioural rules have both-engines tests.
 - [ ] New diagnostic codes are in `DiagnosticCodes` and `docs/diagnostics.md`.
 - [ ] Generated SQL uses only permitted extensions, each only when enabled in options (a unit

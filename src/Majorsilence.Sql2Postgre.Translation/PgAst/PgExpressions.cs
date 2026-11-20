@@ -65,6 +65,9 @@ public sealed record PgFunctionCall(string Name, IReadOnlyList<PgExpr> Arguments
 
     /// <summary>A window function's OVER clause.</summary>
     public PgWindow? Over { get; init; }
+
+    /// <summary>A window function that skips NULLs: <c>lag(x) IGNORE NULLS OVER (…)</c> (PostgreSQL 19).</summary>
+    public bool IgnoreNulls { get; init; }
 }
 
 /// <param name="NullsFirst">NULLS FIRST (true), NULLS LAST (false), or PostgreSQL's default (null).</param>

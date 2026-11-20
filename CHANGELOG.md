@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **PostgreSQL 19** (WP 4.20):
+  - `targetVersion` (and `--target-version`) accepts 19; 18 stays the default. CI runs the
+    container tests on 15–19.
+  - `FIRST_VALUE`, `LAST_VALUE`, `LAG` and `LEAD` with `IGNORE NULLS` translate for 19, which
+    added them. `LAG`/`LEAD` with an offset other than 1 or a default follow SQL Server's rule,
+    which is not the standard's that PostgreSQL uses. Before 19 they are reported (S2P3047)
+    instead of losing `IGNORE NULLS`, which the converter used to drop without a word.
+  - PostgreSQL 19 reserves no new keywords, so names are quoted as for 18.
+  - An index's included columns that could make its rows longer than PostgreSQL's btree limit
+    (2704 bytes) are left out of the index, widest first (S2P2026). SQL Server does not limit
+    included columns, and a long value failed the INSERT on every version. PostgreSQL 19's lz4
+    compression made it fail for AdventureWorks' `IX_ProductReview_ProductID_Name` at
+    `CREATE INDEX`.
+  - The container tests build a PostGIS image for 19 from the PGDG package, since postgis/postgis
+    has no 19 image yet.
 - **Roles, catalog views and server feature checks** (WP 4.19):
   - `sys.database_principals` and `sys.database_role_members` are answered from PostgreSQL's
     roles. `CREATE ROLE`, `ALTER ROLE … ADD MEMBER` / `DROP MEMBER` / `WITH NAME =` and

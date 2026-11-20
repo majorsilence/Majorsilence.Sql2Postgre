@@ -662,11 +662,77 @@ public sealed partial class SchemaTranslator
                     continue;
                 }
             }
+            var included = method is null ? FittingIncluded(t, ix, diagnostics) : ix.Included;
             yield return new TranslatedObject(source, ObjectKind.Index, $"{NameMapper.Quote(table.Schema)}.{NameMapper.Quote(name)}", Phase.Indexes,
                 [new PgCreateIndex(name, table, ix.Keys.Select(k => new PgIndexKey(_names.Column(t.Name, k.Name), k.Descending)).ToList(),
-                    ix.Included.Select(c => _names.Column(t.Name, c)).ToList(), ix.IsUnique, where, method)],
+                    included.Select(c => _names.Column(t.Name, c)).ToList(), ix.IsUnique, where, method)],
                 diagnostics, [t.Name]) { Extensions = extensions };
         }
+    }
+
+    /// <summary>The most a btree index row may hold in PostgreSQL (a third of an 8 kB page).</summary>
+    private const int BtreeRowLimit = 2704;
+
+    /// <summary>
+    /// The included columns that keep the index's longest possible row within
+    /// <see cref="BtreeRowLimit"/>. SQL Server does not limit included columns (only keys), but
+    /// PostgreSQL stores them in the btree row, and a row that does not fit fails the INSERT or
+    /// UPDATE (or the CREATE INDEX). Compression may make a long value fit, and how well depends
+    /// on the data and on <c>default_toast_compression</c> (lz4 from PostgreSQL 19), so the
+    /// longest value the type allows is counted: the widest included columns are left out until
+    /// the rest fit. Queries give the same results; an index-only scan cannot return those columns.
+    /// </summary>
+    private IReadOnlyList<string> FittingIncluded(Table t, TableIndex ix, List<Diagnostic> diagnostics)
+    {
+        if (ix.Included.Count == 0)
+            return ix.Included;
+        long Width(string column) =>
+            t.Columns.FirstOrDefault(c => c.Name.Equals(column, StringComparison.OrdinalIgnoreCase)) is { } c ? MaxBytes(c.Type) : 0;
+        // The row's header (8 bytes), and a 4-byte length or alignment for each column.
+        long row = 8 + ix.Keys.Concat(ix.Included.Select(c => new IndexColumn(c))).Sum(k => Width(k.Name) + 4);
+        var kept = ix.Included.ToList();
+        var dropped = new List<string>();
+        foreach (string column in ix.Included.OrderByDescending(Width))
+        {
+            if (row <= BtreeRowLimit)
+                break;
+            row -= Width(column) + 4;
+            kept.Remove(column);
+            dropped.Add(column);
+        }
+        if (dropped.Count > 0)
+        {
+            string list = string.Join(", ", dropped.Select(d =>
+                $"{d} ({t.Columns.FirstOrDefault(c => c.Name.Equals(d, StringComparison.OrdinalIgnoreCase))?.Type})"));
+            diagnostics.Add(new Diagnostic(DiagnosticCodes.IncludedColumnDropped, Severity.Warning, t.Name,
+                $"{ix.Name} on {t.Name} leaves out the included column{(dropped.Count == 1 ? "" : "s")} {list}: a PostgreSQL btree index row holds at most {BtreeRowLimit} bytes, " +
+                "and a long enough value would fail the INSERT or UPDATE. Queries give the same results; an index-only scan cannot return " +
+                (dropped.Count == 1 ? "it." : "them.")));
+        }
+        return kept;
+    }
+
+    /// <summary>
+    /// The most bytes a value of the type can take in PostgreSQL, uncompressed: UTF-8 takes up to
+    /// 3 bytes for a UTF-16 code unit (a surrogate pair is 4 bytes for 2), and up to 3 for a
+    /// character of a single-byte code page; <c>max</c> types have no limit.
+    /// </summary>
+    private static long MaxBytes(SqlServerType type)
+    {
+        if (type.IsMax)
+            return int.MaxValue;
+        bool utf8 = type.Collation?.Contains("UTF8", StringComparison.OrdinalIgnoreCase) == true;
+        return type.Name switch
+        {
+            "char" or "varchar" => (type.Length ?? 1) * (utf8 ? 1L : 3L),
+            "nchar" or "nvarchar" => (type.Length ?? 1) * 3L,
+            "sysname" => 128 * 3,
+            "binary" or "varbinary" => type.Length ?? 1,
+            "hierarchyid" => 892,
+            "sql_variant" => 8016,
+            "xml" or "text" or "ntext" or "image" or "geography" or "geometry" => int.MaxValue,
+            _ => 16,
+        };
     }
 
     /// <summary>

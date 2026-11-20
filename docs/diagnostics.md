@@ -371,6 +371,28 @@ A SQL Server Agent job is scheduled with pg_cron:
   its extension only there: set it to the target database. Times are UTC unless `cron.timezone`
   says otherwise; SQL Server Agent used the server's local time.
 
+### S2P2026 IncludedColumnDropped (Warning)
+
+An index's included columns (`INCLUDE (…)`) are left out of the PostgreSQL index, widest first,
+because with them the index's longest possible row is longer than a btree index row may be
+(2704 bytes, a third of a page). SQL Server limits only an index's keys; PostgreSQL stores the
+included columns in the btree row as well, and a row that does not fit fails the `INSERT` or
+`UPDATE` (or the `CREATE INDEX`, when the data copied in already has one):
+
+```
+ERROR:  index row size 3816 exceeds btree version 4 maximum 2704 for index "ix_review_product"
+```
+
+The longest value the column's type allows is counted, uncompressed: up to 3 bytes in UTF-8 for
+each character of `nvarchar(n)`, and of `varchar(n)` (except under a UTF-8 collation, 1); no limit
+for `max` types. Compression often makes long values fit, but how well depends on the data, and on
+`default_toast_compression`, which is lz4 from PostgreSQL 19 (pglz before). In AdventureWorks,
+`IX_ProductReview_ProductID_Name` includes `Comments nvarchar(3850)`, whose rows fit on 18 and not
+on 19.
+
+Queries give the same results. An index-only scan cannot return the columns left out, so a query
+that read only the index in SQL Server also reads the table.
+
 ## S2P3xxx — expressions and built-in functions
 
 ### S2P3001 UnsupportedExpression (Error)
@@ -665,6 +687,16 @@ Code that asks SQL Server about itself is answered from the converted database:
 Objects created after the conversion (by dynamic SQL, say) are not in the table. Neither are the
 system objects SQL Server lists: these views show only user objects (`is_ms_shipped` is 0).
 
+### S2P3045 SessionContext (Info)
+
+`SESSION_CONTEXT(N'key')` reads the PostgreSQL setting `sql2pg.session_key`, the key in lower
+case (PostgreSQL folds setting names): `current_setting('sql2pg.session_key', true)`, which is
+NULL until it is set, as SESSION_CONTEXT is NULL for a key never set. The value is text (SQL
+Server's is `sql_variant`). Where SQL Server code or the application calls
+`sp_set_session_context`, set the value with `SET sql2pg.session_key = '…'` or
+`set_config('sql2pg.session_key', …, false)`. A key that is not a literal plain name (letters,
+digits, `_`) is not translated (S2P3001).
+
 ### S2P3046 FeatureBranchNotTaken (Warning)
 
 An IF tests a server property that PostgreSQL answers with a constant (S2P3044):
@@ -692,15 +724,28 @@ A condition counts only when it reads nothing but these properties and integers 
 `>`, `AND`, `OR`, `NOT`, `CAST(… AS int)`); `IF SERVERPROPERTY(N'IsXTPSupported') = 0 AND
 @force = 1` is translated as written.
 
-### S2P3045 SessionContext (Info)
+### S2P3047 IgnoreNulls (Error)
 
-`SESSION_CONTEXT(N'key')` reads the PostgreSQL setting `sql2pg.session_key`, the key in lower
-case (PostgreSQL folds setting names): `current_setting('sql2pg.session_key', true)`, which is
-NULL until it is set, as SESSION_CONTEXT is NULL for a key never set. The value is text (SQL
-Server's is `sql_variant`). Where SQL Server code or the application calls
-`sp_set_session_context`, set the value with `SET sql2pg.session_key = '…'` or
-`set_config('sql2pg.session_key', …, false)`. A key that is not a literal plain name (letters,
-digits, `_`) is not translated (S2P3001).
+`FIRST_VALUE`, `LAST_VALUE`, `LAG` or `LEAD` with `IGNORE NULLS`, for a target before
+PostgreSQL 19. From 19 it is written as it is (`last_value(x) IGNORE NULLS OVER (…)`), with the
+same results as SQL Server. `RESPECT NULLS` is the default on both engines and is left out.
+
+`LAG` and `LEAD` with an offset other than 1, or a default, differ between the engines: SQL
+Server goes to the row n away (past the partition's edge it gives the default) and takes the
+first non-NULL value from there on, or NULL; PostgreSQL counts n non-NULL rows, and gives the
+default when there are fewer. So for 19 these become SQL Server's rule written out:
+
+```sql
+CASE WHEN lead(true, 2, false) OVER w
+     THEN first_value(x) IGNORE NULLS OVER (w ROWS BETWEEN 2 FOLLOWING AND UNBOUNDED FOLLOWING)
+     ELSE 0 END                                    -- LEAD(x, 2, 0) IGNORE NULLS OVER w
+```
+
+The offset must then be a number (`LEAD(x, @n) IGNORE NULLS` is reported, on 19 too).
+
+Target PostgreSQL 19, or rewrite the query without `IGNORE NULLS`. Carrying the last non-NULL
+value forward, for example, is `max(x) OVER (PARTITION BY grp)` over a subquery that numbers the
+groups with `count(x) OVER (ORDER BY …) AS grp`.
 
 ## S2P4xxx — queries and DML
 

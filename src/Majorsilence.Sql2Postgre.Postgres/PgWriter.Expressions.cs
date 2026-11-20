@@ -100,6 +100,8 @@ public static partial class PgWriter
         string call = $"{f.Name}({args})";
         if (f.Filter is not null)
             call += $" FILTER (WHERE {Expression(f.Filter)})";
+        if (f.IgnoreNulls)
+            call += " IGNORE NULLS";
         return f.Over is null ? call : $"{call} OVER ({Window(f.Over)})";
     }
 

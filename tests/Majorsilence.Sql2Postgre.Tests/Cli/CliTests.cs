@@ -133,6 +133,7 @@ public class CliTests
         Directory.Delete(dir, recursive: true);
     }
 
+    [TestCase(19, "line_tax numeric GENERATED ALWAYS AS (qty * unit_price * 0.1) VIRTUAL")]
     [TestCase(18, "line_tax numeric GENERATED ALWAYS AS (qty * unit_price * 0.1) VIRTUAL")]
     [TestCase(15, "line_tax numeric GENERATED ALWAYS AS (qty * unit_price * 0.1) STORED")]
     public async Task TargetVersionSetsTheOutput(int version, string lineTax)
@@ -147,10 +148,11 @@ public class CliTests
         Directory.Delete(dir, recursive: true);
     }
 
-    [Test]
-    public async Task UnsupportedTargetVersionIsAUsageError()
+    [TestCase("14")]
+    [TestCase("20")]
+    public async Task UnsupportedTargetVersionIsAUsageError(string version)
     {
-        var (code, _, error) = await Run("assess", "--source", FixturePath, "--target-version", "14");
+        var (code, _, error) = await Run("assess", "--source", FixturePath, "--target-version", version);
         Assert.Multiple(() =>
         {
             Assert.That(code, Is.EqualTo(ExitCodes.UsageError));

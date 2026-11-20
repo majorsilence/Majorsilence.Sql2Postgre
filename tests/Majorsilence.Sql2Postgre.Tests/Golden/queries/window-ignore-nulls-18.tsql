@@ -1,0 +1,11 @@
+-- options: {"targetVersion": 18}
+SELECT product_id,
+       LAST_VALUE(parent_id) IGNORE NULLS OVER (ORDER BY product_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_parent,
+       LAG(parent_id) RESPECT NULLS OVER (ORDER BY product_id) AS previous_parent
+FROM shop.product;
+SELECT product_id, FIRST_VALUE(parent_id) IGNORE NULLS OVER (ORDER BY product_id DESC) AS first_parent,
+       LEAD(parent_id, 1) IGNORE NULLS OVER (ORDER BY product_id) AS next_parent
+FROM shop.product;
+SELECT product_id, LEAD(parent_id, 2, 0) IGNORE NULLS OVER (PARTITION BY name ORDER BY product_id) AS second_parent,
+       LAG(parent_id, 1, -1) IGNORE NULLS OVER (ORDER BY product_id) AS previous_parent
+FROM shop.product;

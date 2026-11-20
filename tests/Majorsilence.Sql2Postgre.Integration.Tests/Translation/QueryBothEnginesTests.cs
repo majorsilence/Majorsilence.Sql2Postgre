@@ -175,4 +175,22 @@ public class QueryBothEnginesTests
         }
         return Same(dml);
     }
+
+    [TestCase("SELECT product_id, LAST_VALUE(parent_id) IGNORE NULLS OVER (ORDER BY product_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS v FROM shop.product")]
+    [TestCase("SELECT product_id, FIRST_VALUE(parent_id) IGNORE NULLS OVER (ORDER BY product_id DESC) AS v FROM shop.product")]
+    [TestCase("SELECT product_id, LAG(parent_id) IGNORE NULLS OVER (ORDER BY product_id) AS v, LEAD(parent_id, 1, 0) IGNORE NULLS OVER (ORDER BY product_id) AS w FROM shop.product")]
+    [TestCase("SELECT product_id, LAG(parent_id) RESPECT NULLS OVER (ORDER BY product_id) AS v FROM shop.product")]
+    [TestCase("SELECT id, v, LEAD(v, 1, 0) IGNORE NULLS OVER (ORDER BY id) AS l1, LEAD(v, 2, 0) IGNORE NULLS OVER (ORDER BY id) AS l2, LAG(v, 1, -1) IGNORE NULLS OVER (ORDER BY id) AS g1, LAG(v, 2, -1) IGNORE NULLS OVER (ORDER BY id) AS g2, LEAD(v, 2) IGNORE NULLS OVER (ORDER BY id) AS l3 FROM (VALUES (1, NULL), (2, 10), (3, NULL), (4, 20), (5, NULL), (6, NULL), (7, 30), (8, NULL)) AS t (id, v)")]
+    [TestCase("SELECT id, k, FIRST_VALUE(v) IGNORE NULLS OVER (PARTITION BY k ORDER BY id) AS f, LAST_VALUE(v) IGNORE NULLS OVER (PARTITION BY k ORDER BY id) AS l, LAG(v, 3, 0) IGNORE NULLS OVER (PARTITION BY k ORDER BY id DESC) AS g FROM (VALUES (1, 1, NULL), (2, 1, 10), (3, 2, NULL), (4, 1, 20), (5, 2, 5), (6, 2, NULL), (7, 1, NULL)) AS t (id, k, v)")]
+    public Task IgnoreNulls(string tsql)
+    {
+        // IGNORE NULLS is new in PostgreSQL 19: before it, it is reported (RESPECT NULLS is the default).
+        if (tsql.Contains("IGNORE", StringComparison.Ordinal) && Engines.TargetVersion < 19)
+        {
+            var ex = Assert.Throws<UntranslatableException>(() => Translate(tsql));
+            Assert.That(ex!.Code, Is.EqualTo(DiagnosticCodes.IgnoreNulls));
+            return Task.CompletedTask;
+        }
+        return Same(tsql);
+    }
 }

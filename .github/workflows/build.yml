@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         # Every supported target; each run converts for the PostgreSQL it runs on (TargetVersion).
-        pg: [15, 16, 17, 18]
+        pg: [15, 16, 17, 18, 19]
     env:
       SQL2PG_PG_VERSION: ${{ matrix.pg }}
     steps:

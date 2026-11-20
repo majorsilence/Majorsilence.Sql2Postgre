@@ -146,6 +146,12 @@ public static class DiagnosticCodes
     /// <summary>A SQL Server Agent job scheduled with pg_cron.</summary>
     public const string AgentJobScheduled = "S2P2025";
 
+    /// <summary>
+    /// An index's included columns could make its rows longer than a btree index row may be in
+    /// PostgreSQL (2704 bytes): the widest are left out of the index.
+    /// </summary>
+    public const string IncludedColumnDropped = "S2P2026";
+
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
 
@@ -238,6 +244,12 @@ public static class DiagnosticCodes
     /// the branch it never takes stays in the routine as a comment.
     /// </summary>
     public const string FeatureBranchNotTaken = "S2P3046";
+
+    /// <summary>
+    /// FIRST_VALUE, LAST_VALUE, LAG or LEAD with IGNORE NULLS: PostgreSQL 19 has it, earlier
+    /// versions do not.
+    /// </summary>
+    public const string IgnoreNulls = "S2P3047";
 
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";

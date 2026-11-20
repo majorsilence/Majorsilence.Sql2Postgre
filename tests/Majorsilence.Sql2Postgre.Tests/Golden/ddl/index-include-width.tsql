@@ -1,0 +1,6 @@
+CREATE TABLE dbo.review (id int NOT NULL PRIMARY KEY, product_id int NOT NULL, reviewer nvarchar(50) NOT NULL, rating int NOT NULL,
+    comments nvarchar(3850) NULL, notes nvarchar(max) NULL, code varchar(800) NULL, tag nvarchar(400) NULL);
+CREATE INDEX ix_review_product ON dbo.review (product_id, reviewer) INCLUDE (comments, rating);
+CREATE INDEX ix_review_notes ON dbo.review (product_id) INCLUDE (notes);
+CREATE INDEX ix_review_code ON dbo.review (rating) INCLUDE (code, tag);
+CREATE INDEX ix_review_rating ON dbo.review (rating) INCLUDE (reviewer, tag);
