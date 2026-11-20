@@ -603,10 +603,27 @@ The Warning form names a varbinary column that `*` leaves out (S2P2021).
 
 A SQL Server catalog view, or a `SERVERPROPERTY` property, the converter does not answer. The
 views it answers are `sys.objects`, `sys.tables`, `sys.views`, `sys.procedures`,
-`sys.sequences`, `sys.schemas` and `sys.columns`, and `INFORMATION_SCHEMA.TABLES`, `VIEWS`,
-`COLUMNS`, `ROUTINES` and `SCHEMATA` (see S2P3044). For anything else (`sys.indexes`,
-`sys.database_principals`, `sys.partition_schemes`, …), query PostgreSQL's own catalogs
-(`pg_catalog`, `information_schema`) instead.
+`sys.sequences`, `sys.schemas`, `sys.columns`, `sys.indexes`, `sys.database_principals` and
+`sys.database_role_members`, and `INFORMATION_SCHEMA.TABLES`, `VIEWS`, `COLUMNS`, `ROUTINES` and
+`SCHEMATA` (see S2P3044). For anything else, query PostgreSQL's own catalogs (`pg_catalog`,
+`information_schema`) instead.
+
+The views of SQL Server features PostgreSQL does not have say so in the message:
+
+| Views | Feature |
+|---|---|
+| `sys.server_audits`, `sys.server_audit_specifications`, `sys.database_audit_specifications` (and their `_details`) | SQL Server Audit. Core PostgreSQL has none: `log_statement` writes statements to the server log, and pgaudit is not a permitted extension. |
+| `sys.partition_functions`, `sys.partition_schemes`, `sys.partition_range_values`, `sys.partition_parameters` | Partition functions and schemes. PostgreSQL partitions a table declaratively (`PARTITION BY`), and the converter does not partition tables. |
+| `sys.filegroups`, `sys.database_files`, `sys.master_files`, `sys.data_spaces`, `sys.destination_data_spaces` | Files and filegroups. A PostgreSQL database lives in the data directory; tablespaces are the nearest thing. |
+| `sys.fulltext_catalogs`, `sys.fulltext_indexes`, `sys.fulltext_index_columns`, `sys.fulltext_stoplists` | Full-text catalogs: the converter's full-text indexes are GIN indexes (S2P3042). |
+| `sys.memory_optimized_tables_internal_attributes`, `sys.hash_indexes` | In-Memory OLTP. |
+| `sys.server_principals`, `sys.sql_logins`, `sys.server_role_members` | Logins: PostgreSQL roles are the server's, and `sys.database_principals` lists them. |
+| `sys.configurations` | Server settings: `pg_settings`, under other names. |
+| `sys.syslanguages`, `sys.languages` | Languages: dates and messages follow `lc_time` and `lc_messages`. |
+| `sys.dm_*` | Dynamic management views: PostgreSQL's statistics views (`pg_stat_*`) have other columns. |
+
+Code that only reaches these views after a check of the feature (`IF SERVERPROPERTY(N'IsXTPSupported') = 0 … ELSE …`)
+is not translated at all: see S2P3046.
 
 ### S2P3044 CatalogEmulated (Info)
 
@@ -625,6 +642,18 @@ Code that asks SQL Server about itself is answered from the converted database:
   function kinds) are `mssql_compat` functions over the same table.
 - **Ids** are PostgreSQL oids: they agree between the views and the functions, not with SQL
   Server's numbers.
+- **`sys.indexes`** lists each converted table's primary key, unique constraints and indexes
+  under their SQL Server names (the PostgreSQL name when SQL Server generated the name), with
+  `type` and `type_desc` as the source has them: the clustered index is `1 CLUSTERED` with
+  `index_id` 1, a table without one has a `0 HEAP` row, and the others are numbered from 2 in
+  the order the source lists them (SQL Server numbers them by creation, which is usually the
+  same). An index the converter does not create (columnstore, xml) is not listed, nor is one a
+  routine has dropped since; one created after the conversion is not listed either.
+- **`sys.database_principals`** lists the PostgreSQL roles (not the predefined `pg_*` ones):
+  a role that can log in is a SQL user (`S`, default schema `dbo`), one that cannot is a
+  database role (`R`), and `public` is there with id 0. Roles belong to the PostgreSQL server,
+  so every database lists the same ones. Fixed database roles (`db_owner`, `db_datareader`, …)
+  are not listed. **`sys.database_role_members`** is `pg_auth_members`.
 - **Without the table:**
   - `DB_ID`, `DB_NAME` read `pg_database`.
   - `IS_ROLEMEMBER` is `pg_has_role`; `db_owner` is the database's owner.
@@ -635,6 +664,33 @@ Code that asks SQL Server about itself is answered from the converted database:
 
 Objects created after the conversion (by dynamic SQL, say) are not in the table. Neither are the
 system objects SQL Server lists: these views show only user objects (`is_ms_shipped` is 0).
+
+### S2P3046 FeatureBranchNotTaken (Warning)
+
+An IF tests a server property that PostgreSQL answers with a constant (S2P3044):
+`IsXTPSupported`, `IsPolybaseInstalled`, `IsHadrEnabled`, `IsClustered`, `IsSingleUser` and
+`IsAdvancedAnalyticsInstalled` are 0, `IsFullTextInstalled` is 1 and `EngineEdition` is 3. The
+condition is then decided when the routine is converted, as SQL Server would decide it on a
+server without the feature: the branch that runs is translated, and the one that never runs
+stays in the routine as a `sql2pg:untranslated` comment.
+
+```sql
+IF SERVERPROPERTY(N'IsXTPSupported') = 0
+    PRINT N'Warning: In-memory tables cannot be created on this edition.';
+ELSE
+BEGIN
+    ALTER DATABASE CURRENT ADD FILEGROUP InMemory_Data CONTAINS MEMORY_OPTIMIZED_DATA;
+    …
+END;
+```
+
+becomes the `RAISE NOTICE` alone, with the `ELSE` block commented out. Configuration
+procedures that switch on In-Memory OLTP, columnstore indexes, partitioning or PolyBase this
+way convert, and do what they do on SQL Server editions without those features.
+
+A condition counts only when it reads nothing but these properties and integers (`=`, `<>`, `<`,
+`>`, `AND`, `OR`, `NOT`, `CAST(… AS int)`); `IF SERVERPROPERTY(N'IsXTPSupported') = 0 AND
+@force = 1` is translated as written.
 
 ### S2P3045 SessionContext (Info)
 
@@ -1125,7 +1181,7 @@ The dynamic SQL is kept as a comment, for one of these reasons:
 - Its text cannot be followed back to a literal. For example, it is a parameter, it is built
   with `+=`, or it is assigned in a loop.
 - It does not parse.
-- It contains statements other than queries, DML, the DDL a routine may run (S2P5071–S2P5076)
+- It contains statements other than queries, DML, the DDL a routine may run (S2P5071–S2P5077)
   and routine and trigger definitions: `DECLARE`, `IF`, `EXEC`, `CREATE TABLE`, `CREATE TYPE`,
   `ALTER DATABASE`.
 - It creates a procedure, function or trigger from names or values put in at run time, or one
@@ -1152,7 +1208,7 @@ case-sensitive and a case-insensitive collation.
   object is translated as one of the database's own would be, and `EXECUTE` creates the
   PostgreSQL routine (and trigger). Procedures that call a procedure only dynamic SQL creates
   resolve it.
-- The DDL a routine may run itself (S2P5071–S2P5076): index, constraint and column changes,
+- The DDL a routine may run itself (S2P5071–S2P5077): index, constraint and column changes,
   `DROP PROCEDURE`/`FUNCTION`, `DROP TRIGGER`, security policies, `ALTER SEQUENCE … RESTART`.
 
 Each translated statement runs as an `EXECUTE` of its own, so a trigger (a function and a
@@ -1204,6 +1260,8 @@ translated (S2P5071 to S2P5074). So are, since WP 4.18:
   that a procedure runs as dynamic SQL (S2P5074, Info).
 - `ALTER SEQUENCE … RESTART [WITH n]`, which is the same in PostgreSQL.
 - `CREATE`/`DROP SECURITY POLICY` (S2P5076).
+- `CREATE ROLE`, `ALTER ROLE … ADD MEMBER` / `DROP MEMBER` / `WITH NAME =`, `DROP ROLE` (S2P5077,
+  since WP 4.19).
 
 Temp tables are not affected: their DDL is translated. In an ad-hoc script, DDL is S2P0205.
 
@@ -1305,6 +1363,32 @@ row-level security:
 A superuser, or a role with `BYPASSRLS`, still sees every row: connect the application as an
 ordinary role for the policy to apply. Security policies in the source catalog
 (`sys.security_policies`) are not read; only those that procedures create are converted.
+
+### S2P5077 RoleDdl (Info)
+
+A routine (or its dynamic SQL) creates, changes or drops a database role. It becomes a
+PostgreSQL role:
+
+| T-SQL | PostgreSQL |
+|---|---|
+| `CREATE ROLE r [AUTHORIZATION o]` | `CREATE ROLE r` (a role that cannot log in; a PostgreSQL role has no owner) |
+| `ALTER ROLE r ADD MEMBER m` | `GRANT r TO m` |
+| `ALTER ROLE r DROP MEMBER m` | `REVOKE r FROM m` |
+| `ALTER ROLE r WITH NAME = n` | `ALTER ROLE r RENAME TO n` |
+| `DROP ROLE [IF EXISTS] r` | `DROP ROLE [IF EXISTS] r` |
+
+- **Names are kept as written**, case and spaces included (`"Sales Team"`): roles are not
+  schema objects, so the name style does not apply, and a name dynamic SQL puts in with
+  `QUOTENAME(@role)` is used as it is (`format('CREATE ROLE %I', role)`). SQL Server compares
+  role names without regard to case; PostgreSQL does not.
+- **Roles belong to the server**, not to one database: every database on the PostgreSQL server
+  sees a role a procedure creates, and two converted databases that create the same role
+  share it.
+- **Privileges.** Creating, renaming and dropping roles needs `CREATEROLE`; adding a member needs
+  `ADMIN` on the role (PostgreSQL 16 gives the creator that), so the procedure must run as such a
+  role. A role with members, or that owns objects, cannot be dropped in either engine.
+- Users (`CREATE USER`) and the fixed database roles (`db_datareader`, …) are not translated
+  (S2P5070); `sp_addrolemember` and `sp_droprolemember` are system procedures (S2P5023).
 
 ## S2P6xxx — triggers
 

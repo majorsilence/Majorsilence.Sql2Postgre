@@ -46,6 +46,12 @@ public static partial class PgWriter
         PgDropPolicy d => $"DROP POLICY {(d.IfExists ? "IF EXISTS " : "")}{NameMapper.Quote(d.Name)} ON {d.Table.Qualified};\n",
         PgRowSecurity r => $"ALTER TABLE {r.Table.Qualified} {r.Action} ROW LEVEL SECURITY;\n",
         PgRestartSequence r => $"ALTER SEQUENCE {r.Name.Qualified} RESTART{(r.Value is null ? "" : " WITH " + Expression(r.Value))};\n",
+        PgCreateRole r => $"CREATE ROLE {NameMapper.Quote(r.Name)};\n",
+        PgDropRole d => $"DROP ROLE {(d.IfExists ? "IF EXISTS " : "")}{NameMapper.Quote(d.Name)};\n",
+        PgGrantRole g => g.Revoke
+            ? $"REVOKE {NameMapper.Quote(g.Role)} FROM {NameMapper.Quote(g.Member)};\n"
+            : $"GRANT {NameMapper.Quote(g.Role)} TO {NameMapper.Quote(g.Member)};\n",
+        PgRenameRole r => $"ALTER ROLE {NameMapper.Quote(r.Name)} RENAME TO {NameMapper.Quote(r.NewName)};\n",
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
         PgDropTable d => $"DROP TABLE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",

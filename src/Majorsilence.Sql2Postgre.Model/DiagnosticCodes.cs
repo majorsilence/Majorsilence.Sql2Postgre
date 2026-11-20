@@ -233,6 +233,12 @@ public static class DiagnosticCodes
     /// <summary>SESSION_CONTEXT(N'key') reads the session setting sql2pg.session_key (current_setting).</summary>
     public const string SessionContext = "S2P3045";
 
+    /// <summary>
+    /// An IF on a server feature PostgreSQL answers with a constant (SERVERPROPERTY('IsXTPSupported') = 0):
+    /// the branch it never takes stays in the routine as a comment.
+    /// </summary>
+    public const string FeatureBranchNotTaken = "S2P3046";
+
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
 
@@ -400,6 +406,9 @@ public static class DiagnosticCodes
     /// SECURITY on each table and one policy per command (Info), or a form that is not translated (Error).
     /// </summary>
     public const string SecurityPolicy = "S2P5076";
+
+    /// <summary>CREATE / ALTER / DROP ROLE or sp_addrolemember in a routine, as PostgreSQL roles (cluster-wide).</summary>
+    public const string RoleDdl = "S2P5077";
 
     // ---- 6xxx triggers ----
 

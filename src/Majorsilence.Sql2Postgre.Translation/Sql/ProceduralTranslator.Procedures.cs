@@ -141,7 +141,13 @@ public sealed partial class ProceduralTranslator
                         Walk(b.StatementList.Statements, inLoop);
                         break;
                     case IfStatement i:
-                        Walk([i.ThenStatement, i.ElseStatement], inLoop);
+                        // A branch PostgreSQL never takes (S2P3046) is not part of the routine.
+                        Walk(ExpressionTranslator.ConstantCondition(i.Predicate, out _) switch
+                        {
+                            true => [i.ThenStatement],
+                            false => [i.ElseStatement],
+                            null => [i.ThenStatement, i.ElseStatement],
+                        }, inLoop);
                         break;
                     case WhileStatement w:
                         Walk([w.Statement], true);

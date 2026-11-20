@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Roles, catalog views and server feature checks** (WP 4.19):
+  - `sys.database_principals` and `sys.database_role_members` are answered from PostgreSQL's
+    roles. `CREATE ROLE`, `ALTER ROLE … ADD MEMBER` / `DROP MEMBER` / `WITH NAME =` and
+    `DROP ROLE` in routines and their dynamic SQL become PostgreSQL roles, `GRANT` and `REVOKE`,
+    with role names kept as written (S2P5077).
+  - `sys.indexes` lists each converted table's primary key, unique constraints and indexes under
+    their SQL Server names, and heaps, from the new `mssql_compat.index_names` table.
+  - An IF on a `SERVERPROPERTY` value that PostgreSQL answers with a constant
+    (`SERVERPROPERTY(N'IsXTPSupported') = 0`) is decided at conversion: the branch that never
+    runs stays as a comment (S2P3046). Procedures that set up In-Memory OLTP, columnstore indexes,
+    partitioning or PolyBase behind such a check now convert.
+  - Catalog views of SQL Server features PostgreSQL does not have (audits, partitioning,
+    filegroups, full-text catalogs, logins, …) say which feature in their S2P3043 message.
 - **DDL in dynamic SQL** (WP 4.18):
   - Dynamic SQL whose pieces are constants where the text is put together (variables last set to
     literals, `NCHAR(13)`, `QUOTENAME(N'x')`, `CASE` on constants) is folded into known text.

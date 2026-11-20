@@ -1535,6 +1535,36 @@ WideWorldImportersDW had 125 S2P5060 and 17 S2P5070 from it, which kept 24 proce
   (read as an ordinary role) and restart a sequence, each run twice; the function grid for the
   new functions; corpus scans on 15–18.
 
+#### WP 4.19 — Roles, catalog views and server feature checks (M)
+
+After WP 4.18, catalog views the converter did not answer (S2P3043) were the largest group of
+errors left in the corpus: role views kept two WideWorldImporters procedures Manual on their own,
+and `sys.indexes`, audits, partitioning and filegroups came up in the configuration procedures.
+
+- **Roles.** `sys.database_principals` and `sys.database_role_members` as mssql_compat views over
+  `pg_roles` and `pg_auth_members`. `CREATE ROLE`, `ALTER ROLE … ADD MEMBER` / `DROP MEMBER` /
+  `WITH NAME =` and `DROP ROLE` in routines and their dynamic SQL as PostgreSQL roles (S2P5077).
+  Role names are kept as written (no name style, also when dynamic SQL puts them in), and
+  reported as belonging to the server rather than the database.
+- **`sys.indexes`** over a new `mssql_compat.index_names` table the converter fills, as it fills
+  `object_names`: each table's primary key, unique constraints and indexes under their SQL Server
+  names, with SQL Server's `type` (heap rows included), listed while the PostgreSQL index exists.
+- **Server feature checks.** An IF on `SERVERPROPERTY` values PostgreSQL answers with a constant
+  (`IsXTPSupported` 0, `IsFullTextInstalled` 1, `EngineEdition` 3, …) is decided at conversion:
+  the branch that never runs stays as a comment (S2P3046), so procedures that set up In-Memory
+  OLTP, columnstore, partitioning or PolyBase behind such a check convert, and behave as on a
+  SQL Server edition without the feature.
+- **Specific messages.** The catalog views of features PostgreSQL does not have (audits,
+  partition functions and schemes, files and filegroups, full-text catalogs, In-Memory OLTP,
+  logins, configuration, languages, dynamic management views) say which feature, under S2P3043.
+- Not covered: audits (no core equivalent), `sys.partitions`, users (`CREATE USER`), fixed
+  database roles, `sp_addrolemember`, and `ALTER`/`CREATE` of a procedure the database already
+  has with another definition (the full-text versions of WideWorldImporters' search procedures).
+- Tests: golden files for the roles, feature checks and catalog queries; a both-engines run of
+  procedures that create a role, add and remove a member and drop it (role names new per run),
+  of `sys.indexes` for keys, a filtered index and a heap, and of feature checks; corpus scans on
+  15–18.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package

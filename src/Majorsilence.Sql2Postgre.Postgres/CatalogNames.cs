@@ -64,7 +64,58 @@ public static class CatalogNames
         var sb = new StringBuilder($"DELETE FROM {quotedSchema}.object_names;\n");
         if (rows.Count > 0)
             sb.Append($"INSERT INTO {quotedSchema}.object_names VALUES\n    {string.Join(",\n    ", rows)};\n");
+        var indexes = IndexRows(db, names);
+        sb.Append($"DELETE FROM {quotedSchema}.index_names;\n");
+        if (indexes.Count > 0)
+            sb.Append($"INSERT INTO {quotedSchema}.index_names VALUES\n    {string.Join(",\n    ", indexes)};\n");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The sys.indexes rows of each table: its primary key, unique constraints and indexes (not
+    /// full-text ones, which sys.indexes does not list), with the PostgreSQL index each became, and a
+    /// heap row (index_id 0) for a table without a clustered index. The clustered index is 1, the
+    /// others are numbered from 2 in the order the source lists them (SQL Server's ids differ).
+    /// </summary>
+    private static List<string> IndexRows(SourceDatabase db, NameMapper names)
+    {
+        var rows = new List<string>();
+        static string Text(string? v) => v is null ? "NULL" : "'" + v.Replace("'", "''") + "'";
+        static string Bool(bool v) => v ? "true" : "false";
+        foreach (var t in db.Tables)
+        {
+            string schema = names.Relation(t.Name).Schema;
+            var generated = new Dictionary<string, int>(StringComparer.Ordinal);
+            // As the schema translator names constraints SQL Server named itself.
+            string Generated(string baseName)
+            {
+                int n = generated.GetValueOrDefault(baseName);
+                generated[baseName] = n + 1;
+                return n == 0 ? baseName : $"{baseName}{n}";
+            }
+            var entries = new List<(string? Name, string Target, bool Clustered, int Type, bool Unique, bool Primary, bool Constraint, bool Filter)>();
+            if (t.PrimaryKey is { } pk)
+            {
+                string target = names.Index(t.Name, pk.Name ?? Generated($"{t.Name.Name}_pkey"));
+                entries.Add((pk.Name ?? target, target, pk.IsClustered, pk.IsClustered ? 1 : 2, true, true, false, false));
+            }
+            foreach (var u in t.Uniques)
+            {
+                string target = names.Index(t.Name, u.Name ?? Generated($"{t.Name.Name}_{string.Join("_", u.Columns.Select(c => c.Name))}_key"));
+                entries.Add((u.Name ?? target, target, false, 2, true, false, true, false));
+            }
+            foreach (var ix in t.Indexes.Where(ix => ix.Type is "rowstore" or "spatial"))
+                entries.Add((ix.Name, names.Index(t.Name, ix.Name), ix.IsClustered, ix.Type == "spatial" ? 4 : ix.IsClustered ? 1 : 2,
+                    ix.IsUnique, false, false, ix.FilterExpression is not null));
+
+            int next = 2;
+            if (!entries.Any(e => e.Clustered))
+                rows.Add($"({Text(t.Name.Schema)}, {Text(t.Name.Name)}, NULL, {Text(schema)}, NULL, 0, 0, false, false, false, false)");
+            foreach (var e in entries)
+                rows.Add($"({Text(t.Name.Schema)}, {Text(t.Name.Name)}, {Text(e.Name)}, {Text(schema)}, {Text(e.Target)}, {(e.Clustered ? 1 : next++)}, "
+                         + $"{e.Type}, {Bool(e.Unique)}, {Bool(e.Primary)}, {Bool(e.Constraint)}, {Bool(e.Filter)})");
+        }
+        return rows;
     }
 
     /// <summary>sys.columns.max_length: bytes; 2 per character for the Unicode types; -1 for max.</summary>

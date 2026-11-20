@@ -20,6 +20,9 @@ public sealed partial class ProceduralTranslator
 {
     private const string MarkerPrefix = "sql2pg_m";
 
+    /// <summary>The markers of the current dynamic SQL that stand for names used as they are (role names).</summary>
+    private readonly HashSet<string> _verbatimMarkers = new(StringComparer.Ordinal);
+
     /// <summary>The dynamic SQL of an EXEC, ready to translate: the template T-SQL and what each marker stands for.</summary>
     private sealed record DynamicTemplate(string Sql, IReadOnlyList<PgFormatArgument> Arguments, bool SplicesText)
     {
@@ -318,16 +321,17 @@ public sealed partial class ProceduralTranslator
                          ?? throw DynamicUntranslatable(e, "whose text cannot be followed back to a SET or DECLARE in this code");
         var parameters = DynamicParameters(spec, e, st.C.Schema);
         var template = Template(text, at, e, st.C);
+        _verbatimMarkers.Clear();
         if (template.SplicesText)
             st.C.Report(DiagnosticCodes.DynamicSqlSpliced, Severity.Warning,
                 "Dynamic SQL splices text in at run time (%s): it is used as it stands, so T-SQL syntax in it stays T-SQL.");
         var translated = TranslateDynamic(ref template, parameters, e, st);
 
-        // Each name marker followed by '.' is a schema.
-        var arguments = template.Arguments.Select(a => a.Spec == 'I'
+        // Each name marker followed by '.' is a schema. Role names are used as they are.
+        var arguments = template.Arguments.Select(a => a.Spec == 'I' && !_verbatimMarkers.Contains(a.Marker)
             ? a with { Value = RuntimeName(a.Value, IsSchemaMarker(template.Sql, a.Marker), e) }
             : a).ToList();
-        if (arguments.Any(a => a.Spec == 'I'))
+        if (template.Arguments.Any(a => a.Spec == 'I' && !_verbatimMarkers.Contains(a.Marker)))
             st.C.Report(DiagnosticCodes.DynamicIdentifier, Severity.Info,
                 "A name in dynamic SQL comes from a variable: it is mapped at run time (lower case, and the schema map), so it must name an object as converted.");
         var command = new PgDynamicSql(translated.Statements, arguments) { TargetVersion = _x.Options.TargetVersion };

@@ -22,6 +22,23 @@ CREATE TABLE IF NOT EXISTS {schema}.object_names (
     is_identity boolean
 );
 
+-- Each index, primary key and unique constraint of a converted table, and a row for a table
+-- without a clustered index (a heap, index_id 0): its SQL Server name (or, when SQL Server
+-- generated it, its PostgreSQL name), its PostgreSQL index, and what SQL Server says it is.
+CREATE TABLE IF NOT EXISTS {schema}.index_names (
+    source_schema text NOT NULL,
+    source_table text NOT NULL,
+    source_name text,
+    target_schema text NOT NULL,
+    target_name text,
+    index_id integer NOT NULL,
+    type smallint NOT NULL,
+    is_unique boolean NOT NULL,
+    is_primary_key boolean NOT NULL,
+    is_unique_constraint boolean NOT NULL,
+    has_filter boolean NOT NULL
+);
+
 -- Each object (kind U, V, P, FN, IF, TF, SO) with its PostgreSQL oid and schema oid.
 CREATE OR REPLACE VIEW {schema}.catalog_objects AS
 SELECT o.kind, o.source_schema, o.source_name, o.target_schema, o.target_name,
@@ -66,6 +83,36 @@ SELECT t.object_id, c.source_column AS name, c.column_id, c.max_length, CAST(COA
 FROM {schema}.object_names AS c
 JOIN {schema}.catalog_objects AS t ON t.kind IN ('U', 'V') AND t.source_schema = c.source_schema AND t.source_name = c.source_name
 WHERE c.kind = 'COLUMN' AND t.object_id IS NOT NULL;
+
+-- The indexes of converted tables that exist now (one dropped since is not listed), and heaps.
+CREATE OR REPLACE VIEW {schema}.sys_indexes AS
+SELECT t.object_id, i.source_name AS name, i.index_id, i.type,
+       CASE i.type WHEN 0 THEN 'HEAP' WHEN 1 THEN 'CLUSTERED' WHEN 2 THEN 'NONCLUSTERED' WHEN 4 THEN 'SPATIAL' END AS type_desc,
+       i.is_unique, i.is_primary_key, i.is_unique_constraint, false AS is_disabled, i.has_filter
+FROM {schema}.index_names AS i
+JOIN {schema}.catalog_objects AS t ON t.kind = 'U' AND t.source_schema = i.source_schema AND t.source_name = i.source_table
+WHERE t.object_id IS NOT NULL
+  AND (i.type = 0 OR to_regclass(format('%I.%I', i.target_schema, i.target_name)) IS NOT NULL);
+
+-- Database principals are PostgreSQL roles, which belong to the server: every role but the
+-- predefined pg_* ones, as a SQL user (S) when it can log in and a database role (R) when it
+-- cannot, and public. Ids are role oids (public is 0, as in SQL Server).
+CREATE OR REPLACE VIEW {schema}.sys_database_principals AS
+SELECT CAST('public' AS text) AS name, 0 AS principal_id, CAST('R' AS char(1)) AS type, 'DATABASE_ROLE' AS type_desc,
+       CAST(NULL AS text) AS default_schema_name, false AS is_fixed_role
+UNION ALL
+SELECT CAST(r.rolname AS text), CAST(r.oid AS integer), CAST(CASE WHEN r.rolcanlogin THEN 'S' ELSE 'R' END AS char(1)),
+       CASE WHEN r.rolcanlogin THEN 'SQL_USER' ELSE 'DATABASE_ROLE' END,
+       CASE WHEN r.rolcanlogin THEN 'dbo' END, false
+FROM pg_roles AS r
+WHERE r.rolname NOT LIKE 'pg\_%';
+
+-- Role membership (GRANT role TO member). PostgreSQL 16 keeps a row per grantor: one is listed.
+CREATE OR REPLACE VIEW {schema}.sys_database_role_members AS
+SELECT DISTINCT CAST(m.roleid AS integer) AS role_principal_id, CAST(m.member AS integer) AS member_principal_id
+FROM pg_auth_members AS m
+JOIN pg_roles AS r ON r.oid = m.roleid
+WHERE r.rolname NOT LIKE 'pg\_%';
 
 CREATE OR REPLACE VIEW {schema}.information_schema_tables AS
 SELECT CAST(current_database() AS text) AS table_catalog, c.source_schema AS table_schema, c.source_name AS table_name,

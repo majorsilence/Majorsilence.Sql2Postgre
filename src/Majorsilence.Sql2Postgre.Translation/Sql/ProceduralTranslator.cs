@@ -409,7 +409,7 @@ public sealed partial class ProceduralTranslator
             case BeginEndBlockStatement block:
                 return List(block.StatementList.Statements, st);
             case IfStatement i:
-                return [If(i, st)];
+                return If(i, st);
             case WhileStatement w:
             {
                 var condition = _x.Boolean(w.Predicate, c);
@@ -654,16 +654,59 @@ public sealed partial class ProceduralTranslator
 
     // ---- control flow ----
 
-    private PgIf If(IfStatement i, BodyState st)
+    /// <summary>
+    /// IF … ELSE IF … ELSE as one PL/pgSQL IF. A condition on a server feature PostgreSQL answers
+    /// with a constant (SERVERPROPERTY('IsXTPSupported') = 0) decides the branch here: the branch
+    /// it never takes stays as a comment (S2P3046), so code for In-Memory OLTP, PolyBase or
+    /// partitioning that SQL Server would skip on such a server is not translated.
+    /// </summary>
+    private List<PgPlStatement> If(IfStatement i, BodyState st)
     {
+        var result = new List<PgPlStatement>();
         var branches = new List<PgIfBranch>();
+        // The IF goes where its first branch that runs is: after the branches before it that never do.
+        int at = -1;
+        List<PgPlStatement> Close(List<PgPlStatement>? elseBranch)
+        {
+            if (at < 0)
+                at = result.Count;
+            if (branches.Count > 0)
+                result.Insert(at, new PgIf(branches, elseBranch));
+            else if (elseBranch is not null)
+                result.InsertRange(at, elseBranch);
+            return result;
+        }
+        void NotTaken(TSqlStatement branch, string property, string condition, bool value) =>
+            result.Add(Untranslated(branch, DiagnosticCodes.FeatureBranchNotTaken,
+                $"IF {condition} is always {(value ? "true" : "false")} in PostgreSQL (SERVERPROPERTY('{property}') is {ExpressionTranslator.ConstantServerProperty(property)}): "
+                + $"its {(value ? "ELSE" : "THEN")} branch never runs and stays as a comment.", st, Severity.Warning));
+
         TSqlStatement? elseStatement = i;
         while (elseStatement is IfStatement current)
         {
-            branches.Add(new PgIfBranch(_x.Boolean(current.Predicate, st.C), Nested(current.ThenStatement, st)));
+            if (ExpressionTranslator.ConstantCondition(current.Predicate, out string? property) is { } value)
+            {
+                string condition = ExpressionTranslator.Text(current.Predicate);
+                if (value)
+                {
+                    if (at < 0)
+                        at = result.Count;
+                    if (current.ElseStatement is not null)
+                        NotTaken(current.ElseStatement, property!, condition, true);
+                    // Later branches are part of the ELSE just commented out.
+                    return Close(Nested(current.ThenStatement, st));
+                }
+                NotTaken(current.ThenStatement, property!, condition, false);
+            }
+            else
+            {
+                if (at < 0)
+                    at = result.Count;
+                branches.Add(new PgIfBranch(_x.Boolean(current.Predicate, st.C), Nested(current.ThenStatement, st)));
+            }
             elseStatement = current.ElseStatement;
         }
-        return new PgIf(branches, elseStatement is null ? null : Nested(elseStatement, st));
+        return Close(elseStatement is null ? null : Nested(elseStatement, st));
     }
 
     private IEnumerable<PgPlStatement> Return(ReturnStatement r, BodyState st)

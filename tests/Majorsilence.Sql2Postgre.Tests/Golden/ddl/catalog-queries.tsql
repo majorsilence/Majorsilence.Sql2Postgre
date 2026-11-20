@@ -14,6 +14,7 @@ BEGIN
         FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = N'Sales' ORDER BY ORDINAL_POSITION;
     IF SERVERPROPERTY(N'IsXTPSupported') = 0 AND IS_ROLEMEMBER(N'db_owner') = 1
         PRINT N'no in-memory tables';
-    SELECT name FROM sys.indexes;
+    SELECT i.name, i.type_desc FROM sys.indexes AS i WHERE i.object_id = OBJECT_ID(N'Sales.Customer');
+    SELECT name FROM sys.server_audits;
 END;
 GO

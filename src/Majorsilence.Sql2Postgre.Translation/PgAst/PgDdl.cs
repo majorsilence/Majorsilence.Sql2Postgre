@@ -135,6 +135,18 @@ public sealed record PgRowSecurity(PgName Table, string Action) : PgStatement;
 /// <summary><c>ALTER SEQUENCE name RESTART [WITH value]</c>.</summary>
 public sealed record PgRestartSequence(PgName Name, PgExpr? Value) : PgStatement;
 
+/// <summary><c>CREATE ROLE name</c> (a role that cannot log in).</summary>
+public sealed record PgCreateRole(string Name) : PgStatement;
+
+/// <summary><c>DROP ROLE [IF EXISTS] name</c>.</summary>
+public sealed record PgDropRole(string Name, bool IfExists) : PgStatement;
+
+/// <summary><c>GRANT role TO member</c>, or <c>REVOKE role FROM member</c>.</summary>
+public sealed record PgGrantRole(string Role, string Member, bool Revoke) : PgStatement;
+
+/// <summary><c>ALTER ROLE name RENAME TO new_name</c>.</summary>
+public sealed record PgRenameRole(string Name, string NewName) : PgStatement;
+
 /// <summary>
 /// The original T-SQL of something that could not be translated, kept in the output as a block
 /// comment headed by its diagnostic code, at the place the translation would have gone.

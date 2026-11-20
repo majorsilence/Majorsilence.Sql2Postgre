@@ -40,8 +40,36 @@ public sealed partial class ProceduralTranslator
         DropSecurityPolicyStatement d => DropSecurityPolicies(d, st),
         AlterSequenceStatement a when a.SequenceOptions is [ScalarExpressionSequenceOption { OptionKind: SequenceOptionKind.Restart }]
             or [SequenceOption { OptionKind: SequenceOptionKind.Restart }] => RestartSequence(a, st),
+        CreateRoleStatement r => Role(new PgCreateRole(RoleName(r.Name)), st,
+            r.Owner is null ? null : $"AUTHORIZATION {r.Owner.Value} is dropped (a PostgreSQL role has no owner)"),
+        AlterRoleStatement { Action: AddMemberAlterRoleAction add } r => Role(new PgGrantRole(RoleName(r.Name), RoleName(add.Member), Revoke: false), st),
+        AlterRoleStatement { Action: DropMemberAlterRoleAction drop } r => Role(new PgGrantRole(RoleName(r.Name), RoleName(drop.Member), Revoke: true), st),
+        AlterRoleStatement { Action: RenameAlterRoleAction rename } r => Role(new PgRenameRole(RoleName(r.Name), RoleName(rename.NewName)), st),
+        DropRoleStatement d => Role(new PgDropRole(RoleName(d.Name), d.IsIfExists), st),
         _ => null,
     };
+
+    // ---- roles ----
+
+    /// <summary>
+    /// A role name as written: PostgreSQL roles are not schema objects, so the name style does not
+    /// apply, and a name dynamic SQL puts in at run time is used as it is.
+    /// </summary>
+    private string RoleName(Identifier name)
+    {
+        if (name.Value.StartsWith(MarkerPrefix, StringComparison.Ordinal))
+            _verbatimMarkers.Add(name.Value);
+        return name.Value;
+    }
+
+    private List<PgPlStatement> Role(PgStatement statement, BodyState st, string? note = null)
+    {
+        st.C.Report(DiagnosticCodes.RoleDdl, Severity.Info,
+            "Database roles become PostgreSQL roles, which belong to the server, not to one database: every database there sees them. "
+            + "Role names are kept as written (case and all); creating, renaming and dropping roles needs CREATEROLE, and adding members needs ADMIN on the role."
+            + (note is null ? "" : $" {char.ToUpperInvariant(note[0])}{note[1..]}."));
+        return [new PgSqlStatement(statement)];
+    }
 
     /// <summary>A table a DDL statement names: its source name, PostgreSQL name and model (null when the model does not have it).</summary>
     private (ObjectName Name, PgName Pg, Table? Model) RealTable(SchemaObjectName written, BodyState st)

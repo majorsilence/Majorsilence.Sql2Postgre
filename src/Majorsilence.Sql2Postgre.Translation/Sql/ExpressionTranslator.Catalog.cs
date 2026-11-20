@@ -20,8 +20,7 @@ public sealed partial class ExpressionTranslator
     {
         string schema = n.SchemaObject.SchemaIdentifier!.Value, name = n.SchemaObject.BaseIdentifier.Value;
         if (CatalogViews.Find(schema, name) is not { } view)
-            throw Untranslatable(n, $"the catalog view {schema}.{name} (the converter answers {string.Join(", ", CatalogViews.Names)})",
-                DiagnosticCodes.CatalogViewUnsupported);
+            throw new UntranslatableException(DiagnosticCodes.CatalogViewUnsupported, $"{CatalogViews.WhyNot(schema, name)}: {Text(n)}");
         UseCatalog(c, n);
         return new PgTableRef(new PgName(options.CompatSchemaName, view.View), alias ?? names.Alias(name));
     }
@@ -105,22 +104,88 @@ public sealed partial class ExpressionTranslator
     /// </summary>
     private PgExpr ServerProperty(string property, FunctionCall f, ExpressionContext c)
     {
-        PgExpr? value = property.ToUpperInvariant() switch
-        {
-            "LCID" => Compat("fulltext_lcid", [], c, f),
-            "PRODUCTVERSION" => new PgFunctionCall("current_setting", [PgLiteral.String("server_version")]),
-            "SERVERNAME" or "MACHINENAME" or "INSTANCENAME" => new PgFunctionCall("current_setting", [PgLiteral.String("cluster_name")]),
-            "COLLATION" => new PgTemplate("(SELECT CAST(datcollate AS text) FROM pg_database WHERE datname = current_database())", []),
-            "ISFULLTEXTINSTALLED" => new PgLiteral("1"),
-            "ISXTPSUPPORTED" or "ISPOLYBASEINSTALLED" or "ISHADRENABLED" or "ISCLUSTERED" or "ISSINGLEUSER" or "ISADVANCEDANALYTICSINSTALLED" => new PgLiteral("0"),
-            // 5 is Azure SQL Database, which code tests for; this is not that.
-            "ENGINEEDITION" => new PgLiteral("3"),
-            _ => null,
-        };
+        PgExpr? value = ConstantServerProperty(property) is { } constant
+            ? new PgLiteral(constant.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            : property.ToUpperInvariant() switch
+            {
+                "LCID" => Compat("fulltext_lcid", [], c, f),
+                "PRODUCTVERSION" => new PgFunctionCall("current_setting", [PgLiteral.String("server_version")]),
+                "SERVERNAME" or "MACHINENAME" or "INSTANCENAME" => new PgFunctionCall("current_setting", [PgLiteral.String("cluster_name")]),
+                "COLLATION" => new PgTemplate("(SELECT CAST(datcollate AS text) FROM pg_database WHERE datname = current_database())", []),
+                _ => null,
+            };
         if (value is null)
             throw Untranslatable(f, $"SERVERPROPERTY('{property}')", DiagnosticCodes.CatalogViewUnsupported);
         c.Report(DiagnosticCodes.CatalogEmulated, Severity.Info,
             $"SERVERPROPERTY('{property}') is answered for PostgreSQL: version, name and collation from the server; a feature PostgreSQL lacks (In-Memory OLTP, PolyBase, availability groups) is 0, full-text search is 1, EngineEdition is 3.");
         return value;
+    }
+
+    /// <summary>
+    /// The SERVERPROPERTY values that are the same on every PostgreSQL server: the features it has
+    /// (full-text search: 1) or lacks (In-Memory OLTP, PolyBase, availability groups: 0), and
+    /// EngineEdition 3 (5 is Azure SQL Database, which code tests for; this is not that).
+    /// </summary>
+    public static int? ConstantServerProperty(string property) => property.ToUpperInvariant() switch
+    {
+        "ISFULLTEXTINSTALLED" => 1,
+        "ISXTPSUPPORTED" or "ISPOLYBASEINSTALLED" or "ISHADRENABLED" or "ISCLUSTERED" or "ISSINGLEUSER" or "ISADVANCEDANALYTICSINSTALLED" => 0,
+        "ENGINEEDITION" => 3,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Whether a condition over constant server properties (<c>SERVERPROPERTY(N'IsXTPSupported') = 0</c>,
+    /// <c>CAST(SERVERPROPERTY('EngineEdition') AS int) &lt;&gt; 5</c>) is always true or always false
+    /// in PostgreSQL; null when it depends on anything else. <paramref name="property"/> is the
+    /// first property it reads.
+    /// </summary>
+    public static bool? ConstantCondition(BooleanExpression condition, out string? property)
+    {
+        string? first = null;
+        bool? Test(BooleanExpression b) => b switch
+        {
+            BooleanParenthesisExpression p => Test(p.Expression),
+            BooleanNotExpression n => !Test(n.Expression),
+            BooleanBinaryExpression { BinaryExpressionType: BooleanBinaryExpressionType.And } a =>
+                Test(a.FirstExpression) is { } x && Test(a.SecondExpression) is { } y ? x && y : null,
+            BooleanBinaryExpression { BinaryExpressionType: BooleanBinaryExpressionType.Or } o =>
+                Test(o.FirstExpression) is { } x && Test(o.SecondExpression) is { } y ? x || y : null,
+            BooleanComparisonExpression cmp when Value(cmp.FirstExpression) is { } l && Value(cmp.SecondExpression) is { } r =>
+                cmp.ComparisonType switch
+                {
+                    BooleanComparisonType.Equals => l == r,
+                    BooleanComparisonType.NotEqualToBrackets or BooleanComparisonType.NotEqualToExclamation => l != r,
+                    BooleanComparisonType.GreaterThan => l > r,
+                    BooleanComparisonType.LessThan => l < r,
+                    BooleanComparisonType.GreaterThanOrEqualTo => l >= r,
+                    BooleanComparisonType.LessThanOrEqualTo => l <= r,
+                    _ => null,
+                },
+            _ => null,
+        };
+        long? Value(ScalarExpression e)
+        {
+            switch (e)
+            {
+                case ParenthesisExpression p:
+                    return Value(p.Expression);
+                case IntegerLiteral i when long.TryParse(i.Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long n):
+                    return n;
+                case CastCall { DataType: SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Int or SqlDataTypeOption.BigInt or SqlDataTypeOption.SmallInt or SqlDataTypeOption.TinyInt } } cast:
+                    return Value(cast.Parameter);
+                case ConvertCall { DataType: SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Int or SqlDataTypeOption.BigInt or SqlDataTypeOption.SmallInt or SqlDataTypeOption.TinyInt }, Style: null } convert:
+                    return Value(convert.Parameter);
+                case FunctionCall { CallTarget: null, Parameters: [StringLiteral { Value: var name }] } f
+                    when f.FunctionName.Value.Equals("SERVERPROPERTY", StringComparison.OrdinalIgnoreCase) && ConstantServerProperty(name) is { } v:
+                    first ??= name;
+                    return v;
+                default:
+                    return null;
+            }
+        }
+        var result = Test(condition);
+        property = result is null ? null : first;
+        return property is null ? null : result;
     }
 }

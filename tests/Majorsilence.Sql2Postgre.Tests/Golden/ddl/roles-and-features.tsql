@@ -1,0 +1,48 @@
+CREATE TABLE dbo.Region (RegionId int NOT NULL CONSTRAINT PK_Region PRIMARY KEY, Name nvarchar(50) NULL);
+GO
+CREATE PROCEDURE dbo.EnsureRole @RoleName sysname AS
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @RoleName AND type = N'R')
+    BEGIN
+        DECLARE @SQL nvarchar(max) = N'CREATE ROLE ' + QUOTENAME(@RoleName) + N';';
+        EXECUTE (@SQL);
+    END;
+    IF NOT EXISTS (SELECT 1 FROM sys.database_role_members AS drm
+                   JOIN sys.database_principals AS r ON r.principal_id = drm.role_principal_id
+                   JOIN sys.database_principals AS m ON m.principal_id = drm.member_principal_id
+                   WHERE r.name = @RoleName AND m.name = N'Auditors')
+    BEGIN
+        SET @SQL = N'ALTER ROLE ' + QUOTENAME(@RoleName) + N' ADD MEMBER [Auditors];';
+        EXECUTE (@SQL);
+    END;
+END;
+GO
+CREATE PROCEDURE dbo.StaticRoles AS
+BEGIN
+    CREATE ROLE [Sales Team] AUTHORIZATION dbo;
+    ALTER ROLE [Sales Team] ADD MEMBER Auditors;
+    ALTER ROLE [Sales Team] DROP MEMBER Auditors;
+    ALTER ROLE [Sales Team] WITH NAME = [Sales People];
+    DROP ROLE IF EXISTS [Sales People];
+END;
+GO
+CREATE PROCEDURE dbo.ApplyInMemory AS
+BEGIN
+    IF SERVERPROPERTY(N'IsXTPSupported') = 0
+    BEGIN
+        PRINT N'Warning: In-memory tables cannot be created on this edition.';
+    END ELSE BEGIN
+        IF NOT EXISTS (SELECT 1 FROM sys.filegroups WHERE name = N'InMemory_Data')
+            ALTER DATABASE CURRENT ADD FILEGROUP InMemory_Data CONTAINS MEMORY_OPTIMIZED_DATA;
+        PRINT N'In-memory filegroup added';
+    END;
+    IF SERVERPROPERTY(N'IsPolybaseInstalled') <> 0 AND CAST(SERVERPROPERTY(N'EngineEdition') AS int) <> 5
+        PRINT N'PolyBase';
+    ELSE IF IS_ROLEMEMBER(N'db_owner') = 1
+        PRINT N'owner';
+    ELSE
+        PRINT N'neither';
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Region_Name')
+        CREATE INDEX IX_Region_Name ON dbo.Region (Name);
+END;
+GO
