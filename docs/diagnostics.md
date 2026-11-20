@@ -389,9 +389,10 @@ PostgreSQL equivalent by hand.
 ### S2P3003 ConvertStyleUnsupported (Error)
 
 `CONVERT` with a style the translator does not know, or a style that is not a literal. The date
-and time styles 1–5, 10–12, 20–25, 101–105, 108, 110–112, 114, 120, 121 and 126 are translated
-(to `to_char` / `to_date` / `to_timestamp`), and money styles 1 and 2. Write the conversion by
-hand with `to_char`.
+and time styles 1–7, 10–12, 20–25, 101–108, 110–112, 114, 120, 121 and 126 are translated
+(to `to_char` / `to_date` / `to_timestamp`), and money styles 1 and 2. The month names of styles
+6, 7, 106 and 107 (`Jan 05, 2024`) are English, as `to_char`'s `Mon` writes them and SQL Server
+does under `us_english`. Write the conversion by hand with `to_char`.
 
 From text, SQL Server also reads some year-first strings under a style that is not year-first,
 and the translation does the same (established on SQL Server 2022):
@@ -634,6 +635,16 @@ Code that asks SQL Server about itself is answered from the converted database:
 
 Objects created after the conversion (by dynamic SQL, say) are not in the table. Neither are the
 system objects SQL Server lists: these views show only user objects (`is_ms_shipped` is 0).
+
+### S2P3045 SessionContext (Info)
+
+`SESSION_CONTEXT(N'key')` reads the PostgreSQL setting `sql2pg.session_key`, the key in lower
+case (PostgreSQL folds setting names): `current_setting('sql2pg.session_key', true)`, which is
+NULL until it is set, as SESSION_CONTEXT is NULL for a key never set. The value is text (SQL
+Server's is `sql_variant`). Where SQL Server code or the application calls
+`sp_set_session_context`, set the value with `SET sql2pg.session_key = '…'` or
+`set_config('sql2pg.session_key', …, false)`. A key that is not a literal plain name (letters,
+digits, `_`) is not translated (S2P3001).
 
 ## S2P4xxx — queries and DML
 
@@ -1114,11 +1125,40 @@ The dynamic SQL is kept as a comment, for one of these reasons:
 - Its text cannot be followed back to a literal. For example, it is a parameter, it is built
   with `+=`, or it is assigned in a loop.
 - It does not parse.
-- It contains statements other than queries and DML: DDL, `DECLARE`, `IF`, `EXEC`.
+- It contains statements other than queries, DML, the DDL a routine may run (S2P5071–S2P5076)
+  and routine and trigger definitions: `DECLARE`, `IF`, `EXEC`, `CREATE TABLE`, `CREATE TYPE`,
+  `ALTER DATABASE`.
+- It creates a procedure, function or trigger from names or values put in at run time, or one
+  that another statement creates with a different definition (the full-text and in-memory
+  versions of a search procedure, say), or one whose own translation fails (the error is that
+  translation's).
 - It reads a variable it does not declare.
 - It assigns something other than an OUTPUT parameter.
 - A value is spliced into the middle of a string literal (`'%' + @v + '%'`).
 - It names objects at run time under `NameStyle = SnakeCase`.
+
+**What is known before it runs (WP 4.18).** A string held in a variable is followed back to the
+SET or DECLARE that last gave it its value. Pieces that are constants there are part of the text,
+as SQL Server puts it together: literals, variables last set to constants (cut to their declared
+length), `NCHAR(13)`/`CHAR(10)`, `QUOTENAME` of a constant, `CAST` of a number to a string, and
+`CASE`, `COALESCE` and `ISNULL` over constants. A variable is not a constant when anything between
+that assignment and the EXEC may change it, including a later statement of a `WHILE` around the
+EXEC. A comparison of constants is decided only when it comes out the same under a
+case-sensitive and a case-insensitive collation.
+
+**DDL in dynamic SQL.** With its text known, dynamic SQL may also run:
+
+- `CREATE PROCEDURE`, `CREATE FUNCTION`, `CREATE TRIGGER` (and `CREATE OR ALTER`, `ALTER`): the
+  object is translated as one of the database's own would be, and `EXECUTE` creates the
+  PostgreSQL routine (and trigger). Procedures that call a procedure only dynamic SQL creates
+  resolve it.
+- The DDL a routine may run itself (S2P5071–S2P5076): index, constraint and column changes,
+  `DROP PROCEDURE`/`FUNCTION`, `DROP TRIGGER`, security policies, `ALTER SEQUENCE … RESTART`.
+
+Each translated statement runs as an `EXECUTE` of its own, so a trigger (a function and a
+trigger) or a list of statements also works with sp_executesql's parameters. A number put in at
+run time where T-SQL takes only a number (`RESTART WITH ' + CAST(@n AS nvarchar(20))`) is
+`%s` in `format()`.
 
 ### S2P5061 DynamicIdentifier (Info)
 
@@ -1145,7 +1185,9 @@ means. If it is not, split the TRY.
 A procedure, function or trigger runs DDL that is not translated. That covers:
 
 - `ALTER TABLE … SET (…)` other than `SYSTEM_VERSIONING`, and `SWITCH`;
-- `CREATE`/`DROP` of a table, view or trigger;
+- `CREATE`/`DROP` of a table or view, `CREATE TRIGGER` written in the routine itself, and
+  `DROP TRIGGER` of a trigger that is neither the database's own nor one its procedures create
+  with dynamic SQL of known text;
 - `ALTER INDEX … DISABLE` of an index the source model does not have;
 - `NOCHECK`/`CHECK CONSTRAINT` of a constraint the routine neither added nor the model has;
 - an unnamed constraint, and a column with a computed value or inline constraints;
@@ -1154,8 +1196,16 @@ A procedure, function or trigger runs DDL that is not translated. That covers:
 Rewrite the statement for PostgreSQL, or move it out of the routine; it stays as a comment.
 
 Index, constraint and column changes on real tables, and dropping procedures and functions, are
-translated (S2P5071 to S2P5074). Temp tables are not affected: their DDL is translated. In an
-ad-hoc script, DDL is S2P0205.
+translated (S2P5071 to S2P5074). So are, since WP 4.18:
+
+- `DROP TRIGGER`: `DROP TRIGGER … ON table` and `DROP ROUTINE` of the trigger function, for each
+  event the converter made one for (`_insert`, `_update`, `_delete` when there are several). The
+  table and events come from the trigger's definition: the database's own, or a `CREATE TRIGGER`
+  that a procedure runs as dynamic SQL (S2P5074, Info).
+- `ALTER SEQUENCE … RESTART [WITH n]`, which is the same in PostgreSQL.
+- `CREATE`/`DROP SECURITY POLICY` (S2P5076).
+
+Temp tables are not affected: their DDL is translated. In an ad-hoc script, DDL is S2P0205.
 
 ### S2P5071 IndexDdlInRoutine (Info)
 
@@ -1222,6 +1272,39 @@ Each becomes `ALTER TABLE … DISABLE`/`ENABLE TRIGGER` on the triggers of S2P20
 
 Switching on versioning into a history table other than the source's, or on a table without a
 period in the source, stays S2P5070.
+
+### S2P5076 SecurityPolicy (Info or Error)
+
+A routine (or its dynamic SQL) creates or drops a security policy. It becomes PostgreSQL
+row-level security:
+
+- **CREATE SECURITY POLICY p** gives each table it names
+  `ALTER TABLE … ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` (SQL Server applies
+  the policy to the table's owner too), and one permissive policy per command, `p_select`,
+  `p_insert`, `p_update` and `p_delete`. There is one per command because PostgreSQL ORs the
+  permissive policies of a command, while SQL Server applies every predicate:
+
+  | Predicate | Becomes |
+  |---|---|
+  | `FILTER` | `USING` of the SELECT, UPDATE and DELETE policies |
+  | `BLOCK … AFTER INSERT` | `WITH CHECK` of the INSERT policy |
+  | `BLOCK … AFTER UPDATE` | `WITH CHECK` of the UPDATE policy |
+  | `BLOCK … BEFORE UPDATE` | `USING` of the UPDATE policy |
+  | `BLOCK … BEFORE DELETE` | `USING` of the DELETE policy |
+  | `BLOCK` (no operation) | all four |
+
+  A predicate is its inline function over the table's columns,
+  `EXISTS (SELECT 1 FROM fn(col))`, and the predicates of one policy are AND-ed. A command
+  with none gets `true`. With `STATE = OFF` the policies are created and row-level security is
+  not switched on.
+- **DROP SECURITY POLICY p** drops those policies from each table of p and switches row-level
+  security off there (`NO FORCE`, `DISABLE`). The tables come from the `CREATE SECURITY POLICY`
+  that a procedure of the database runs as dynamic SQL. A policy no procedure creates is an
+  Error, as is `ALTER` or `DROP` of a predicate inside `CREATE SECURITY POLICY`.
+
+A superuser, or a role with `BYPASSRLS`, still sees every row: connect the application as an
+ordinary role for the policy to apply. Security policies in the source catalog
+(`sys.security_policies`) are not read; only those that procedures create are converted.
 
 ## S2P6xxx — triggers
 

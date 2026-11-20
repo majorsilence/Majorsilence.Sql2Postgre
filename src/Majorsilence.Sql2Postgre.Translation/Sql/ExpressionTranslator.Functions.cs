@@ -172,6 +172,12 @@ public sealed partial class ExpressionTranslator
             case "QUOTENAME":
                 Arity(1);
                 return new PgBinary("||", new PgBinary("||", PgLiteral.String("["), Call("replace", TextArg(0), PgLiteral.String("]"), PgLiteral.String("]]"))), PgLiteral.String("]"));
+            case "STRING_ESCAPE" when a.Count == 2 && a[1] is StringLiteral { Value: var kind } && kind.Equals("json", StringComparison.OrdinalIgnoreCase):
+                // to_json escapes as SQL Server does (\", \\, \b \f \n \r \t, \u00XX for other control
+                // characters), except '/', which SQL Server writes \/. The surrounding quotes come off.
+                return Call("replace",
+                    Call("regexp_replace", new PgCast(Call("to_json", TextArg(0)), "text"), PgLiteral.String("^\"|\"$"), PgLiteral.String(""), PgLiteral.String("g")),
+                    PgLiteral.String("/"), PgLiteral.String("\\/"));
             case "STRING_ESCAPE":
                 throw Untranslatable(f, "STRING_ESCAPE");
             case "FORMAT":
@@ -243,6 +249,10 @@ public sealed partial class ExpressionTranslator
                 return Call("gen_random_uuid");
             case "SUSER_SNAME" or "SUSER_NAME" or "USER_NAME" or "ORIGINAL_LOGIN" when a.Count == 0:
                 return new PgKeyword("current_user");
+            case "SESSION_CONTEXT" when a is [StringLiteral { Value: var key }] && SessionKey(key) is { } setting:
+                c.Report(DiagnosticCodes.SessionContext, Severity.Info,
+                    $"SESSION_CONTEXT(N'{key}') reads the session setting {setting} (NULL until set): set it with SET {setting} = '…' or set_config('{setting}', …, false) where SQL Server calls sp_set_session_context.");
+                return Call("current_setting", PgLiteral.String(setting), PgLiteral.True);
             case "DB_NAME" when a.Count == 0:
                 return Call("current_database");
 
@@ -311,6 +321,15 @@ public sealed partial class ExpressionTranslator
         s.Identifiers.Add(name);
         return s;
     }
+
+    /// <summary>
+    /// The PostgreSQL setting a SESSION_CONTEXT key is kept in (<c>sql2pg.session_key</c>, lower
+    /// case as PostgreSQL folds setting names), or null for a key that is not a plain name.
+    /// </summary>
+    public static string? SessionKey(string key) =>
+        key.Length is > 0 and <= 50 && key.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_')
+            ? "sql2pg.session_" + key.ToLowerInvariant()
+            : null;
 
     private static UntranslatableException MethodCall(FunctionCall f)
     {

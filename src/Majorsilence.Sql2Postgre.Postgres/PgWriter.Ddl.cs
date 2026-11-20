@@ -39,6 +39,13 @@ public static partial class PgWriter
         PgSetDefault d => $"ALTER TABLE {d.Table.Qualified} ALTER COLUMN {Q(d.Column)} {(d.Default is null ? "DROP DEFAULT" : "SET DEFAULT " + Expression(d.Default))};\n",
         PgEnableTrigger e => $"ALTER TABLE {e.Table.Qualified} {(e.Enable ? "ENABLE" : "DISABLE")} TRIGGER {Q(e.Trigger)};\n",
         PgDropRoutine d => $"DROP ROUTINE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",
+        PgDropTrigger d => $"DROP TRIGGER {(d.IfExists ? "IF EXISTS " : "")}{NameMapper.Quote(d.Name)} ON {d.Table.Qualified};\n",
+        PgCreatePolicy p => $"CREATE POLICY {NameMapper.Quote(p.Name)} ON {p.Table.Qualified} FOR {p.Command}"
+                            + (p.Using is null ? "" : $" USING ({Expression(p.Using)})")
+                            + (p.WithCheck is null ? "" : $" WITH CHECK ({Expression(p.WithCheck)})") + ";\n",
+        PgDropPolicy d => $"DROP POLICY {(d.IfExists ? "IF EXISTS " : "")}{NameMapper.Quote(d.Name)} ON {d.Table.Qualified};\n",
+        PgRowSecurity r => $"ALTER TABLE {r.Table.Qualified} {r.Action} ROW LEVEL SECURITY;\n",
+        PgRestartSequence r => $"ALTER SEQUENCE {r.Name.Qualified} RESTART{(r.Value is null ? "" : " WITH " + Expression(r.Value))};\n",
         PgUntranslated u => Untranslated(u),
         PgCreateRoutine r => Routine(r, targetVersion),
         PgDropTable d => $"DROP TABLE {(d.IfExists ? "IF EXISTS " : "")}{d.Name.Qualified};\n",

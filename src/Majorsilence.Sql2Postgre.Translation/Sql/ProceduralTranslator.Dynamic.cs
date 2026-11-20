@@ -21,126 +21,66 @@ public sealed partial class ProceduralTranslator
     private const string MarkerPrefix = "sql2pg_m";
 
     /// <summary>The dynamic SQL of an EXEC, ready to translate: the template T-SQL and what each marker stands for.</summary>
-    private sealed record DynamicTemplate(string Sql, IReadOnlyList<PgFormatArgument> Arguments, bool SplicesText);
+    private sealed record DynamicTemplate(string Sql, IReadOnlyList<PgFormatArgument> Arguments, bool SplicesText)
+    {
+        /// <summary>The markers of pieces that can only be numbers (CAST of a number, STR()).</summary>
+        public IReadOnlyList<string> NumberMarkers { get; init; } = [];
+
+        /// <summary>
+        /// The template with each number marker as a number, for where T-SQL takes only a number
+        /// (<c>RESTART WITH 42</c>): the marker becomes <c>91000000000000000n7</c>, which the
+        /// writer replaces like any marker.
+        /// </summary>
+        public DynamicTemplate WithNumberMarkers()
+        {
+            string sql = Sql;
+            var arguments = Arguments.ToList();
+            for (int i = 0; i < arguments.Count; i++)
+            {
+                if (!NumberMarkers.Contains(arguments[i].Marker))
+                    continue;
+                string number = $"91{i + 1:D16}7";
+                sql = sql.Replace(arguments[i].Marker, number, StringComparison.Ordinal);
+                arguments[i] = arguments[i] with { Marker = number };
+            }
+            return new DynamicTemplate(sql, arguments, SplicesText);
+        }
+    }
 
     /// <summary>sp_executesql's declared parameters, in order, with the caller's values.</summary>
     private sealed record DynamicParameter(string Name, SqlServerType Type, DataTypeReference DataType, bool Output, ExecuteParameter? Argument);
 
     /// <summary>Whether an EXEC runs dynamic SQL (a string, or sp_executesql).</summary>
-    private static bool IsDynamic(ExecuteSpecification spec) =>
-        spec.ExecutableEntity is ExecutableStringList
-        || spec.ExecutableEntity is ExecutableProcedureReference { ProcedureReference.ProcedureReference.Name.BaseIdentifier.Value: var name }
-        && name.Equals("sp_executesql", StringComparison.OrdinalIgnoreCase);
+    private static bool IsDynamic(ExecuteSpecification spec) => DynamicSqlText.IsDynamic(spec);
 
     private static UntranslatableException DynamicUntranslatable(TSqlFragment source, string why) =>
         new(DiagnosticCodes.DynamicSqlUntranslatable, $"Dynamic SQL {why}: {ExpressionTranslator.Text(source).Trim()}");
-
-    // ---- the string ----
-
-    /// <summary>The expression giving the SQL text, followed back through a variable to its last plain assignment.</summary>
-    private static ScalarExpression? DynamicText(ExecuteStatement e, IReadOnlyList<(IList<TSqlStatement> List, int Index)> frames)
-    {
-        ScalarExpression? text = e.ExecuteSpecification.ExecutableEntity switch
-        {
-            ExecutableStringList strings => Concatenation(strings.Strings),
-            ExecutableProcedureReference p when p.Parameters.Count > 0 && p.Parameters[0].Variable is null or { Name: "@stmt" or "@statement" } =>
-                p.Parameters[0].ParameterValue,
-            _ => null,
-        };
-        return text is VariableReference v ? LastAssignment(v.Name, frames) : text;
-    }
-
-    private static ScalarExpression? Concatenation(IList<ValueExpression> pieces)
-    {
-        if (pieces.Count == 0)
-            return null;
-        ScalarExpression result = pieces[0];
-        for (int i = 1; i < pieces.Count; i++)
-            result = new BinaryExpression { BinaryExpressionType = BinaryExpressionType.Add, FirstExpression = result, SecondExpression = pieces[i] };
-        // A single variable piece is followed back to its value by the caller.
-        return pieces.Count == 1 ? pieces[0] : result;
-    }
-
-    /// <summary>The value of the last <c>SET @v = …</c> or <c>DECLARE @v … = …</c> before this point, if nothing else assigns @v in between.</summary>
-    private static ScalarExpression? LastAssignment(string variable, IReadOnlyList<(IList<TSqlStatement> List, int Index)> frames)
-    {
-        for (int f = frames.Count - 1; f >= 0; f--)
-        {
-            var (list, index) = frames[f];
-            for (int i = index - 1; i >= 0; i--)
-            {
-                var s = list[i];
-                if (s is SetVariableStatement { AssignmentKind: AssignmentKind.Equals, CursorDefinition: null } set
-                    && set.Variable.Name.Equals(variable, StringComparison.OrdinalIgnoreCase))
-                    return set.Expression;
-                if (s is DeclareVariableStatement d
-                    && d.Declarations.FirstOrDefault(x => x.VariableName.Value.Equals(variable, StringComparison.OrdinalIgnoreCase)) is { } declared)
-                    return declared.Value;
-                if (Assigns(s, variable))
-                    return null;
-            }
-        }
-        return null;
-    }
-
-    private static bool Assigns(TSqlStatement s, string variable)
-    {
-        bool Is(VariableReference? v) => v is not null && v.Name.Equals(variable, StringComparison.OrdinalIgnoreCase);
-        var finder = new Finder(f => f switch
-        {
-            SetVariableStatement set => Is(set.Variable),
-            SelectSetVariable select => Is(select.Variable),
-            DeclareVariableElement d => d.VariableName.Value.Equals(variable, StringComparison.OrdinalIgnoreCase),
-            FetchCursorStatement fetch => fetch.IntoVariables.Any(Is),
-            ExecuteParameter { IsOutput: true, ParameterValue: VariableReference v } => Is(v),
-            ExecuteSpecification { Variable: var status } => Is(status),
-            _ => false,
-        });
-        s.Accept(finder);
-        return finder.Found;
-    }
-
-    /// <summary>The pieces of a string concatenation (<c>+</c> or CONCAT), in order.</summary>
-    private static void Pieces(ScalarExpression e, List<ScalarExpression> pieces)
-    {
-        switch (e)
-        {
-            case ParenthesisExpression p:
-                Pieces(p.Expression, pieces);
-                break;
-            case BinaryExpression { BinaryExpressionType: BinaryExpressionType.Add } b:
-                Pieces(b.FirstExpression, pieces);
-                Pieces(b.SecondExpression, pieces);
-                break;
-            case FunctionCall { CallTarget: null, FunctionName.Value: var name } f when name.Equals("CONCAT", StringComparison.OrdinalIgnoreCase):
-                foreach (var a in f.Parameters)
-                    Pieces(a, pieces);
-                break;
-            default:
-                pieces.Add(e);
-                break;
-        }
-    }
 
     /// <summary>
     /// The template: literal pieces as they are, QUOTENAME pieces as marker names, pieces between
     /// quotes as marker values, others as spliced markers. <paramref name="argument"/> translates a
     /// piece in the caller's context.
     /// </summary>
-    private DynamicTemplate Template(ScalarExpression text, TSqlFragment source, ExpressionContext c)
+    private DynamicTemplate Template(ScalarExpression text, IReadOnlyList<(IList<TSqlStatement> List, int Index)> at, TSqlFragment source, ExpressionContext c)
     {
         PgExpr argument(ScalarExpression piece) => _x.Text(piece, c);
         var pieces = new List<ScalarExpression>();
-        Pieces(text, pieces);
+        DynamicSqlText.Pieces(text, pieces);
         var sql = new System.Text.StringBuilder();
         var arguments = new List<PgFormatArgument>();
+        var numbers = new List<string>();
         bool splices = false;
         bool stripQuote = false;
         foreach (var piece in pieces)
         {
-            if (piece is StringLiteral literal)
+            // A piece that is a constant where the text is put together (a variable set to a
+            // literal, NCHAR(13), QUOTENAME(N'x')) is part of the text, as in SQL Server.
+            string? constant = piece is StringLiteral literal ? literal.Value
+                : DynamicSqlText.TryFold(piece, at, out var folded) ? folded
+                : null;
+            if (constant is not null)
             {
-                string value = literal.Value;
+                string value = constant;
                 if (stripQuote)
                 {
                     if (!value.StartsWith('\''))
@@ -172,13 +112,16 @@ public sealed partial class ProceduralTranslator
             else
             {
                 arguments.Add(new PgFormatArgument(marker, 's', argument(piece)));
-                splices |= !IsNumberText(piece, c);
+                bool number = IsNumberText(piece, c);
+                splices |= !number;
+                if (number)
+                    numbers.Add(marker);
                 sql.Append(marker);
             }
         }
         if (stripQuote)
             throw DynamicUntranslatable(source, "with a value spliced into an unterminated string literal");
-        return new DynamicTemplate(sql.ToString(), arguments, splices);
+        return new DynamicTemplate(sql.ToString(), arguments, splices) { NumberMarkers = numbers };
     }
 
     /// <summary>A piece that can only be a number as text: CAST/CONVERT of a number, or STR().</summary>
@@ -221,9 +164,16 @@ public sealed partial class ProceduralTranslator
     /// <summary>The translated statements of the dynamic SQL, the INTO targets of a SELECT assigning OUTPUT parameters, and whether it returns rows.</summary>
     private sealed record DynamicStatements(IReadOnlyList<PgStatement> Statements, IReadOnlyList<PgExpr> Into, bool ReturnsRows);
 
-    private DynamicStatements TranslateDynamic(DynamicTemplate template, IReadOnlyList<DynamicParameter> parameters, TSqlFragment source, BodyState st)
+    private DynamicStatements TranslateDynamic(ref DynamicTemplate template, IReadOnlyList<DynamicParameter> parameters, TSqlFragment source, BodyState st)
     {
         var fragment = new TSql160Parser(true).Parse(new StringReader(template.Sql), out var errors);
+        if (errors.Count > 0 && template.NumberMarkers.Count > 0)
+        {
+            var numbered = template.WithNumberMarkers();
+            var retry = new TSql160Parser(true).Parse(new StringReader(numbered.Sql), out var retryErrors);
+            if (retryErrors.Count == 0)
+                (template, fragment, errors) = (numbered, retry, retryErrors);
+        }
         if (errors.Count > 0)
             throw DynamicUntranslatable(source, $"that does not parse as T-SQL ({errors[0].Message})");
         var statements = ((TSqlScript)fragment).Batches.SelectMany(b => b.Statements).ToList();
@@ -280,8 +230,17 @@ public sealed partial class ProceduralTranslator
                         break;
                     case PredicateSetStatement or SetCommandStatement:
                         break;
+                    case ProcedureStatementBody or FunctionStatementBody or TriggerStatementBody:
+                        translated.AddRange(CreatedModuleStatements(s, template, parameters, source));
+                        break;
                     default:
-                        throw DynamicUntranslatable(source, $"containing {s.GetType().Name.Replace("Statement", "")} (only queries and DML are translated)");
+                        // DDL a routine may run (WP 4.1), translated as it is when written in the routine itself.
+                        if (RoutineDdl(s, st) is { } ddl && ddl.All(x => x is PgSqlStatement))
+                        {
+                            translated.AddRange(ddl.Cast<PgSqlStatement>().Select(x => x.Statement));
+                            break;
+                        }
+                        throw DynamicUntranslatable(source, $"containing {s.GetType().Name.Replace("Statement", "")} (only queries, DML, routine and trigger definitions, and the DDL a routine may run are translated)");
                 }
             }
             if (rows && statements.Count > 1)
@@ -296,6 +255,37 @@ public sealed partial class ProceduralTranslator
             st.C.CompatFunctions.UnionWith(inner.CompatFunctions);
             st.C.Extensions.UnionWith(inner.Extensions);
         }
+    }
+
+    /// <summary>
+    /// Translates a procedure, function or trigger a procedure creates with dynamic SQL, given the
+    /// name it creates and its CREATE statement; null when it is not one the semantic model knows
+    /// with that definition. Set by the schema translator.
+    /// </summary>
+    public Func<ObjectName, TSqlStatement, Schema.TranslatedObject?>? CreatedModule { get; set; }
+
+    /// <summary>
+    /// <c>EXEC (N'CREATE PROCEDURE …')</c>: the routine or trigger it creates, translated as if it
+    /// were one of the database's own, its statements run by EXECUTE. The whole text must be known
+    /// (no names or values put in at run time), as the translation of the body depends on it.
+    /// </summary>
+    private IEnumerable<PgStatement> CreatedModuleStatements(TSqlStatement s, DynamicTemplate template, IReadOnlyList<DynamicParameter> parameters, TSqlFragment source)
+    {
+        var written = DynamicSqlText.CreatedName(s)!;
+        string what = s switch { ProcedureStatementBody => "a procedure", FunctionStatementBody => "a function", _ => "a trigger" };
+        if (template.Arguments.Count > 0 || parameters.Count > 0)
+            throw DynamicUntranslatable(source, $"creating {what} from names or values put in at run time");
+        var name = new ObjectName(written.SchemaIdentifier?.Value ?? SemanticModel.DefaultSchema, written.BaseIdentifier.Value);
+        var created = CreatedModule?.Invoke(name, s)
+                      ?? throw DynamicUntranslatable(source, $"creating {what} ({name}) that another statement creates with a different definition");
+        if (created.Status == ObjectStatus.Manual)
+        {
+            var error = created.Diagnostics.First(d => d.Severity == Severity.Error);
+            throw new UntranslatableException(error.Code, $"Dynamic SQL creating {name}, which cannot be translated: {error.Message}");
+        }
+        bool replace = s is CreateOrAlterProcedureStatement or CreateOrAlterFunctionStatement or CreateOrAlterTriggerStatement
+            or AlterProcedureStatement or AlterFunctionStatement or AlterTriggerStatement;
+        return created.Statements.Select(x => replace && x is PgCreateRoutine r ? r with { OrReplace = true } : x);
     }
 
     /// <summary>A name built at run time, mapped as the converter maps names: schemas through the schema map, then the name style.</summary>
@@ -324,14 +314,14 @@ public sealed partial class ProceduralTranslator
         var spec = e.ExecuteSpecification;
         if (spec.Variable is not null)
             throw DynamicUntranslatable(e, "with a status code (EXEC @rc = sp_executesql …)");
-        var text = DynamicText(e, st.Frames.Select(f => (f.List, f.Index)).ToList())
-                   ?? throw DynamicUntranslatable(e, "whose text cannot be followed back to a SET or DECLARE in this code");
+        var (text, at) = DynamicSqlText.Text(e, st.Frames.Select(f => (f.List, f.Index)).ToList())
+                         ?? throw DynamicUntranslatable(e, "whose text cannot be followed back to a SET or DECLARE in this code");
         var parameters = DynamicParameters(spec, e, st.C.Schema);
-        var template = Template(text, e, st.C);
+        var template = Template(text, at, e, st.C);
         if (template.SplicesText)
             st.C.Report(DiagnosticCodes.DynamicSqlSpliced, Severity.Warning,
                 "Dynamic SQL splices text in at run time (%s): it is used as it stands, so T-SQL syntax in it stays T-SQL.");
-        var translated = TranslateDynamic(template, parameters, e, st);
+        var translated = TranslateDynamic(ref template, parameters, e, st);
 
         // Each name marker followed by '.' is a schema.
         var arguments = template.Arguments.Select(a => a.Spec == 'I'
@@ -340,13 +330,17 @@ public sealed partial class ProceduralTranslator
         if (arguments.Any(a => a.Spec == 'I'))
             st.C.Report(DiagnosticCodes.DynamicIdentifier, Severity.Info,
                 "A name in dynamic SQL comes from a variable: it is mapped at run time (lower case, and the schema map), so it must name an object as converted.");
-        var command = new PgDynamicSql(translated.Statements, arguments);
+        var command = new PgDynamicSql(translated.Statements, arguments) { TargetVersion = _x.Options.TargetVersion };
         var usingArgs = parameters.Select(p => p.Argument?.ParameterValue is { } value && value is not DefaultLiteral
             ? _x.ConvertTo(value, p.Type, st.C)
             : new PgCast(PgLiteral.Null, _x.Types.Map(p.Type with { UserTypeName = null }, st.C.Owner).PgType)).ToList();
 
         if (translated.ReturnsRows)
             return DynamicResultSet(e, command, usingArgs, st);
+        // Several statements (a trigger is a function and a trigger) run one EXECUTE each: a
+        // command with parameters ($1) cannot hold several.
+        if (translated.Statements.Count > 1 && translated.Into.Count == 0)
+            return translated.Statements.Select(s => new PgExecuteDynamic(command with { Statements = [s] }) { Using = usingArgs }).ToList();
         return [new PgExecuteDynamic(command) { Into = translated.Into, Using = usingArgs }];
     }
 
@@ -372,13 +366,13 @@ public sealed partial class ProceduralTranslator
     /// <summary>For the procedure's shape: whether dynamic SQL at this point returns rows (its text known and parsed).</summary>
     private static bool DynamicReturnsRows(ExecuteStatement e, IReadOnlyList<(IList<TSqlStatement> List, int Index)> frames)
     {
-        if (!IsDynamic(e.ExecuteSpecification) || DynamicText(e, frames) is not { } text)
+        if (!IsDynamic(e.ExecuteSpecification) || DynamicSqlText.Text(e, frames) is not var (text, at))
             return false;
         var pieces = new List<ScalarExpression>();
-        Pieces(text, pieces);
+        DynamicSqlText.Pieces(text, pieces);
         var sql = new System.Text.StringBuilder();
         foreach (var piece in pieces)
-            sql.Append(piece is StringLiteral literal ? literal.Value : "[x]");
+            sql.Append(piece is StringLiteral literal ? literal.Value : DynamicSqlText.TryFold(piece, at, out var folded) && folded is not null ? folded : "[x]");
         var fragment = new TSql160Parser(true).Parse(new StringReader(sql.ToString()), out var errors);
         return errors.Count == 0 && ((TSqlScript)fragment).Batches.SelectMany(b => b.Statements)
             .Any(s => s is SelectStatement { Into: null } select && IsResultSet(select));

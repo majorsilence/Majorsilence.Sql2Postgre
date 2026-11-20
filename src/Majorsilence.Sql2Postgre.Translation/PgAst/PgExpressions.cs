@@ -91,4 +91,8 @@ public sealed record PgFormatArgument(string Marker, char Spec, PgExpr Value);
 /// The command of a dynamic EXECUTE: the statements written as one string, or, when parts come
 /// from variables, <c>format('…%I…', args)</c> with each marker replaced by its format spec.
 /// </summary>
-public sealed record PgDynamicSql(IReadOnlyList<PgStatement> Statements, IReadOnlyList<PgFormatArgument> Arguments) : PgExpr;
+public sealed record PgDynamicSql(IReadOnlyList<PgStatement> Statements, IReadOnlyList<PgFormatArgument> Arguments) : PgExpr
+{
+    /// <summary>The PostgreSQL major version the statements are written for (VIRTUAL or STORED columns).</summary>
+    public int TargetVersion { get; init; } = 18;
+}

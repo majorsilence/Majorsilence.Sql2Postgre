@@ -89,6 +89,20 @@ public sealed partial class SchemaTranslator
         }
         var procedural = new ProceduralTranslator(queries);
         var triggerCounts = TriggerCounts(modules, model);
+        // A routine or trigger a procedure creates with dynamic SQL is translated like the
+        // database's own, when the semantic model knows it with this definition: one only
+        // dynamic SQL creates, or one of the database's own that the procedure creates again.
+        procedural.CreatedModule = (name, statement) =>
+            (model.DynamicModule(name) ?? model.Module(name)) is { Definition.Length: > 0 } created
+            && DynamicSqlText.SameDefinition(created.Definition, ExpressionTranslator.Text(statement))
+                ? created.Kind switch
+                {
+                    ObjectKind.Procedure => Guard(name, created.Kind, Phase.Code, () => Procedure(created, model, procedural)),
+                    ObjectKind.Function => Guard(name, created.Kind, Phase.Code, () => Function(created, model, procedural)),
+                    ObjectKind.Trigger => Guard(name, created.Kind, Phase.Triggers, () => Trigger(created, model, procedural, triggerCounts)),
+                    _ => null,
+                }
+                : null;
         foreach (var m in modules)
         {
             if (m.Kind is ObjectKind.View or ObjectKind.Function or ObjectKind.Procedure && string.IsNullOrWhiteSpace(m.Definition))

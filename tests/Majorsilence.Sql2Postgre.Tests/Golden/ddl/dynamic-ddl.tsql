@@ -1,0 +1,74 @@
+CREATE TABLE dbo.Item (Id int NOT NULL CONSTRAINT PK_Item PRIMARY KEY, Name nvarchar(50) NOT NULL);
+GO
+CREATE TABLE dbo.ItemAudit (AuditId int IDENTITY(1, 1) NOT NULL CONSTRAINT PK_ItemAudit PRIMARY KEY, ItemId int NOT NULL, Note nvarchar(100) NOT NULL);
+GO
+CREATE TABLE dbo.Sale (SaleId int NOT NULL CONSTRAINT PK_Sale PRIMARY KEY, Region nvarchar(10) NOT NULL);
+GO
+CREATE SEQUENCE dbo.Ticket AS int START WITH 1;
+GO
+CREATE PROCEDURE dbo.AddAudit AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @SchemaName sysname = N'dbo';
+    DECLARE @TableName sysname = N'Item';
+    DECLARE @CrLf nvarchar(2) = NCHAR(13) + NCHAR(10);
+    DECLARE @SQL nvarchar(max) = N'DROP TRIGGER IF EXISTS ' + QUOTENAME(@SchemaName) + N'.[TR_' + @TableName + N'_Audit];';
+    EXECUTE (@SQL);
+    SET @SQL = N'CREATE TRIGGER ' + QUOTENAME(@SchemaName) + N'.[TR_' + @TableName + N'_Audit]' + @CrLf
+             + N'ON ' + QUOTENAME(@SchemaName) + N'.' + QUOTENAME(@TableName) + @CrLf
+             + N'AFTER INSERT' + @CrLf
+             + N'AS' + @CrLf
+             + N'BEGIN' + @CrLf
+             + N'    SET NOCOUNT ON;' + @CrLf
+             + N'    INSERT dbo.ItemAudit (ItemId, Note) SELECT i.Id, N''added '' + i.Name FROM inserted AS i;' + @CrLf
+             + N'END;';
+    EXECUTE (@SQL);
+END;
+GO
+CREATE PROCEDURE dbo.RemoveAudit AS
+BEGIN
+    DROP TRIGGER IF EXISTS dbo.TR_Item_Audit;
+END;
+GO
+CREATE PROCEDURE dbo.MakeDoubler AS
+BEGIN
+    DECLARE @SQL nvarchar(max) = N'DROP PROCEDURE IF EXISTS dbo.Doubler;';
+    EXECUTE (@SQL);
+    SET @SQL = N'CREATE PROCEDURE dbo.Doubler @x int, @y int OUTPUT AS BEGIN SET @y = @x * 2; END;';
+    EXECUTE (@SQL);
+END;
+GO
+CREATE PROCEDURE dbo.UseDoubler @x int AS
+BEGIN
+    DECLARE @y int;
+    EXEC dbo.Doubler @x = @x, @y = @y OUTPUT;
+    INSERT INTO dbo.ItemAudit (ItemId, Note) VALUES (@x, N'doubled ' + CAST(@y AS nvarchar(10)));
+END;
+GO
+CREATE PROCEDURE dbo.ApplyPolicy AS
+BEGIN
+    DECLARE @SQL nvarchar(max);
+    SET @SQL = N'DROP SECURITY POLICY IF EXISTS dbo.SaleRegion;';
+    EXECUTE (@SQL);
+    SET @SQL = N'DROP FUNCTION IF EXISTS dbo.RegionVisible;';
+    EXECUTE (@SQL);
+    SET @SQL = N'CREATE FUNCTION dbo.RegionVisible(@Region nvarchar(10)) RETURNS TABLE WITH SCHEMABINDING AS RETURN (SELECT 1 AS Visible WHERE @Region = N''north'');';
+    EXECUTE (@SQL);
+    SET @SQL = N'CREATE SECURITY POLICY dbo.SaleRegion ADD FILTER PREDICATE dbo.RegionVisible(Region) ON dbo.Sale, ADD BLOCK PREDICATE dbo.RegionVisible(Region) ON dbo.Sale AFTER INSERT;';
+    EXECUTE (@SQL);
+END;
+GO
+CREATE PROCEDURE dbo.RemovePolicy AS
+BEGIN
+    DECLARE @SQL nvarchar(max);
+    SET @SQL = N'DROP SECURITY POLICY IF EXISTS dbo.SaleRegion;';
+    EXECUTE (@SQL);
+    SET @SQL = N'DROP FUNCTION IF EXISTS dbo.RegionVisible;';
+    EXECUTE (@SQL);
+END;
+GO
+CREATE PROCEDURE dbo.Reseed @SequenceName sysname, @Next bigint AS
+BEGIN
+    DECLARE @SQL nvarchar(max) = N'ALTER SEQUENCE dbo.' + QUOTENAME(@SequenceName) + N' RESTART WITH ' + CAST(@Next AS nvarchar(20)) + N';';
+    EXECUTE (@SQL);
+END;

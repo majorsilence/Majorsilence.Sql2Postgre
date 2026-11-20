@@ -35,6 +35,11 @@ public sealed partial class ProceduralTranslator
         AlterTableSetStatement set when set.Options.Count > 0 && set.Options.All(o => o is SystemVersioningTableOption) => SetVersioning(set, st),
         AlterTableAlterColumnStatement a => AlterColumn(a, st),
         DropProcedureStatement or DropFunctionStatement => DropRoutines((DropObjectsStatement)s, st),
+        DropTriggerStatement { TriggerScope: TriggerScope.Normal } d => DropTriggers(d, st),
+        CreateSecurityPolicyStatement p => CreateSecurityPolicy(p, st),
+        DropSecurityPolicyStatement d => DropSecurityPolicies(d, st),
+        AlterSequenceStatement a when a.SequenceOptions is [ScalarExpressionSequenceOption { OptionKind: SequenceOptionKind.Restart }]
+            or [SequenceOption { OptionKind: SequenceOptionKind.Restart }] => RestartSequence(a, st),
         _ => null,
     };
 
@@ -451,6 +456,164 @@ public sealed partial class ProceduralTranslator
     // ---- routines ----
 
     /// <summary>DROP PROCEDURE / DROP FUNCTION → DROP ROUTINE, which drops either (a procedure may have become a function).</summary>
+    /// <summary>
+    /// DROP TRIGGER: a PostgreSQL trigger belongs to its table, and the converter made a trigger
+    /// function for it (one per event: <c>name_insert</c>, … when there are several). Both are
+    /// dropped, the table and events taken from the trigger's definition: the database's own, or
+    /// one that a procedure creates with dynamic SQL.
+    /// </summary>
+    private List<PgPlStatement> DropTriggers(DropTriggerStatement drop, BodyState st)
+    {
+        var result = new List<PgPlStatement>();
+        foreach (var o in drop.Objects)
+        {
+            var name = new ObjectName(o.SchemaIdentifier?.Value ?? st.C.Schema ?? SemanticModel.DefaultSchema, o.BaseIdentifier.Value);
+            if (_model.ModuleTree(name) is not TriggerStatementBody t
+                || (_model.Module(name)?.ParentTable ?? _model.ResolveRelation(t.TriggerObject.Name, name.Schema)) is not { } table)
+                throw ExpressionTranslator.Untranslatable(drop,
+                    $"DROP TRIGGER of {name}, which is neither a trigger of the source database nor one its procedures create with dynamic SQL of known text,",
+                    DiagnosticCodes.DdlInRoutine);
+            var events = t.TriggerActions.Select(a => a.TriggerActionType switch
+            {
+                TriggerActionType.Insert => "insert",
+                TriggerActionType.Update => "update",
+                TriggerActionType.Delete => "delete",
+                _ => null,
+            }).OfType<string>().Distinct().ToList();
+            var pgTable = _names.Relation(table);
+            foreach (string e in events)
+            {
+                string suffix = events.Count == 1 ? "" : "_" + e;
+                result.Add(new PgSqlStatement(new PgDropTrigger(_names.Trigger(table, name.Name + suffix), pgTable, IfExists: drop.IsIfExists)));
+                result.Add(new PgSqlStatement(new PgDropRoutine(_names.Routine(new ObjectName(name.Schema, name.Name + suffix)), IfExists: drop.IsIfExists)));
+            }
+        }
+        st.C.Report(DiagnosticCodes.SchemaChangeInRoutine, Severity.Info,
+            "DROP TRIGGER drops the PostgreSQL trigger on its table and the trigger function the converter made for it.");
+        return result;
+    }
+
+    // ---- security policies ----
+
+    private static readonly string[] PolicyCommands = ["SELECT", "INSERT", "UPDATE", "DELETE"];
+
+    private string PolicyName(ObjectName policy, string command) => _names.Alias(policy.Name + "_" + command.ToLowerInvariant());
+
+    private static ObjectName PolicyObject(SchemaObjectName written, BodyState st) =>
+        new(written.SchemaIdentifier?.Value ?? st.C.Schema ?? SemanticModel.DefaultSchema, written.BaseIdentifier.Value);
+
+    /// <summary>
+    /// CREATE SECURITY POLICY as row-level security. Each table gets ENABLE and FORCE ROW LEVEL
+    /// SECURITY (SQL Server applies a policy to the table's owner too) and one permissive policy
+    /// per command, since PostgreSQL ORs permissive policies: a FILTER predicate limits the rows
+    /// SELECT, UPDATE and DELETE see (USING); a BLOCK predicate checks the rows INSERT and UPDATE
+    /// write (AFTER INSERT/UPDATE, WITH CHECK) or the rows UPDATE and DELETE change (BEFORE
+    /// UPDATE/DELETE, USING). A predicate is its inline function: <c>EXISTS (SELECT 1 FROM fn(col))</c>.
+    /// </summary>
+    private List<PgPlStatement> CreateSecurityPolicy(CreateSecurityPolicyStatement create, BodyState st)
+    {
+        var policy = PolicyObject(create.Name, st);
+        bool enabled = !create.SecurityPolicyOptions.Any(o => o.OptionKind == SecurityPolicyOptionKind.State && o.OptionState == OptionState.Off);
+        var result = new List<PgPlStatement>();
+        foreach (var byTable in create.SecurityPredicateActions.GroupBy(a => PolicyObject(a.TargetObjectName, st), ObjectNameComparer.Instance))
+        {
+            var (table, pg, _) = RealTable(byTable.First().TargetObjectName, st);
+            var uses = PolicyCommands.ToDictionary(c => c, _ => new List<PgExpr>());
+            var checks = PolicyCommands.ToDictionary(c => c, _ => new List<PgExpr>());
+            foreach (var a in byTable)
+            {
+                if (a.ActionType != SecurityPredicateActionType.Create)
+                    throw ExpressionTranslator.Untranslatable(a, "ALTER or DROP of a predicate inside CREATE SECURITY POLICY", DiagnosticCodes.SecurityPolicy);
+                var predicate = Predicate(a.FunctionCall, table, st);
+                if (a.SecurityPredicateType == SecurityPredicateType.Filter)
+                {
+                    uses["SELECT"].Add(predicate);
+                    uses["UPDATE"].Add(predicate);
+                    uses["DELETE"].Add(predicate);
+                    continue;
+                }
+                var operation = a.SecurityPredicateOperation;
+                if (operation is SecurityPredicateOperation.All or SecurityPredicateOperation.AfterInsert)
+                    checks["INSERT"].Add(predicate);
+                if (operation is SecurityPredicateOperation.All or SecurityPredicateOperation.AfterUpdate)
+                    checks["UPDATE"].Add(predicate);
+                if (operation is SecurityPredicateOperation.All or SecurityPredicateOperation.BeforeUpdate)
+                    uses["UPDATE"].Add(predicate);
+                if (operation is SecurityPredicateOperation.All or SecurityPredicateOperation.BeforeDelete)
+                    uses["DELETE"].Add(predicate);
+            }
+            foreach (string command in PolicyCommands)
+            {
+                PgExpr? @using = command == "INSERT" ? null : All(uses[command]);
+                PgExpr? check = command is "SELECT" or "DELETE" ? null : All(checks[command]);
+                result.Add(new PgSqlStatement(new PgCreatePolicy(PolicyName(policy, command), pg, command, @using, check)));
+            }
+            if (enabled)
+            {
+                result.Add(new PgSqlStatement(new PgRowSecurity(pg, "ENABLE")));
+                result.Add(new PgSqlStatement(new PgRowSecurity(pg, "FORCE")));
+            }
+        }
+        st.C.Report(DiagnosticCodes.SecurityPolicy, Severity.Info,
+            $"CREATE SECURITY POLICY {policy} becomes row-level security: one policy per command on each table, and FORCE ROW LEVEL SECURITY so the table's owner is filtered too. A superuser, or a role with BYPASSRLS, still sees every row.");
+        return result;
+    }
+
+    /// <summary>The conditions AND-ed (true when there are none).</summary>
+    private static PgExpr All(List<PgExpr> conditions) =>
+        conditions.Count == 0 ? PgLiteral.True : conditions.Skip(1).Aggregate(conditions[0], (a, b) => new PgBinary("AND", a, b));
+
+    /// <summary>A predicate function call on the table's columns: <c>EXISTS (SELECT 1 FROM fn(col))</c>.</summary>
+    private PgExpr Predicate(FunctionCall call, ObjectName table, BodyState st)
+    {
+        string? schema = call.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: [.., var s] } ? s.Value : null;
+        var function = new ObjectName(schema ?? table.Schema, call.FunctionName.Value);
+        var c = InTable(table, st);
+        var arguments = call.Parameters.Select(p => _x.Scalar(p, c)).ToList();
+        return new PgExists(new PgSelect
+        {
+            Targets = [new PgTarget(new PgLiteral("1"))],
+            From = [new PgFunctionRef(_names.Routine(function).Qualified, arguments, null, [])],
+        });
+    }
+
+    /// <summary>
+    /// DROP SECURITY POLICY: the policies made for it dropped from each of its tables, and
+    /// row-level security switched off there. Its tables come from the CREATE SECURITY POLICY a
+    /// procedure of the database runs.
+    /// </summary>
+    private List<PgPlStatement> DropSecurityPolicies(DropSecurityPolicyStatement drop, BodyState st)
+    {
+        var result = new List<PgPlStatement>();
+        foreach (var o in drop.Objects)
+        {
+            var policy = PolicyObject(o, st);
+            if (_model.SecurityPolicy(policy) is not { } create)
+                throw ExpressionTranslator.Untranslatable(drop,
+                    $"DROP SECURITY POLICY of {policy}, which no procedure of the source database creates with dynamic SQL of known text,", DiagnosticCodes.SecurityPolicy);
+            foreach (var target in create.SecurityPredicateActions.Select(a => a.TargetObjectName)
+                         .DistinctBy(t => PolicyObject(t, st), ObjectNameComparer.Instance))
+            {
+                var (_, pg, _) = RealTable(target, st);
+                foreach (string command in PolicyCommands)
+                    result.Add(new PgSqlStatement(new PgDropPolicy(PolicyName(policy, command), pg, drop.IsIfExists)));
+                result.Add(new PgSqlStatement(new PgRowSecurity(pg, "NO FORCE")));
+                result.Add(new PgSqlStatement(new PgRowSecurity(pg, "DISABLE")));
+            }
+        }
+        st.C.Report(DiagnosticCodes.SecurityPolicy, Severity.Info,
+            "DROP SECURITY POLICY drops the row-level security policies made for it and switches row-level security off on its tables.");
+        return result;
+    }
+
+    /// <summary>ALTER SEQUENCE … RESTART [WITH n]: the same in PostgreSQL.</summary>
+    private List<PgPlStatement> RestartSequence(AlterSequenceStatement a, BodyState st)
+    {
+        var name = _model.ResolveRelation(a.Name, st.C.Schema) ?? new ObjectName(a.Name.SchemaIdentifier?.Value ?? st.C.Schema ?? SemanticModel.DefaultSchema, a.Name.BaseIdentifier.Value);
+        var value = a.SequenceOptions[0] is ScalarExpressionSequenceOption { OptionValue: { } v } ? _x.Scalar(v, st.C) : null;
+        return [new PgSqlStatement(new PgRestartSequence(_names.Relation(name), value))];
+    }
+
     private List<PgPlStatement> DropRoutines(DropObjectsStatement drop, BodyState st)
     {
         var result = new List<PgPlStatement>();

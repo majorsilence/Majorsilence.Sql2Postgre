@@ -1507,6 +1507,34 @@ The maintainer chose this on 2026-11-19. PostgreSQL 18 stays the default target;
 - Tests: container tests take `TargetVersion` from `SQL2PG_PG_VERSION`; CI runs them on 15, 16, 17
   and 18; golden cases at 15 and 17; the corpus scan is clean on all four.
 
+#### WP 4.18 — DDL in dynamic SQL (M)
+
+Configuration and load procedures build DDL as strings and run it: WideWorldImporters and
+WideWorldImportersDW had 125 S2P5060 and 17 S2P5070 from it, which kept 24 procedures Manual.
+
+- **Constants in the text.** A piece of the dynamic SQL is folded into its text when it is a
+  constant where the text is put together: a variable last set to a literal, `NCHAR(13)`,
+  `QUOTENAME(N'x')`, `CAST` of a number, a `CASE` on constants. A variable assigned anywhere in a
+  `WHILE` around the EXEC is not a constant (this also fixes following the SQL text itself).
+- **Created objects.** `CREATE PROCEDURE` / `FUNCTION` / `TRIGGER` in dynamic SQL of known text
+  is translated as the database's own would be, and `EXECUTE` runs the PostgreSQL DDL. The
+  semantic model registers these objects (without converting them on their own), so procedures
+  that call them resolve and DROP TRIGGER finds their tables. Two different definitions of one
+  name are reported.
+- **DDL a routine runs**, in its body or in dynamic SQL: WP 4.1's forms, plus `DROP TRIGGER`
+  (trigger and trigger function, per event), `ALTER SEQUENCE … RESTART`, and security policies as
+  row-level security (S2P5076).
+- Each translated statement runs as an `EXECUTE` of its own; a number put in at run time where
+  T-SQL takes only a number parses through a numeric marker.
+- Found on the way and translated: `SESSION_CONTEXT` (S2P3045), `STRING_ESCAPE(x, 'json')`,
+  `CONVERT` styles 6, 7, 106 and 107.
+- Not covered: dynamic `CREATE TABLE`/`TYPE`, `ALTER DATABASE`, in-memory OLTP, and security
+  policies in the source catalog (only those procedures create).
+- Tests: golden files for the DDL and the functions; a both-engines run of procedures that
+  create and drop a trigger, create and call a procedure, apply and remove a security policy
+  (read as an ordinary role) and restart a sequence, each run twice; the function grid for the
+  new functions; corpus scans on 15–18.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package

@@ -59,7 +59,7 @@ public static partial class PgWriter
     /// <summary>Dynamic SQL as a string literal, or format() when markers stand for run-time names and values.</summary>
     private static string DynamicSql(PgDynamicSql d)
     {
-        string sql = string.Join("\n", d.Statements.Select(s => Write(s, 18).TrimEnd('\n').TrimEnd(';')));
+        string sql = string.Join("\n", d.Statements.Select(s => Write(s, d.TargetVersion).TrimEnd('\n').TrimEnd(';')));
         if (d.Arguments.Count == 0)
             return PgLiteral.String(sql).Sql;
         sql = sql.Replace("%", "%%");

@@ -38,6 +38,7 @@ What was done and measured, as it lands. The plan is in
 - WP 3.8 — dynamic SQL (EXEC (string) and sp_executesql as EXECUTE, parameters through USING, OUTPUT through INTO, run-time names and values through format(), dynamic result sets); 7 both-engines cases. Corpus compile scan: 0 apply failures on all six databases. WideWorldImporters: S2P0206 154 → 105; 48 S2P5060, nearly all dynamic DDL (triggers, sequences, security policies), so its Manual count is unchanged.
 - WP 3.9 — triggers (per-event trigger functions, AFTER … FOR EACH STATEMENT with transition tables, INSTEAD OF on views FOR EACH ROW, UPDATE(column) by value, ROLLBACK as an error); 1 both-engines case of eight statements. Corpus compile scan: 0 apply failures on all six databases. AdventureWorks triggers: 6 converted, 4 Manual (2 INSTEAD OF on tables, S2P6004); AdventureWorks procedures 7 converted / 3 Manual (was 3/7) after XACT_STATE() outside CATCH became 1; pubs' trigger converts.
 - WP 3.10 — assessment v2 (effort weights, objects needing most work, `assess --html`), S2P5070 for DDL in routines, docs coverage test, procedure calls in result agreement. Corpus: 0 apply / copy / verify failures on all six databases; no S2P9001; no generic S2P0206 left (every Manual routine and trigger has a specific code); 190 agreement queries at baseline. Stage 3 (v0.3) complete.
+- WP 4.18 — DDL in dynamic SQL (constants folded into dynamic SQL text; CREATE PROCEDURE/FUNCTION/TRIGGER in it translated as the object it creates, registered in the semantic model so callers resolve; DROP TRIGGER, ALTER SEQUENCE … RESTART and CREATE/DROP SECURITY POLICY as row-level security, in routines and dynamic SQL; SESSION_CONTEXT, STRING_ESCAPE json, CONVERT 6/7/106/107; S2P3045, S2P5076); 2 golden files, 6 both-engines cases of procedures run twice (trigger, created procedure, security policy read as an ordinary role, sequence, session context) and 7 new function-grid cases. Integration: 717 on each of 15–18, 0 failed (on 15 and 16 the MERGE … OUTPUT case is skipped by design). Corpus on all four versions, the same each time: 223 passed, 0 apply / copy / verify failures, no S2P9001, 206 of 207 agreement queries at 100. WideWorldImporters: Manual 21 → 14 (procedures 17 → 11, functions 1 → 0), S2P5060 99 → 23, S2P5070 17 → 0, S2P5027 1 → 0. WideWorldImportersDW: Manual 7 → 5, S2P5060 26 → 25.
 - WP 4.17 — PostgreSQL 15, 16 and 17 (18 stays the default; `--target-version`; OUTPUT without RETURNING old/new before 18, S2P4015; WHEN NOT MATCHED BY SOURCE as CTEs before 17, S2P4016; LIKE and SIMILAR TO on the ICU case-insensitive collation; container tests convert for SQL2PG_PG_VERSION, CI on 15–18); 5 golden files and 11 both-engines cases (4 OUTPUT, 7 ICU LIKE), plus the pg_cron test image fixed. Integration: 704 tests, 0 failed on each version; all pass on 18 and 17, and on 15 and 16 one case (a procedure with MERGE … OUTPUT, S2P4015) is skipped by design. The Agent-job test, skipped below 18 in the full runs because Testcontainers could not build the pg_cron image, passed on all four after the Dockerfile fix. Corpus on all four: 223 passed (15's two WideWorldImporters scans passed on a rerun after a container read timeout), 0 apply / copy / verify failures, no S2P9001, the same object counts per database, 206 of 207 agreement queries at 100; only S2P2001 differs (STORED computed columns: AdventureWorks 3 → 8, WideWorldImporters 1 → 4 below 18).
 - WP 4.16 — incremental data sync (data --since: a whole first pass, then rowversion, change tracking or whole copies per table, upserted from a staging table with tracked deletes applied; S2P7010); a container test of three passes over a rowversion table, a change-tracked table and a plain one, verified by checksum. Stage 4 complete.
 - WP 4.15 — SQL Server Agent jobs (--agent-jobs reads msdb jobs with T-SQL steps in the database; each becomes a sql2pg_agent procedure of its steps; cron.schedule for each daily/weekly/monthly schedule; S2P2023, S2P2024, S2P2025); 21 unit tests (schedule mapping, the synthesised procedure) and a container test on PostgreSQL 18 with pg_cron: a real msdb job converted, scheduled in cron.job, and its procedure leaving the same log as its steps on SQL Server. Corpus: unchanged (it does not read Agent jobs).
@@ -664,3 +665,26 @@ truncation, real against exact numbers, real-to-numeric casts, windowed AVG of d
     builds had hidden it. The Agent-job test had been skipped wherever the image was not cached.
   - MERGE's `merge_action()` and `RETURNING` exist from 17; on 17 a deleted row's `RETURNING t.col`
     is the old value and an inserted row's the new one.
+- WP 4.18 departs from the plan (written into it with this WP) in these places:
+  - Dynamic `CREATE TABLE`, `CREATE TYPE … AS TABLE`, `DROP TYPE`, `ALTER DATABASE` and the
+    in-memory OLTP forms stay S2P5060: in the corpus they occur only in
+    `Configuration_EnableInMemory`, which also needs the server's data path and filegroups.
+  - Security policies are converted only where procedures create them; the catalog reader does not
+    read `sys.security_policies`.
+  - `SESSION_CONTEXT`, `STRING_ESCAPE(…, 'json')` and `CONVERT` styles 6/7/106/107 were not in the
+    WP's list; they blocked procedures that dynamic SQL creates, so they are in.
+  - `DataLoadSimulation.Configuration_ApplyDataLoadSimulationProcedures` stays Manual: two of the
+    21 routines it creates need `COMPRESS` (no core equivalent) and, without PostGIS, a spatial
+    property.
+- Found and fixed on the way:
+  - A long `+` chain (60 pieces) is a deep tree; folding it recursively hit the depth guard, so
+    the pieces are folded one by one.
+  - Following dynamic SQL text back to its SET ignored assignments later in an enclosing `WHILE`.
+  - Translated dynamic SQL with several statements was joined without semicolons, and dynamic SQL
+    was always written for PostgreSQL 18 (WP 4.17 missed the writer's hard-coded version).
+- Established with SQL Server 2022 and PostgreSQL 15–18:
+  - SQL Server's row-level security filters `sa` too; PostgreSQL's does not apply to a superuser
+    even with `FORCE ROW LEVEL SECURITY` (the test reads as an ordinary login role).
+  - `to_json(text)::text` escapes as `STRING_ESCAPE(…, 'json')` does except for `/`, which only
+    SQL Server writes as `\/` (tab, newline, backslash, quote, `NCHAR(1)` agree).
+  - `to_char(…, 'Mon DD, YYYY')` and `'DD Mon YYYY'` give styles 107 and 106 under `us_english`.

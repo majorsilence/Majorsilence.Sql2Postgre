@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **DDL in dynamic SQL** (WP 4.18):
+  - Dynamic SQL whose pieces are constants where the text is put together (variables last set to
+    literals, `NCHAR(13)`, `QUOTENAME(N'x')`, `CASE` on constants) is folded into known text.
+    An assignment anywhere in a `WHILE` around the EXEC makes a variable unknown, which also
+    fixes following the SQL text back through a loop.
+  - `CREATE PROCEDURE`/`FUNCTION`/`TRIGGER` in such dynamic SQL is translated as the database's
+    own would be and created with `EXECUTE`. Procedures that call a procedure only dynamic SQL
+    creates now resolve it (was S2P5027).
+  - In routines and dynamic SQL: `DROP TRIGGER` (the trigger on its table and its function, per
+    event; was S2P5070), `ALTER SEQUENCE … RESTART`, the DDL of WP 4.1, and
+    `CREATE`/`DROP SECURITY POLICY` as row-level security: `ENABLE` and `FORCE ROW LEVEL
+    SECURITY`, one policy per command (S2P5076).
+  - A translated dynamic SQL string with several statements runs as one `EXECUTE` each; they
+    were joined without semicolons. Dynamic SQL is written for the target version (was 18).
+  - A number put in at run time where T-SQL takes only a number (`RESTART WITH ' + CAST(@n AS
+    nvarchar(20))`) no longer fails to parse.
+  - `SESSION_CONTEXT(N'key')` reads the setting `sql2pg.session_key` (S2P3045);
+    `STRING_ESCAPE(x, 'json')` and `CONVERT` styles 6, 7, 106 and 107 are translated.
 - **PostgreSQL 15, 16 and 17** (WP 4.17): the output runs on every version from 15 to 18; 18
   stays the default. Pick the version with `targetVersion` in the config or the new
   `--target-version` option (`assess`, `schema`, `migrate`, `translate`, `code`).

@@ -117,6 +117,24 @@ public sealed record PgEnableTrigger(PgName Table, string Trigger, bool Enable) 
 /// <summary><c>DROP ROUTINE [IF EXISTS] name</c>: a procedure or a function (sql2pg never overloads a name).</summary>
 public sealed record PgDropRoutine(PgName Name, bool IfExists) : PgStatement;
 
+/// <summary><c>DROP TRIGGER [IF EXISTS] name ON table</c>.</summary>
+public sealed record PgDropTrigger(string Name, PgName Table, bool IfExists) : PgStatement;
+
+/// <summary>
+/// <c>CREATE POLICY name ON table FOR command [USING (…)] [WITH CHECK (…)]</c>: a permissive
+/// row-level security policy for one command (SELECT, INSERT, UPDATE or DELETE).
+/// </summary>
+public sealed record PgCreatePolicy(string Name, PgName Table, string Command, PgExpr? Using, PgExpr? WithCheck) : PgStatement;
+
+/// <summary><c>DROP POLICY [IF EXISTS] name ON table</c>.</summary>
+public sealed record PgDropPolicy(string Name, PgName Table, bool IfExists) : PgStatement;
+
+/// <summary><c>ALTER TABLE table ENABLE | DISABLE | FORCE | NO FORCE ROW LEVEL SECURITY</c>.</summary>
+public sealed record PgRowSecurity(PgName Table, string Action) : PgStatement;
+
+/// <summary><c>ALTER SEQUENCE name RESTART [WITH value]</c>.</summary>
+public sealed record PgRestartSequence(PgName Name, PgExpr? Value) : PgStatement;
+
 /// <summary>
 /// The original T-SQL of something that could not be translated, kept in the output as a block
 /// comment headed by its diagnostic code, at the place the translation would have gone.

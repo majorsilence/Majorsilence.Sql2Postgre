@@ -230,6 +230,9 @@ public static class DiagnosticCodes
     /// <summary>sys.*, INFORMATION_SCHEMA.* or a metadata function answered from mssql_compat's catalog of converted objects.</summary>
     public const string CatalogEmulated = "S2P3044";
 
+    /// <summary>SESSION_CONTEXT(N'key') reads the session setting sql2pg.session_key (current_setting).</summary>
+    public const string SessionContext = "S2P3045";
+
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
 
@@ -391,6 +394,12 @@ public static class DiagnosticCodes
 
     /// <summary>SYSTEM_VERSIONING switched off or on, or the period dropped or added, in a routine.</summary>
     public const string SystemVersioningInRoutine = "S2P5075";
+
+    /// <summary>
+    /// CREATE / DROP SECURITY POLICY as PostgreSQL row-level security: ENABLE and FORCE ROW LEVEL
+    /// SECURITY on each table and one policy per command (Info), or a form that is not translated (Error).
+    /// </summary>
+    public const string SecurityPolicy = "S2P5076";
 
     // ---- 6xxx triggers ----
 

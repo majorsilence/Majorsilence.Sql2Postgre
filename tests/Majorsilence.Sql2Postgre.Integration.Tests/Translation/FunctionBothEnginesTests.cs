@@ -109,6 +109,9 @@ public class FunctionBothEnginesTests
     [TestCase("ASCII(s)")]
     [TestCase("CHAR(n + 64)")]
     [TestCase("QUOTENAME(s)")]
+    [TestCase("STRING_ESCAPE(s, 'json')")]
+    [TestCase("STRING_ESCAPE(j, 'json')")]
+    [TestCase("STRING_ESCAPE(s + N'/' + NCHAR(9) + NCHAR(92) + NCHAR(34) + NCHAR(1) + NCHAR(10), 'json')")]
     [TestCase("SPACE(ABS(n))")]
     public Task Strings(string expression) => SameOverGrid(expression);
 
@@ -209,6 +212,10 @@ public class FunctionBothEnginesTests
     [TestCase("CONVERT(varchar, d, 101)")]
     [TestCase("CONVERT(varchar, d, 103)")]
     [TestCase("CONVERT(varchar, d, 104)")]
+    [TestCase("CONVERT(varchar, d, 106)")]
+    [TestCase("CONVERT(varchar, d, 107)")]
+    [TestCase("CONVERT(varchar(20), dt, 6)")]
+    [TestCase("CONVERT(nvarchar(20), dt, 7)")]
     [TestCase("CONVERT(varchar, dt, 112)")]
     [TestCase("CONVERT(varchar, d, 108)")]
     [TestCase("CONVERT(varchar, d, 126)")]

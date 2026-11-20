@@ -1,0 +1,3 @@
+SELECT STRING_ESCAPE(name, 'json') AS escaped FROM shop.product;
+SELECT CONVERT(varchar, order_date, 107) AS us, CONVERT(varchar(20), order_date, 106) AS uk, CONVERT(varchar(12), order_date, 7) AS us2 FROM shop.[order];
+SELECT CAST(SESSION_CONTEXT(N'SalesTerritory') AS nvarchar(50)) AS territory;

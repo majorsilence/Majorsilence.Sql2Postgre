@@ -25,6 +25,9 @@ public sealed partial class SemanticModel
     private readonly HashSet<ObjectName> _sequences = new(ObjectNameComparer.Instance);
     private readonly Dictionary<ObjectName, TSqlStatement> _moduleTrees = new(ObjectNameComparer.Instance);
     private readonly Dictionary<ObjectName, Module> _modules = new(ObjectNameComparer.Instance);
+    private readonly Dictionary<ObjectName, Module> _dynamicModules = new(ObjectNameComparer.Instance);
+    private readonly HashSet<ObjectName> _conflictingDynamicModules = new(ObjectNameComparer.Instance);
+    private readonly Dictionary<ObjectName, CreateSecurityPolicyStatement> _securityPolicies = new(ObjectNameComparer.Instance);
     private readonly HashSet<ObjectName> _resolvingViews = new(ObjectNameComparer.Instance);
     private readonly List<Diagnostic> _diagnostics = [];
     private readonly List<ObjectDependency> _dependencies = [];
@@ -76,6 +79,45 @@ public sealed partial class SemanticModel
             _moduleTrees[m.Name] = statement;
         }
 
+        // Procedures, functions and triggers that procedures create with dynamic SQL of known text:
+        // callers of them resolve, and DROP TRIGGER finds their tables. They are not converted on
+        // their own (they do not exist until the procedure runs); the dynamic SQL converts them.
+        foreach (var statement in _moduleTrees.Values.ToList())
+        {
+            if (statement is not ProcedureStatementBody { StatementList: { } body })
+                continue;
+            foreach (var (created, text) in Sql.DynamicSqlText.CreatedModules(body.Statements))
+            {
+                if (created is CreateSecurityPolicyStatement policy)
+                {
+                    var policyName = new ObjectName(policy.Name.SchemaIdentifier?.Value ?? DefaultSchema, policy.Name.BaseIdentifier.Value);
+                    _securityPolicies.TryAdd(policyName, policy);
+                    continue;
+                }
+                var written = Sql.DynamicSqlText.CreatedName(created)!;
+                // Dynamic SQL resolves an unqualified name in the caller's default schema.
+                var name = new ObjectName(written.SchemaIdentifier?.Value ?? DefaultSchema, written.BaseIdentifier.Value);
+                if (_dynamicModules.TryGetValue(name, out var known))
+                {
+                    if (!Sql.DynamicSqlText.SameDefinition(known.Definition, text))
+                        _conflictingDynamicModules.Add(name);
+                    continue;
+                }
+                if (_modules.ContainsKey(name))
+                    continue;
+                var kind = created switch
+                {
+                    ProcedureStatementBody => ObjectKind.Procedure,
+                    FunctionStatementBody => ObjectKind.Function,
+                    _ => ObjectKind.Trigger,
+                };
+                var module = new Module(name, kind, text);
+                _dynamicModules[name] = module;
+                _modules[name] = module;
+                _moduleTrees[name] = created;
+            }
+        }
+
         // Routine signatures first: a view or function may use a table-valued function.
         foreach (var (name, statement) in _moduleTrees)
             if (statement is FunctionStatementBody or ProcedureStatementBody)
@@ -109,6 +151,20 @@ public sealed partial class SemanticModel
     public RoutineInfo? Routine(ObjectName name) => _routines.GetValueOrDefault(name);
 
     public Module? Module(ObjectName name) => _modules.GetValueOrDefault(name);
+
+    /// <summary>
+    /// A procedure, function or trigger that a procedure of the database creates with dynamic SQL
+    /// (null for a module of the database itself, or when two procedures create it differently).
+    /// </summary>
+    public Module? DynamicModule(ObjectName name) =>
+        _conflictingDynamicModules.Contains(name) ? null : _dynamicModules.GetValueOrDefault(name);
+
+    /// <summary>A security policy a procedure creates with dynamic SQL (its CREATE SECURITY POLICY), or null.</summary>
+    public CreateSecurityPolicyStatement? SecurityPolicy(ObjectName name) => _securityPolicies.GetValueOrDefault(name);
+
+    /// <summary>The modules procedures create with dynamic SQL, in name order.</summary>
+    public IEnumerable<Module> DynamicModules =>
+        _dynamicModules.Values.OrderBy(m => m.Name.ToString(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The parsed CREATE statement of a module, or null when it did not parse (or is encrypted).</summary>
     public TSqlStatement? ModuleTree(ObjectName name) => _moduleTrees.GetValueOrDefault(name);
