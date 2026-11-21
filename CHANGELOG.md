@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Test images are reused.** The container tests' own images (full-text SQL Server, pg_cron,
+  PostGIS for 19) are built only when missing or when their Dockerfile folder or build
+  arguments change (a hash in the `sql2pg.built-from` label), and a rebuild replaces the old
+  image. Each run used to rebuild them and leave the previous build behind untagged (about
+  5 GB per run for the full-text image).
 - **The remaining small gaps** (WP 4.22):
   - `TRY_CONVERT` with a style: a date to text translates as `CONVERT` does; text to datetime2
     or date under styles 126 and 127 uses the new IMMUTABLE helper

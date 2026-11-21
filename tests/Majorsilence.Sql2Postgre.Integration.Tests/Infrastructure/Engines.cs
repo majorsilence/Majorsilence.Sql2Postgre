@@ -51,17 +51,12 @@ public static class Engines
     {
         try
         {
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(CommonDirectoryPath.GetProjectDirectory(), Path.Combine("Infrastructure", "mssql-fts"))
-                .WithName("sql2pg-mssql-fts:2022")
-                .WithCleanUp(false)
-                .Build();
-            await image.CreateAsync();
-            var container = new MsSqlBuilder(image.FullName).Build();
+            string image = await BuildAsync("mssql-fts", "sql2pg-mssql-fts:2022", new Dictionary<string, string>());
+            var container = new MsSqlBuilder(image).Build();
             await container.StartAsync();
             return (container, null);
         }
-        catch (DockerUnavailableException ex)
+        catch (Exception ex) when (ex is DockerUnavailableException or DotNet.Testcontainers.Images.ImageBuildFailedException)
         {
             return (null, ex.Message);
         }
@@ -106,17 +101,49 @@ public static class Engines
         }
     }
 
+    /// <summary>The label that records which Dockerfile folder and build arguments an image was built from.</summary>
+    private const string BuiltFromLabel = "sql2pg.built-from";
+
     /// <summary>Builds the image of <c>Infrastructure/{folder}/Dockerfile</c> for <see cref="PostgresVersion"/>.</summary>
-    private static async Task<string> BuildAsync(string folder, string name)
+    private static Task<string> BuildAsync(string folder, string name) =>
+        BuildAsync(folder, name, new Dictionary<string, string> { ["PG_VERSION"] = PostgresVersion });
+
+    /// <summary>
+    /// The image of <c>Infrastructure/{folder}/Dockerfile</c>, built only when there is none of that
+    /// name built from the same files and arguments (a hash of them is its <see cref="BuiltFromLabel"/>
+    /// label). A rebuild replaces the old image, so runs leave no untagged images behind; the
+    /// image is kept between runs.
+    /// </summary>
+    private static async Task<string> BuildAsync(string folder, string name, IReadOnlyDictionary<string, string> arguments)
     {
-        var image = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(Path.Combine(Infrastructure(), folder))
-            .WithBuildArgument("PG_VERSION", PostgresVersion)
+        string directory = Path.Combine(Infrastructure(), folder);
+        string hash = BuiltFrom(directory, arguments);
+        var builder = new ImageFromDockerfileBuilder()
+            .WithDockerfileDirectory(directory)
             .WithName(name)
-            .WithCleanUp(false)
-            .Build();
+            .WithLabel(BuiltFromLabel, hash)
+            .WithImageBuildPolicy(existing => existing?.Config?.Labels is not { } labels
+                || !labels.TryGetValue(BuiltFromLabel, out string? built) || built != hash)
+            .WithDeleteIfExists(true)
+            .WithCleanUp(false);
+        foreach (var (key, value) in arguments)
+            builder = builder.WithBuildArgument(key, value);
+        var image = builder.Build();
         await image.CreateAsync();
         return image.FullName;
+    }
+
+    /// <summary>A hash of the folder's files (names and contents) and the build arguments.</summary>
+    private static string BuiltFrom(string directory, IReadOnlyDictionary<string, string> arguments)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var text = new System.Text.StringBuilder();
+        foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+            text.Append(Path.GetRelativePath(directory, file).Replace('\\', '/')).Append('\n')
+                .Append(File.ReadAllText(file).ReplaceLineEndings("\n")).Append('\n');
+        foreach (var (key, value) in arguments.OrderBy(a => a.Key, StringComparer.Ordinal))
+            text.Append(key).Append('=').Append(value).Append('\n');
+        return Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..16].ToLowerInvariant();
     }
 
     private static readonly Lazy<Task<(PostgreSqlContainer? Container, string? Unavailable)>> PgCron =
