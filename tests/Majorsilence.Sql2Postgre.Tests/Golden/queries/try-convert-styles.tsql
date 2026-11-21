@@ -1,0 +1,5 @@
+SELECT TRY_CONVERT(datetime2(3), name, 126) AS a, TRY_CONVERT(date, N'2013-01-02T07:05:00', 127) AS b,
+       TRY_CONVERT(varchar(10), CAST('2013-01-02' AS date), 112) AS c, TRY_CONVERT(int, name, 0) AS d
+FROM shop.product;
+SELECT TRY_CONVERT(datetime2, name, 103) AS e FROM shop.product;
+SELECT TRY_CONVERT([datetime2](7), json_value(name, N'$.when'), (126)) AS f, CONVERT(varchar(8), CAST('2013-01-02' AS date), (112)) AS g FROM shop.product;

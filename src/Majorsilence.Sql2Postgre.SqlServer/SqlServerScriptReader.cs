@@ -255,7 +255,7 @@ public static partial class SqlServerScriptReader
             {
                 var versioning = ct.Options.OfType<SystemVersioningTableOption>().FirstOrDefault(o => o.OptionState == OptionState.On);
                 table.Period = new SystemTimePeriod(period.StartTimeColumn.Value, period.EndTimeColumn.Value,
-                    versioning?.HistoryTable is { } history ? NameOf(history) : null);
+                    versioning?.HistoryTable is { } history ? NameOf(history) : null, Retention(versioning?.RetentionPeriod));
                 if (versioning is not null && versioning.HistoryTable is null)
                     Diagnostics.Add(new Diagnostic(DiagnosticCodes.SystemVersioning, Severity.Warning, table.Name,
                         $"{table.Name} is system-versioned without HISTORY_TABLE: SQL Server names the history table itself, so a script does not have it. Its history is not kept."));
@@ -341,8 +341,18 @@ public static partial class SqlServerScriptReader
             if (!_tables.TryGetValue(NameOf(set.SchemaObjectName), out var table) || table.Period is null)
                 return;
             foreach (var option in set.Options.OfType<SystemVersioningTableOption>())
-                table.Period = table.Period with { HistoryTable = option.OptionState == OptionState.On && option.HistoryTable is { } h ? NameOf(h) : null };
+                table.Period = table.Period with
+                {
+                    HistoryTable = option.OptionState == OptionState.On && option.HistoryTable is { } h ? NameOf(h) : null,
+                    Retention = option.OptionState == OptionState.On ? Retention(option.RetentionPeriod) : null,
+                };
         }
+
+        /// <summary>HISTORY_RETENTION_PERIOD as the catalog query spells it (<c>6 MONTHS</c>, <c>1 YEAR</c>); null for INFINITE or none.</summary>
+        private static string? Retention(RetentionPeriodDefinition? retention) =>
+            retention is { IsInfinity: false, Duration: { } duration }
+                ? $"{duration.Value} {retention.Units.ToString().ToUpperInvariant().TrimEnd('S')}{(duration.Value == "1" ? "" : "S")}"
+                : null;
 
         /// <summary><c>ALTER TABLE … NOCHECK CONSTRAINT</c> disables a foreign key or check, and SQL Server then no longer trusts it.</summary>
         private void AlterEnforcement(AlterTableConstraintModificationStatement mod)

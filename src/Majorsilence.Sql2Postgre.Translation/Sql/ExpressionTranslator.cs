@@ -58,6 +58,7 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
             ConvertCall convert => Convert(convert, c),
             TryCastCall tc => TryCast(tc.Parameter, tc.DataType, c),
             TryConvertCall tc when tc.Style is null => TryCast(tc.Parameter, tc.DataType, c),
+            TryConvertCall tc => TryConvert(tc, c),
             ParameterlessCall p => Parameterless(p),
             FunctionCall f => Function(f, c),
             LeftFunctionCall l => new PgFunctionCall("left", [PaddedText(l.Parameters[0], c), Scalar(l.Parameters[1], c)]),
@@ -372,6 +373,68 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         && TypeOf(operand, c) is { Collation: { } collation } type
         && collation.Contains("_CI", StringComparison.OrdinalIgnoreCase)
         && TypeRules.IsString(type);
+
+    /// <summary>
+    /// Whether the expression reads a column that gets the case-insensitive ICU collation
+    /// (<see cref="CaseInsensitiveStrategy.IcuCollation"/>): its value carries that collation,
+    /// through functions too, so substring searches of it are case-insensitive in SQL Server and
+    /// refused by PostgreSQL before 18.
+    /// </summary>
+    public bool MentionsCaseInsensitiveColumn(ScalarExpression e, ExpressionContext c)
+    {
+        if (options.CaseInsensitive != CaseInsensitiveStrategy.IcuCollation)
+            return false;
+        var finder = new ColumnFinder();
+        e.Accept(finder);
+        return finder.Columns.Any(col => TypeOf(col, c) is { Collation: { } collation } type
+            && collation.Contains("_CI", StringComparison.OrdinalIgnoreCase) && TypeRules.IsString(type));
+    }
+
+    private sealed class ColumnFinder : TSqlFragmentVisitor
+    {
+        public List<ColumnReferenceExpression> Columns { get; } = [];
+
+        public override void Visit(ColumnReferenceExpression node) => Columns.Add(node);
+
+        // A subquery's columns are its own; its result has the collation PostgreSQL derives there.
+        public override void ExplicitVisit(ScalarSubquery node)
+        {
+        }
+    }
+
+    /// <summary><c>lower(x COLLATE "default")</c>: a case-insensitive comparison by hand.</summary>
+    private static PgExpr Lowered(PgExpr x) => new PgFunctionCall("lower", [OnDefaultCollation(x)]);
+
+    private static PgExpr OnDefaultCollation(PgExpr x) => new PgTemplate("{0} COLLATE \"default\"", [x]);
+
+    /// <summary>A literal as a regular expression that matches it exactly (ARE syntax).</summary>
+    public static string RegexLiteral(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(text, @"[\\.^$|?*+()\[\]{}]", m => "\\" + m.Value);
+
+    /// <summary>
+    /// The SQL that escapes a value for use as a regular expression matching it exactly: a
+    /// literal at conversion time, anything else at run time.
+    /// </summary>
+    public static PgExpr RegexEscaped(ScalarExpression source, PgExpr value) => source is StringLiteral s
+        ? PgLiteral.String(RegexLiteral(s.Value))
+        : new PgFunctionCall("regexp_replace", [OnDefaultCollation(value), PgLiteral.String(@"([\\.^$|?*+()\[\]{}])"), PgLiteral.String(@"\\\1"), PgLiteral.String("g")]);
+
+    /// <summary>
+    /// REPLACE under the case-insensitive collation before PostgreSQL 18, which allows no
+    /// replace() on it: <c>regexp_replace(s COLLATE "default", escaped find, escaped replacement, 'gi')</c>.
+    /// An empty find leaves the value as it is, as REPLACE does (a regular expression would match
+    /// between every character).
+    /// </summary>
+    private static PgExpr CaseInsensitiveReplace(PgExpr value, ScalarExpression findSource, PgExpr find, PgExpr replacement)
+    {
+        // In the replacement, a backslash starts \1 or \&: a literal one is doubled.
+        var escapedReplacement = new PgFunctionCall("replace", [OnDefaultCollation(replacement), PgLiteral.String("\\"), PgLiteral.String("\\\\")]);
+        PgExpr replaced = new PgFunctionCall("regexp_replace",
+            [OnDefaultCollation(value), RegexEscaped(findSource, find), escapedReplacement, PgLiteral.String("gi")]);
+        if (findSource is StringLiteral { Value.Length: > 0 })
+            return replaced;
+        return new PgCase(null, [new PgWhen(new PgBinary("=", OnDefaultCollation(find), PgLiteral.String("")), OnDefaultCollation(value))], replaced);
+    }
 
     private PgExpr LikeAsWritten(LikePredicate like, ExpressionContext c)
     {

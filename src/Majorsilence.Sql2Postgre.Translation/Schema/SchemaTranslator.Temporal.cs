@@ -78,6 +78,10 @@ public sealed partial class SchemaTranslator
             diagnostics.Add(new Diagnostic(DiagnosticCodes.SystemVersioning, Severity.Info, t.Name,
                 $"{t.Name} is system-versioned: triggers set {period.StartColumn} and {period.EndColumn} and copy old rows into {historyName}. "
                 + "The period columns are ordinary columns in PostgreSQL (a value written to them is overwritten), and FOR SYSTEM_TIME reads both tables."));
+            if (period.Retention is { } retention)
+                diagnostics.Add(new Diagnostic(DiagnosticCodes.HistoryRetention, Severity.Warning, t.Name,
+                    $"{t.Name} keeps its history for {retention.ToLowerInvariant()} (HISTORY_RETENTION_PERIOD): SQL Server deletes older history rows in the background; "
+                    + $"PostgreSQL keeps them all. Delete them on a schedule if they must go (pg_cron: DELETE FROM {historyName} WHERE {_names.Column(t.Name, period.EndColumn)} < (now() AT TIME ZONE 'UTC') - interval '{retention.ToLowerInvariant()}')."));
         }
         else
         {

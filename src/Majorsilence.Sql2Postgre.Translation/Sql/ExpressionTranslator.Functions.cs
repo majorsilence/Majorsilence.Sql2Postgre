@@ -112,9 +112,20 @@ public sealed partial class ExpressionTranslator
                         "DATALENGTH of a Unicode string counts UTF-16 bytes (2 per character) in SQL Server; octet_length counts UTF-8 bytes.");
                 return Call("octet_length", Arg(0));
             case "CHARINDEX":
+            {
                 Arity(2, 3);
                 // The helper, even without a start: strpos finds an empty needle at 1, CHARINDEX never finds it (0).
-                return Compat("charindex", a.Count == 2 ? [TextArg(0), PaddedArg(1)] : [TextArg(0), PaddedArg(1), Arg(2)], c, f);
+                PgExpr needle = TextArg(0), haystack = PaddedArg(1);
+                if (MentionsCaseInsensitiveColumn(a[0], c) || MentionsCaseInsensitiveColumn(a[1], c))
+                {
+                    // Under the case-insensitive collation the search is case-insensitive in SQL Server;
+                    // PostgreSQL before 18 allows no substring search on it, and the helper's would be
+                    // case-sensitive on 18. Both sides lower-cased, on the default collation.
+                    needle = Lowered(needle);
+                    haystack = Lowered(haystack);
+                }
+                return Compat("charindex", a.Count == 2 ? [needle, haystack] : [needle, haystack, Arg(2)], c, f);
+            }
             case "SUBSTRING":
                 Arity(3);
                 return Call("substr", PaddedArg(0), Arg(1), Arg(2));
@@ -123,6 +134,8 @@ public sealed partial class ExpressionTranslator
                 return Call(name.ToLowerInvariant(), PaddedArg(0), Arg(1));
             case "REPLACE":
                 Arity(3);
+                if (options.TargetVersion < 18 && (MentionsCaseInsensitiveColumn(a[0], c) || MentionsCaseInsensitiveColumn(a[1], c)))
+                    return CaseInsensitiveReplace(PaddedArg(0), a[1], TextArg(1), TextArg(2));
                 return Call("replace", PaddedArg(0), TextArg(1), TextArg(2));
             case "REVERSE":
                 Arity(1);

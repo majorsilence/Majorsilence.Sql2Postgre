@@ -28,14 +28,20 @@ public class CatalogReaderTests
     private Table T(string name) => Db.Tables.Single(t => t.Name == new ObjectName("shop", name));
     private static Column C(Table t, string name) => t.Columns.Single(c => c.Name == name);
 
-    /// <summary>HIDDEN and masked columns, which PostgreSQL columns cannot be, are read from the catalog as from a script.</summary>
+    /// <summary>
+    /// HIDDEN, masked and typed xml columns, which PostgreSQL columns cannot be, and a history
+    /// retention period are read from the catalog as from a script.
+    /// </summary>
     [Test]
-    public async Task HiddenAndMaskedColumnsAreRead()
+    public async Task ColumnFeaturesAndRetentionAreRead()
     {
         const string script = """
+            CREATE XML SCHEMA COLLECTION dbo.NoteSchema AS N'<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="note" type="xs:string"/></xs:schema>';
+            GO
             CREATE TABLE dbo.Person (Id int NOT NULL PRIMARY KEY, Email nvarchar(100) MASKED WITH (FUNCTION = 'email()') NULL,
+                Note xml(DOCUMENT dbo.NoteSchema) NULL, Extra xml(dbo.NoteSchema) NULL,
                 ValidFrom datetime2 GENERATED ALWAYS AS ROW START HIDDEN NOT NULL, ValidTo datetime2 GENERATED ALWAYS AS ROW END HIDDEN NOT NULL,
-                PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.PersonHistory));
+                PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.PersonHistory, HISTORY_RETENTION_PERIOD = 6 MONTHS));
             """;
         await using var db = await SqlServerDatabase.CreateAsync(script, "features");
         var fromCatalog = (await SqlServerCatalogReader.ReadAsync(db.ConnectionString)).Database;
@@ -48,7 +54,10 @@ public class CatalogReaderTests
                 Assert.That(person.Columns.Single(c => c.Name == "Email").Features, Is.EqualTo(new ColumnFeatures(MaskingFunction: "email()")));
                 Assert.That(person.Columns.Single(c => c.Name == "ValidFrom").Features, Is.EqualTo(new ColumnFeatures(Hidden: true)));
                 Assert.That(person.Columns.Single(c => c.Name == "ValidTo").Features, Is.EqualTo(new ColumnFeatures(Hidden: true)));
+                Assert.That(person.Columns.Single(c => c.Name == "Note").Features, Is.EqualTo(new ColumnFeatures(XmlSchemaCollection: "DOCUMENT dbo.NoteSchema")));
+                Assert.That(person.Columns.Single(c => c.Name == "Extra").Features, Is.EqualTo(new ColumnFeatures(XmlSchemaCollection: "dbo.NoteSchema")));
                 Assert.That(person.Columns.Single(c => c.Name == "Id").Features, Is.Null);
+                Assert.That(person.Period?.Retention, Is.EqualTo("6 MONTHS"));
             });
         }
     }

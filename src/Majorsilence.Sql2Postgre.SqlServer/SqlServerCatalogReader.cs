@@ -91,7 +91,7 @@ public static class SqlServerCatalogReader
             var name = new ObjectName(r.GetString(1), r.GetString(2));
             long? rows = r.IsDBNull(3) ? null : r.GetInt64(3);
             var period = r.IsDBNull(4) ? null : new SystemTimePeriod(r.GetString(4), r.GetString(5),
-                r.IsDBNull(6) ? null : new ObjectName(r.GetString(6), r.GetString(7)));
+                r.IsDBNull(6) ? null : new ObjectName(r.GetString(6), r.GetString(7)), r.IsDBNull(8) ? null : r.GetString(8));
 
             PrimaryKey? pk = null;
             var uniques = new List<UniqueConstraint>();
@@ -165,7 +165,8 @@ public static class SqlServerCatalogReader
         return new Column(r.GetString(2), r.GetInt32(1), type, r.GetBoolean(9), identity,
             r.IsDBNull(14) ? null : r.GetString(14), r.IsDBNull(15) ? null : r.GetString(15),
             computed, r.GetBoolean(10), r.GetBoolean(11),
-            ColumnFeatures.Of(r.GetBoolean(18), r.IsDBNull(19) ? null : r.GetString(19), r.IsDBNull(20) ? null : r.GetString(20)));
+            ColumnFeatures.Of(r.GetBoolean(18), r.IsDBNull(19) ? null : r.GetString(19), r.IsDBNull(20) ? null : r.GetString(20),
+                r.IsDBNull(21) ? null : r.GetString(21)));
     }
 
     /// <summary>

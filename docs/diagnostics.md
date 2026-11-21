@@ -182,11 +182,22 @@ and the target is before PostgreSQL 18. PostgreSQL 15–17 allow neither `LIKE` 
 searches (`strpos`, `position`, `replace`, `split_part`, `string_to_array`) on such a column.
 PostgreSQL 18 allows both; no version allows regular expressions (`SIMILAR TO`, `~`).
 
-The converter rewrites `LIKE` on such a column, before 18, and `SIMILAR TO` (T-SQL's `[a-c]`
-patterns) on every version, as a case-insensitive match on the default collation:
-`lower(name COLLATE "default") LIKE lower('b%')`. Substring searches of the column
-(`CHARINDEX`, `REPLACE`, …) are not rewritten and fail at run time before 18: target
-PostgreSQL 18, or keep the default collation for those columns.
+The converter rewrites what it translates on such a column (or an expression of it) as a
+case-insensitive match on the default collation, as SQL Server matches under `_CI`:
+
+| T-SQL | Rewritten | When |
+|---|---|---|
+| `LIKE` | `lower(name COLLATE "default") LIKE lower('b%')` | before 18 |
+| `SIMILAR TO` (T-SQL's `[a-c]` patterns) | the same with `SIMILAR TO` | every version |
+| `CHARINDEX` | `charindex(lower(…), lower(…))` on the default collation | every version (the helper's search would be case-sensitive on 18) |
+| `REPLACE` | `regexp_replace(name COLLATE "default", escaped find, replacement, 'gi')` | before 18 |
+| `STRING_SPLIT` | `regexp_split_to_table(name COLLATE "default", escaped separator, 'i')` | before 18 |
+
+The mssql_compat helpers that use regular expressions (`ISNUMERIC`, `TRY_CONVERT` with style
+126) run them on the default collation, so they work on such a column on every version.
+Substring searches written by hand in code the converter passes through (`strpos`, `position`,
+`split_part`) fail before 18: target PostgreSQL 18, or keep the default collation for those
+columns. `lower()` makes a few characters longer (`İ`), which can move a `CHARINDEX` position.
 
 ### S2P1401 ExtensionRequired (Info)
 
@@ -423,14 +434,33 @@ it:
   without `UNMASK` masked values; PostgreSQL shows every reader with `SELECT` on the table the
   values. Restrict the column with column privileges (`REVOKE SELECT (col)`), or a view that
   masks it.
+- **Typed xml** (`xml(dbo.Schema)`, `xml(DOCUMENT dbo.Schema)`): SQL Server validates the values
+  against the XML schema collection; PostgreSQL's `xml` checks only that they are well-formed. A
+  `CHECK` constraint with `xpath_exists` can test what matters. (Typed xml variables and
+  parameters in routines are not reported.)
 - **Always Encrypted** (`ENCRYPTED WITH (…)`): SQL Server stores only ciphertext and the client
   holds the keys; PostgreSQL stores the column in the clear. The data copy reads it as SQL Server
   sends it, which is ciphertext unless the source connection string has
   `Column Encryption Setting=Enabled` and the client can reach the keys.
 
-The catalog reader takes these from `sys.columns` (`is_hidden`, `encryption_type_desc`) and
-`sys.masked_columns`; the script reader from the column definition. In a routine,
+The catalog reader takes these from `sys.columns` (`is_hidden`, `encryption_type_desc`,
+`xml_collection_id`, `is_xml_document`), `sys.masked_columns` and `sys.xml_schema_collections`;
+the script reader from the column definition. In a routine,
 `ALTER TABLE … ADD` or `ALTER COLUMN` with one of them is not translated (S2P5070).
+
+### S2P2028 HistoryRetention (Warning)
+
+A system-versioned table has `HISTORY_RETENTION_PERIOD = 6 MONTHS` (or days, weeks, years): SQL
+Server deletes history rows older than that in the background. The converted history table keeps
+every row. If they must go, delete them on a schedule, for example with pg_cron:
+
+```sql
+DELETE FROM public.pricehistory WHERE validto < (now() AT TIME ZONE 'UTC') - interval '6 months';
+```
+
+The catalog reader takes the period from `sys.tables` (`history_retention_period`, SQL Server
+2017 and later); the script reader from `SYSTEM_VERSIONING = ON (…)` in `CREATE TABLE` and
+`ALTER TABLE … SET`. `INFINITE` is not reported.
 
 ## S2P3xxx — expressions and built-in functions
 
@@ -462,6 +492,9 @@ and the translation does the same (established on SQL Server 2022):
 - for datetime and smalldatetime, `yyyy-a-b` (with a time or not) as year, then month and day in
   the style's order, so `2000-06-01` is 6 January under 103;
 - for date and datetime2, ISO 8601 with a `T`.
+
+`TRY_CONVERT` with a style: from a date or time to text it is `CONVERT`'s translation (it cannot
+fail); from text to datetime2 or date under 126 or 127 see S2P3049; other styles are this error.
 
 ### S2P3004 FormatUnsupported (Error)
 
@@ -793,6 +826,24 @@ the PostgreSQL query (`xmlattributes('urn:x' AS "xmlns:x")` on the root element,
 Target PostgreSQL 19, or rewrite the query without `IGNORE NULLS`. Carrying the last non-NULL
 value forward, for example, is `max(x) OVER (PARTITION BY grp)` over a subquery that numbers the
 groups with `count(x) OVER (ORDER BY …) AS grp`.
+
+### S2P3049 TryConvertIso (Info)
+
+`TRY_CONVERT(datetime2 | date, s, 126 | 127)` becomes `mssql_compat.try_convert_iso8601(s)`,
+cast to the target type. It reads what SQL Server 2022 reads under those styles:
+
+- `yyyy-mm-dd` (or `yyyy/mm/dd`), then optionally an upper-case `T` or a space and `hh:mi:ss`
+  with a fraction of any length, then optionally `Z` or an offset up to `±14:00`, which SQL
+  Server ignores (the time is kept as written);
+- `yyyymmdd`;
+- a blank string, which is `1900-01-01`.
+
+Anything else is NULL: a date or time that does not exist, `24:00:00`, `2013-01-02T07:05`,
+padding, a lower-case `t`. One difference: SQL Server also reads a date with a month name
+(`Jan 2 2013`) under these styles; the helper gives NULL.
+
+The helper is IMMUTABLE (it reads no setting), so a computed column can use it, as
+WideWorldImporters' `Sales.Invoices.ConfirmedDeliveryTime` does.
 
 ## S2P4xxx — queries and DML
 

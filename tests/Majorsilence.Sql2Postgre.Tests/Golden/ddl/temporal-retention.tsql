@@ -1,0 +1,9 @@
+CREATE TABLE dbo.Price (
+    Id int NOT NULL PRIMARY KEY,
+    Amount decimal(10, 2) NOT NULL,
+    ValidFrom datetime2 GENERATED ALWAYS AS ROW START NOT NULL,
+    ValidTo datetime2 GENERATED ALWAYS AS ROW END NOT NULL,
+    PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)
+) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.PriceHistory, HISTORY_RETENTION_PERIOD = 6 MONTHS));
+GO
+CREATE TABLE dbo.PriceHistory (Id int NOT NULL, Amount decimal(10, 2) NOT NULL, ValidFrom datetime2 NOT NULL, ValidTo datetime2 NOT NULL);

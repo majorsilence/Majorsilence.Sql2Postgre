@@ -43,11 +43,13 @@ public sealed record Column(
 /// <param name="Hidden">HIDDEN: a period column that <c>SELECT *</c> leaves out.</param>
 /// <param name="MaskingFunction">Dynamic data masking: <c>default()</c>, <c>email()</c>, <c>partial(…)</c>, <c>random(…)</c>.</param>
 /// <param name="Encryption">Always Encrypted: <c>DETERMINISTIC</c> or <c>RANDOMIZED</c>.</param>
-public sealed record ColumnFeatures(bool Hidden = false, string? MaskingFunction = null, string? Encryption = null)
+/// <param name="XmlSchemaCollection">Typed xml: the XML schema collection the values are validated against (<c>DOCUMENT dbo.Orders</c> when DOCUMENT).</param>
+public sealed record ColumnFeatures(bool Hidden = false, string? MaskingFunction = null, string? Encryption = null, string? XmlSchemaCollection = null)
 {
     /// <summary>The features, or null when the column has none.</summary>
-    public static ColumnFeatures? Of(bool hidden, string? maskingFunction, string? encryption) =>
-        hidden || maskingFunction is not null || encryption is not null ? new(hidden, maskingFunction, encryption) : null;
+    public static ColumnFeatures? Of(bool hidden, string? maskingFunction, string? encryption, string? xmlSchemaCollection = null) =>
+        hidden || maskingFunction is not null || encryption is not null || xmlSchemaCollection is not null
+            ? new(hidden, maskingFunction, encryption, xmlSchemaCollection) : null;
 }
 
 public sealed record IndexColumn(string Name, bool Descending = false);
@@ -99,7 +101,8 @@ public sealed record FullTextColumn(string Name, int? Language = null, string? T
 /// A table's <c>PERIOD FOR SYSTEM_TIME</c>: the row start and end columns SQL Server sets, and
 /// the history table old rows go to while <c>SYSTEM_VERSIONING = ON</c> (null while it is off).
 /// </summary>
-public sealed record SystemTimePeriod(string StartColumn, string EndColumn, ObjectName? HistoryTable);
+/// <param name="Retention">HISTORY_RETENTION_PERIOD (<c>6 MONTHS</c>), or null when the history is kept for good.</param>
+public sealed record SystemTimePeriod(string StartColumn, string EndColumn, ObjectName? HistoryTable, string? Retention = null);
 
 /// <param name="Period">The table's system-time period, when it has one.</param>
 public sealed record Table(ObjectName Name, IReadOnlyList<Column> Columns,

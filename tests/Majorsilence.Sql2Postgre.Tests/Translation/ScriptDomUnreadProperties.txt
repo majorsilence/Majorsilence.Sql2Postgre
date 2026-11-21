@@ -97,8 +97,3 @@ OffsetClause.WithApproximate  WITH APPROXIMATE: SQL Server 2025, which the TSql1
 TopRowFilter.WithApproximate  WITH APPROXIMATE: SQL Server 2025, which the TSql160 parser rejects
 OrderByClause.AllSortOrder  ORDER BY ALL: SQL Server 2025, which the TSql160 parser rejects
 SelectStatement.ComputeClauses  COMPUTE: removed in SQL Server 2012, and the TSql160 parser rejects it
-
-# Not covered yet (BACKLOG): the converted column or table keeps fewer guarantees.
-SystemVersioningTableOption.RetentionPeriod  HISTORY_RETENTION_PERIOD: PostgreSQL keeps the history rows
-XmlDataTypeReference.XmlDataTypeOption  xml(CONTENT | DOCUMENT schema): typed xml is not validated
-XmlDataTypeReference.XmlSchemaCollection  xml(schema collection): typed xml is not validated

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The remaining small gaps** (WP 4.22):
+  - `TRY_CONVERT` with a style: a date to text translates as `CONVERT` does; text to datetime2
+    or date under styles 126 and 127 uses the new IMMUTABLE helper
+    `mssql_compat.try_convert_iso8601`, which reads the ISO 8601 layouts SQL Server reads
+    (S2P3049). WideWorldImporters' `Sales.Invoices` and its index now convert.
+  - With `caseInsensitive: icuCollation`, `CHARINDEX`, `REPLACE` and `STRING_SPLIT` on a
+    case-insensitive column match case-insensitively on every target (they failed before 18,
+    and `CHARINDEX` was case-sensitive on 18); `ISNUMERIC` on such a column no longer fails.
+  - A temporal table's `HISTORY_RETENTION_PERIOD` (S2P2028) and typed xml columns (S2P2027)
+    are reported.
 - **Syntax the translator read past** (WP 4.21). These were dropped without a diagnostic, and
   are now translated or reported:
   - Named windows: `WINDOW w AS (…)` with `OVER w` / `OVER (w ORDER BY …)` lost the window

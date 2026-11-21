@@ -290,6 +290,43 @@ public class FunctionBothEnginesTests
         BothEngines.AssertSameResultAsync($"SELECT ISNUMERIC({literal}) AS v", $"SELECT {Translate($"ISNUMERIC({literal})")} AS v",
             null, GridSetup(postgres: true));
 
+    [TestCase("2013-01-02T07:05:00")]
+    [TestCase("2013-01-02T07:05:00.1234567")]
+    [TestCase("2013-01-02T07:05:00.12")]
+    [TestCase("2013-01-02 07:05:00")]
+    [TestCase("2013-01-02")]
+    [TestCase("20130102")]
+    [TestCase("2013-01-02T07:05:00Z")]
+    [TestCase("2013-01-02T07:05:00+02:00")]
+    [TestCase("2013-01-02T07:05:00-05:30")]
+    [TestCase("2013-01-02T07:05:00+15:00")]
+    [TestCase("01/02/2013")]
+    [TestCase("garbage")]
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("2013-02-30T00:00:00")]
+    [TestCase("2013-01-02T07:05")]
+    [TestCase("2013-1-2T7:5:0")]
+    [TestCase(" 2013-01-02T07:05:00 ")]
+    [TestCase("2013-01-02Z")]
+    [TestCase("2013-01-02T24:00:00")]
+    [TestCase("2013-01-02T07:05:60")]
+    [TestCase("2013-01-02T07:05:00.")]
+    [TestCase("2013-01-02t07:05:00")]
+    [TestCase("2013-01-02T07:05:00.5555555")]
+    [TestCase("2013/01/02")]
+    [TestCase("0001-01-01T00:00:00")]
+    [TestCase(null)]
+    public Task TryConvertIso8601(string? value)
+    {
+        string literal = value is null ? "NULL" : $"'{value}'";
+        string expressions(Func<string, string> each) => string.Join(", ", new[]
+        {
+            ("datetime2(3)", 126, "a"), ("datetime2(6)", 127, "b"), ("date", 126, "c"),
+        }.Select(t => $"{each($"TRY_CONVERT({t.Item1}, {literal}, {t.Item2})")} AS {t.Item3}"));
+        return BothEngines.AssertSameResultAsync($"SELECT {expressions(e => e)}", $"SELECT {expressions(Translate)}", null, GridSetup(postgres: true));
+    }
+
     [TestCase("ISDATE('2024-02-29')")]
     [TestCase("ISDATE('2023-02-29')")]
     [TestCase("ISDATE('not a date')")]

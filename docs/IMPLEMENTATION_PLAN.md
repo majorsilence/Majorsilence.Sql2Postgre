@@ -1633,6 +1633,27 @@ probe of each that could change results confirmed these:
   `TRIM`, `TABLESAMPLE (100 PERCENT)` and `ADD … DEFAULT` with and without `WITH VALUES`; the
   catalog and script readers on HIDDEN and masked columns; corpus scans on 15–19.
 
+#### WP 4.22 — The remaining small gaps (S)
+
+Three small things WPs 4.17–4.21 left open, each with a known cause:
+
+- **`TRY_CONVERT` with a style.** Only the style-less form was translated, so
+  WideWorldImporters' `Sales.Invoices` (its computed `ConfirmedDeliveryTime` is
+  `TRY_CONVERT(datetime2(7), JSON_VALUE(…), 126)`) and an index on it stayed Manual. Now: a
+  date to text is `CONVERT`'s translation (it cannot fail); text to datetime2 or date under 126
+  or 127 is a new IMMUTABLE helper, `mssql_compat.try_convert_iso8601`, which reads the ISO
+  layouts SQL Server 2022 reads under those styles (established with a grid of inputs), so a
+  computed column can use it (S2P3049); other styles stay reported (S2P3003).
+- **Searches on the case-insensitive ICU collation** (`IcuCollation`). Before 18, `REPLACE` and
+  `STRING_SPLIT` on such a column failed (PostgreSQL refuses substring searches on a
+  nondeterministic collation); `CHARINDEX` failed before 18 and was case-sensitive on 18; and
+  the helpers with regular expressions (`ISNUMERIC`) failed on every version. They are now
+  case-insensitive matches on the default collation (S2P1302).
+- **The two drops WP 4.21 listed as not covered**: a temporal table's `HISTORY_RETENTION_PERIOD`
+  (S2P2028) and typed xml columns (S2P2027) are read from the catalog and scripts and reported.
+- Tests: golden files; a both-engines grid of `TRY_CONVERT` 126/127 inputs; the case-insensitive
+  searches on 15, 17 and 18; the readers on retention and typed xml; corpus scans on 15–19.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package

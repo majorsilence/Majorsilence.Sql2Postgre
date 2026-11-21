@@ -408,7 +408,7 @@ public sealed partial class SchemaTranslator
             collation = CaseInsensitiveCollation.Qualified;
             if (_options.TargetVersion < 18)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.LikeOnNondeterministic, Severity.Warning, t.Name,
-                    $"{t.Name}.{c.Name} gets a case-insensitive (nondeterministic) collation. PostgreSQL {_options.TargetVersion} allows no LIKE or substring search on it (18 does): LIKE on the column is rewritten as lower(… COLLATE \"default\") LIKE lower(…), but CHARINDEX, REPLACE and other substring searches of it fail until you target 18."));
+                    $"{t.Name}.{c.Name} gets a case-insensitive (nondeterministic) collation. PostgreSQL {_options.TargetVersion} allows no LIKE or substring search on it (18 does): LIKE, CHARINDEX, REPLACE and STRING_SPLIT on it are rewritten to match case-insensitively on the default collation, but other substring searches written by hand (strpos, position, split_part) fail until you target 18."));
         }
 
         if (c.IsRowGuidCol)
@@ -434,6 +434,9 @@ public sealed partial class SchemaTranslator
         if (features.Encryption is { } encryption)
             yield return new Diagnostic(DiagnosticCodes.ColumnFeatureDropped, Severity.Warning, t.Name,
                 $"{t.Name}.{c.Name} is Always Encrypted ({encryption}): SQL Server stores only ciphertext and the client holds the keys; PostgreSQL stores the column in the clear. The data copy reads it as SQL Server sends it, which is ciphertext unless the source connection string has Column Encryption Setting=Enabled and the client can reach the keys.");
+        if (features.XmlSchemaCollection is { } collection)
+            yield return new Diagnostic(DiagnosticCodes.ColumnFeatureDropped, Severity.Warning, t.Name,
+                $"{t.Name}.{c.Name} is typed xml ({collection}): SQL Server validates its values against the XML schema collection; PostgreSQL's xml checks only that they are well-formed. A CHECK constraint can test what matters (xpath_exists).");
     }
 
     /// <summary>Whether an index, the primary key, a unique constraint or a foreign key (either side) uses the column.</summary>

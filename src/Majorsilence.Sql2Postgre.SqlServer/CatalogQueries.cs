@@ -29,7 +29,10 @@ internal static class CatalogQueries
         SELECT t.object_id, SCHEMA_NAME(t.schema_id) AS schema_name, t.name,
                (SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = t.object_id AND p.index_id IN (0, 1)) AS row_count,
                ps.name AS period_start, pe.name AS period_end,
-               OBJECT_SCHEMA_NAME(t.history_table_id) AS history_schema, OBJECT_NAME(t.history_table_id) AS history_name
+               OBJECT_SCHEMA_NAME(t.history_table_id) AS history_schema, OBJECT_NAME(t.history_table_id) AS history_name,
+               CASE WHEN t.history_retention_period > 0
+                    THEN CAST(t.history_retention_period AS nvarchar(10)) + N' ' + t.history_retention_period_unit_desc
+                         + CASE WHEN t.history_retention_period > 1 THEN N'S' ELSE N'' END END AS history_retention
         FROM sys.tables t
         LEFT JOIN sys.periods sp ON sp.object_id = t.object_id
         LEFT JOIN sys.columns ps ON ps.object_id = sp.object_id AND ps.column_id = sp.start_column_id
@@ -50,13 +53,15 @@ internal static class CatalogQueries
                CAST(ic.seed_value AS bigint) AS identity_seed, CAST(ic.increment_value AS bigint) AS identity_increment,
                dc.definition AS default_definition, CASE WHEN dc.is_system_named = 0 THEN dc.name END AS default_name,
                cc.definition AS computed_definition, cc.is_persisted,
-               c.is_hidden, mc.masking_function, c.encryption_type_desc
+               c.is_hidden, mc.masking_function, c.encryption_type_desc,
+               CASE WHEN c.is_xml_document = 1 THEN N'DOCUMENT ' ELSE N'' END + SCHEMA_NAME(xsc.schema_id) + N'.' + xsc.name AS xml_schema_collection
         FROM sys.columns c
         JOIN sys.types ut ON ut.user_type_id = c.user_type_id
         LEFT JOIN sys.identity_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
         LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
         LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
         LEFT JOIN sys.masked_columns mc ON mc.object_id = c.object_id AND mc.column_id = c.column_id AND mc.is_masked = 1
+        LEFT JOIN sys.xml_schema_collections xsc ON xsc.xml_collection_id = c.xml_collection_id AND c.xml_collection_id > 0
         JOIN sys.objects o ON o.object_id = c.object_id
         WHERE (o.type = 'U' AND o.is_ms_shipped = 0) OR o.type = 'TT'
         ORDER BY c.object_id, c.column_id;

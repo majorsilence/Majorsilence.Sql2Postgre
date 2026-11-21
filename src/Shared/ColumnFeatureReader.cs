@@ -14,5 +14,12 @@ internal static class ColumnFeatureReader
         c.IsHidden,
         c.IsMasked ? c.MaskingFunction?.Value ?? "default()" : null,
         c.Encryption is null ? null
-            : c.Encryption.Parameters.OfType<ColumnEncryptionTypeParameter>().FirstOrDefault()?.EncryptionType.ToString().ToUpperInvariant() ?? "ENCRYPTED");
+            : c.Encryption.Parameters.OfType<ColumnEncryptionTypeParameter>().FirstOrDefault()?.EncryptionType.ToString().ToUpperInvariant() ?? "ENCRYPTED",
+        XmlSchemaCollection(c.DataType));
+
+    /// <summary>Typed xml's schema collection, <c>DOCUMENT</c> first when the values must be documents.</summary>
+    public static string? XmlSchemaCollection(DataTypeReference? type) => type is XmlDataTypeReference { XmlSchemaCollection: { } collection } x
+        ? (x.XmlDataTypeOption == XmlDataTypeOption.Document ? "DOCUMENT " : "")
+          + string.Join('.', collection.Identifiers.Select(i => i.Value))
+        : null;
 }

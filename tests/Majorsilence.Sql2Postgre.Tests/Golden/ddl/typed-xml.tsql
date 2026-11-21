@@ -1,0 +1,3 @@
+CREATE XML SCHEMA COLLECTION dbo.OrderSchema AS N'<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="order" type="xs:string"/></xs:schema>';
+GO
+CREATE TABLE dbo.OrderDoc (Id int NOT NULL PRIMARY KEY, Body xml(DOCUMENT dbo.OrderSchema) NULL, Notes xml(dbo.OrderSchema) NULL, Free xml NULL);

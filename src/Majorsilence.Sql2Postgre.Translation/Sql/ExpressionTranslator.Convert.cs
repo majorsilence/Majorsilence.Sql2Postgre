@@ -50,25 +50,29 @@ public sealed partial class ExpressionTranslator
         };
     }
 
-    private PgExpr Convert(ConvertCall convert, ExpressionContext c)
+    private PgExpr Convert(ConvertCall convert, ExpressionContext c) =>
+        Convert(convert.Parameter, convert.DataType, convert.Style, convert, c);
+
+    private PgExpr Convert(ScalarExpression parameter, DataTypeReference dataType, ScalarExpression? styleExpression, TSqlFragment source, ExpressionContext c)
     {
-        if (convert.Style is null)
-            return Cast(convert.Parameter, convert.DataType, c);
-        if (convert.Style is not IntegerLiteral { Value: var styleText })
-            throw Untranslatable(convert, "CONVERT with a style that is not a literal", DiagnosticCodes.ConvertStyleUnsupported);
+        styleExpression = Unparenthesized(styleExpression);
+        if (styleExpression is null)
+            return Cast(parameter, dataType, c);
+        if (styleExpression is not IntegerLiteral { Value: var styleText })
+            throw Untranslatable(source, "CONVERT with a style that is not a literal", DiagnosticCodes.ConvertStyleUnsupported);
         int style = int.Parse(styleText, CultureInfo.InvariantCulture);
-        string target = CastTarget(convert.DataType, c, out var targetType);
-        var sourceType = TypeOf(convert.Parameter, c);
+        string target = CastTarget(dataType, c, out var targetType);
+        var sourceType = TypeOf(parameter, c);
 
         // Style 0 (and 100 for dates is not 0) is the default conversion for every type.
         if (style == 0 && !TypeRules.IsDateTime(sourceType))
-            return Cast(convert.Parameter, convert.DataType, c);
+            return Cast(parameter, dataType, c);
 
         if (TypeRules.IsString(targetType) && TypeRules.IsDateTime(sourceType))
         {
             string pattern = StylePattern(style, sourceType)
-                ?? throw Untranslatable(convert, $"CONVERT style {style}", DiagnosticCodes.ConvertStyleUnsupported);
-            PgExpr text = new PgFunctionCall("to_char", [Scalar(convert.Parameter, c), PgLiteral.String(pattern)]);
+                ?? throw Untranslatable(source, $"CONVERT style {style}", DiagnosticCodes.ConvertStyleUnsupported);
+            PgExpr text = new PgFunctionCall("to_char", [Scalar(parameter, c), PgLiteral.String(pattern)]);
             // Style 126 leaves out a fraction of zero; datetime2(7) has a seventh digit PostgreSQL does not keep.
             if (style == 126)
                 text = new PgFunctionCall("regexp_replace", [text, PgLiteral.String("\\.0+$"), PgLiteral.String("")]);
@@ -77,11 +81,11 @@ public sealed partial class ExpressionTranslator
             return new PgCast(text, target);
         }
 
-        if (TypeRules.IsDateTime(targetType) && (TypeRules.IsString(sourceType) || convert.Parameter is StringLiteral))
+        if (TypeRules.IsDateTime(targetType) && (TypeRules.IsString(sourceType) || parameter is StringLiteral))
         {
             string pattern = StylePattern(style, targetType)
-                ?? throw Untranslatable(convert, $"CONVERT style {style}", DiagnosticCodes.ConvertStyleUnsupported);
-            var value = Text(convert.Parameter, c);
+                ?? throw Untranslatable(source, $"CONVERT style {style}", DiagnosticCodes.ConvertStyleUnsupported);
+            var value = Text(parameter, c);
             PgExpr styled = targetType.Name == "date"
                 ? new PgFunctionCall("to_date", [value, PgLiteral.String(pattern)])
                 : new PgCast(new PgFunctionCall("to_timestamp", [value, PgLiteral.String(pattern)]), target);
@@ -90,10 +94,44 @@ public sealed partial class ExpressionTranslator
 
         // money and float to text: 1 adds thousands separators, 2 four decimal places; 0 is the default.
         if (TypeRules.IsString(targetType) && sourceType?.Name is "money" or "smallmoney" && style is 1 or 2)
-            return new PgCast(new PgFunctionCall("to_char", [Scalar(convert.Parameter, c),
+            return new PgCast(new PgFunctionCall("to_char", [Scalar(parameter, c),
                 PgLiteral.String(style == 1 ? "FM999,999,999,999,990.00" : "FM999999999999990.0000")]), target);
 
-        throw Untranslatable(convert, $"CONVERT from {sourceType?.ToString() ?? "an unknown type"} to {targetType} with style {style}", DiagnosticCodes.ConvertStyleUnsupported);
+        throw Untranslatable(source, $"CONVERT from {sourceType?.ToString() ?? "an unknown type"} to {targetType} with style {style}", DiagnosticCodes.ConvertStyleUnsupported);
+    }
+
+    /// <summary>A style as SQL Server's own definitions write it, in parentheses: <c>(126)</c>.</summary>
+    private static ScalarExpression? Unparenthesized(ScalarExpression? e)
+    {
+        while (e is ParenthesisExpression p)
+            e = p.Expression;
+        return e;
+    }
+
+    /// <summary>
+    /// TRY_CONVERT with a style. A date or time to text cannot fail, so it is CONVERT's; text to
+    /// datetime2 or date under ISO 8601's styles (126, 127) is mssql_compat.try_convert_iso8601,
+    /// which reads the ISO layouts SQL Server reads under them, and is IMMUTABLE, as a computed
+    /// column needs. Other styles are reported.
+    /// </summary>
+    private PgExpr TryConvert(TryConvertCall tc, ExpressionContext c)
+    {
+        if (Unparenthesized(tc.Style) is not IntegerLiteral { Value: var styleText })
+            throw Untranslatable(tc, "TRY_CONVERT with a style that is not a literal", DiagnosticCodes.ConvertStyleUnsupported);
+        int style = int.Parse(styleText, CultureInfo.InvariantCulture);
+        string target = CastTarget(tc.DataType, c, out var targetType);
+        var sourceType = TypeOf(tc.Parameter, c);
+        if (style == 0 && !TypeRules.IsDateTime(sourceType))
+            return TryCast(tc.Parameter, tc.DataType, c);
+        if (TypeRules.IsString(targetType) && TypeRules.IsDateTime(sourceType))
+            return Convert(tc.Parameter, tc.DataType, tc.Style, tc, c);
+        if (style is 126 or 127 && targetType.Name is "datetime2" or "date" && (TypeRules.IsString(sourceType) || tc.Parameter is StringLiteral or NullLiteral))
+        {
+            c.Report(DiagnosticCodes.TryConvertIso, Severity.Info,
+                $"TRY_CONVERT(…, {style}) reads ISO 8601 as SQL Server does under that style (yyyy-mm-dd, T or a space and hh:mi:ss with a fraction, an offset it ignores; yyyymmdd); a layout with a month name, which SQL Server also reads, is NULL.");
+            return new PgCast(Compat("try_convert_iso8601", [new PgCast(Text(tc.Parameter, c), "text")], c, tc), target);
+        }
+        throw Untranslatable(tc, $"TRY_CONVERT from {sourceType?.ToString() ?? "an unknown type"} to {targetType} with style {style}", DiagnosticCodes.ConvertStyleUnsupported);
     }
 
     /// <summary>

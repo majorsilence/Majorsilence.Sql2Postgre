@@ -426,6 +426,12 @@ public sealed partial class QueryTranslator
         var args = g.Parameters.Select(p => _x.Scalar(p, c)).ToList();
         return g.Name.Value.ToUpperInvariant() switch
         {
+            // Under the case-insensitive collation before PostgreSQL 18, which allows no
+            // string_to_table on it, the separator is matched case-insensitively, as SQL Server does.
+            "STRING_SPLIT" when g.Parameters.Count == 2 && _x.Options.TargetVersion < 18
+                && (_x.MentionsCaseInsensitiveColumn(g.Parameters[0], c) || _x.MentionsCaseInsensitiveColumn(g.Parameters[1], c)) =>
+                new PgFunctionRef("regexp_split_to_table", [new PgTemplate("{0} COLLATE \"default\"", [_x.Text(g.Parameters[0], c)]),
+                    ExpressionTranslator.RegexEscaped(g.Parameters[1], args[1]), PgLiteral.String("i")], alias, ["value"]),
             "STRING_SPLIT" when g.Parameters.Count == 2 => new PgFunctionRef("string_to_table", [_x.Text(g.Parameters[0], c), args[1]], alias, ["value"]),
             "GENERATE_SERIES" => new PgFunctionRef("generate_series", args, alias, ["value"]),
             _ => throw ExpressionTranslator.Untranslatable(g, $"the table function {g.Name.Value}"),

@@ -155,6 +155,9 @@ public static class DiagnosticCodes
     /// <summary>A HIDDEN, masked or Always Encrypted column: PostgreSQL has no such column property.</summary>
     public const string ColumnFeatureDropped = "S2P2027";
 
+    /// <summary>A temporal table's HISTORY_RETENTION_PERIOD: PostgreSQL keeps the history rows.</summary>
+    public const string HistoryRetention = "S2P2028";
+
     /// <summary>An expression uses T-SQL the translator does not handle yet; it is kept as a comment.</summary>
     public const string UnsupportedExpression = "S2P3001";
 
@@ -256,6 +259,9 @@ public static class DiagnosticCodes
 
     /// <summary>WITH XMLNAMESPACES: the namespaces it declares for FOR XML and xml methods are not translated.</summary>
     public const string XmlNamespaces = "S2P3048";
+
+    /// <summary>TRY_CONVERT(datetime2 | date, s, 126 | 127): the ISO 8601 layouts SQL Server reads; one with a month name is NULL.</summary>
+    public const string TryConvertIso = "S2P3049";
 
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
