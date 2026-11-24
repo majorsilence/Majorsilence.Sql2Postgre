@@ -125,11 +125,14 @@ public sealed partial class ProceduralTranslator
                 return new PgKeyword("false");
             default:
                 string column = NameMapper.Quote(trigger.ColumnName(update.Identifier.Value));
+                // xml and json have no equality operator in PostgreSQL: their text is compared.
+                string asText = trigger.Columns.FirstOrDefault(col => col.Name.Equals(update.Identifier.Value, StringComparison.OrdinalIgnoreCase))?.Type?.Name
+                    is "xml" or "json" ? "::text" : "";
                 if (trigger.InsteadOf)
                 {
                     c.Report(DiagnosticCodes.UpdateColumnAssumed, Severity.Warning,
                         $"{ExpressionTranslator.Text(update).Trim()} is true when the row's value changed; SQL Server's is true whenever the statement set the column, even to the same value.");
-                    return new PgKeyword($"NEW.{column} IS DISTINCT FROM OLD.{column}");
+                    return new PgKeyword($"NEW.{column}{asText} IS DISTINCT FROM OLD.{column}{asText}");
                 }
                 if (trigger.Key.Count == 0)
                 {
@@ -142,7 +145,7 @@ public sealed partial class ProceduralTranslator
                 var keys = trigger.Key.Select(NameMapper.Quote).ToList();
                 string join = string.Join(" AND ", keys.Select(k => $"sql2pg_d.{k} = sql2pg_i.{k}"));
                 return new PgKeyword($"EXISTS (SELECT 1 FROM inserted AS sql2pg_i LEFT JOIN deleted AS sql2pg_d ON {join} "
-                                     + $"WHERE sql2pg_d.{keys[0]} IS NULL OR sql2pg_i.{column} IS DISTINCT FROM sql2pg_d.{column})");
+                                     + $"WHERE sql2pg_d.{keys[0]} IS NULL OR sql2pg_i.{column}{asText} IS DISTINCT FROM sql2pg_d.{column}{asText})");
         }
     }
 

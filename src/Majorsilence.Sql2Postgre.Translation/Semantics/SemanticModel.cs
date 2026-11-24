@@ -139,6 +139,27 @@ public sealed partial class SemanticModel
 
     public Table? Table(ObjectName name) => _tables.GetValueOrDefault(name);
 
+    private readonly Dictionary<ObjectName, XmlSchemaTypes?> _xmlSchemaTypes = new(ObjectNameComparer.Instance);
+
+    /// <summary>
+    /// The element types of typed xml's schema collection (<c>Person.Survey</c> or <c>DOCUMENT
+    /// Person.Survey</c>, a one-part name in <paramref name="defaultSchema"/>); null when the
+    /// collection is not known or cannot be read.
+    /// </summary>
+    public XmlSchemaTypes? XmlSchemaTypesOf(string collection, string defaultSchema)
+    {
+        string name = collection.StartsWith("DOCUMENT ", StringComparison.Ordinal) ? collection["DOCUMENT ".Length..] : collection;
+        int dot = name.LastIndexOf('.');
+        var key = dot < 0 ? new ObjectName(defaultSchema, name) : new ObjectName(name[..dot], name[(dot + 1)..]);
+        if (!_xmlSchemaTypes.TryGetValue(key, out var types))
+        {
+            var source = Source.XmlSchemaCollections?.FirstOrDefault(x => ObjectNameComparer.Instance.Equals(x.Name, key));
+            types = source is null ? null : XmlSchemaTypes.Read(source.Schemas);
+            _xmlSchemaTypes[key] = types;
+        }
+        return types;
+    }
+
     public RelationInfo? Relation(ObjectName name)
     {
         if (_relations.TryGetValue(name, out var r))

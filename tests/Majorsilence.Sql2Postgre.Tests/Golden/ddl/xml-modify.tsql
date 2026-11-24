@@ -1,0 +1,77 @@
+CREATE XML SCHEMA COLLECTION dbo.SurveySchema AS N'<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:s" elementFormDefault="qualified"><xsd:element name="S"><xsd:complexType><xsd:sequence><xsd:element name="T" type="xsd:decimal" minOccurs="0"/><xsd:element name="D" type="xsd:double" minOccurs="0"/><xsd:element name="N" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType></xsd:element></xsd:schema>';
+GO
+CREATE TABLE dbo.Person (PersonId int NOT NULL PRIMARY KEY, Survey xml(dbo.SurveySchema) NULL, Notes xml NULL);
+GO
+-- LineTotal is not persisted, but the trigger reads it from inserted and deleted: STORED, as
+-- PostgreSQL 18 gives a VIRTUAL column no value there. Total is not named by a trigger: VIRTUAL.
+CREATE TABLE dbo.OrderLine (OrderLineId int NOT NULL PRIMARY KEY, PersonId int NOT NULL, Qty int NOT NULL, Price numeric(19,4) NOT NULL,
+    LineTotal AS (ISNULL(Price * Qty, 0.0)), Total AS (Price * Qty));
+GO
+-- AdventureWorks' Person.iuPerson: an element inserted as the first child. UPDATE() of an xml
+-- column compares the text (xml has no = operator).
+CREATE TRIGGER dbo.iPerson ON dbo.Person AFTER INSERT, UPDATE AS
+BEGIN
+    IF UPDATE(Survey)
+    UPDATE dbo.Person
+    SET [Survey].modify(N'declare default element namespace "urn:s";
+        insert <T>0.00</T>
+        as first
+        into (/S)[1]')
+    FROM inserted
+    WHERE dbo.Person.PersonId = inserted.PersonId AND inserted.Survey IS NOT NULL
+        AND inserted.Survey.exist(N'declare default element namespace "urn:s"; /S/T') <> 1;
+END;
+GO
+-- AdventureWorks' Sales.iduSalesOrderDetail: typed decimal arithmetic on sql:column.
+CREATE TRIGGER dbo.idOrderLine ON dbo.OrderLine AFTER INSERT, DELETE AS
+BEGIN
+    UPDATE dbo.Person
+    SET Survey.modify('declare default element namespace "urn:s";
+        replace value of (/S/T)[1]
+        with data(/S/T)[1] + sql:column ("inserted.Price") * sql:column("inserted.Qty")')
+    FROM inserted
+    WHERE inserted.PersonId = dbo.Person.PersonId;
+    UPDATE p
+    SET Survey.modify('declare default element namespace "urn:s"; replace value of (/S/T)[1] with data(/S/T)[1] - sql:column("d.Price")')
+    FROM dbo.Person AS p JOIN deleted AS d ON d.PersonId = p.PersonId;
+    UPDATE dbo.Person
+    SET Survey.modify('declare default element namespace "urn:s"; replace value of (/S/D)[1] with data(/S/D)[1] * 2')
+    WHERE PersonId IN (SELECT PersonId FROM inserted);
+END;
+GO
+-- A computed column read in a script has no known type (the catalog reader knows it): reported.
+CREATE TRIGGER dbo.dOrderLine ON dbo.OrderLine AFTER DELETE AS
+BEGIN
+    UPDATE p
+    SET Survey.modify('declare default element namespace "urn:s"; replace value of (/S/T)[1] with data(/S/T)[1] - sql:column("d.LineTotal")')
+    FROM dbo.Person AS p JOIN deleted AS d ON d.PersonId = p.PersonId;
+END;
+GO
+-- Untyped xml in a variable: insert, attributes, text nodes, xs:double arithmetic.
+CREATE PROCEDURE dbo.Annotate @id int, @note nvarchar(100), @n int AS
+BEGIN
+    DECLARE @x xml = N'<notes count="0"/>';
+    SET @x.modify('insert <note kind=''user''>  first &amp; <b/>  </note> as last into (/notes)[1]');
+    SET @x.modify('insert <seen/> before (/notes/note)[1]');
+    SET @x.modify('insert <end/> after (/notes/note)[1]');
+    SET @x.modify('insert <top/> into (/notes)[1]');
+    SET @x.modify('replace value of (/notes/@count)[1] with sql:variable("@n")');
+    SET @x.modify('replace value of (/notes/note/text())[1] with sql:variable("@note")');
+    SET @x.modify('replace value of (/notes/note/text())[1] with data(/notes/@count)[1] * 1.5');
+    SET @x.modify('replace value of (/notes/note/text())[1] with -(sql:variable("@n") + 2) * 3');
+    SET @x.modify('replace value of (/notes/note/text())[1] with "it''s &lt;here&gt;"');
+    UPDATE dbo.Person SET Notes = @x WHERE PersonId = @id;
+    UPDATE dbo.Person SET Notes.modify('declare namespace n="urn:n"; insert <seen/> as first into (/n:notes)[1]') WHERE PersonId = @id;
+END;
+GO
+-- Still reported: delete, and decimal division.
+CREATE PROCEDURE dbo.Prune @id int AS
+BEGIN
+    UPDATE dbo.Person SET Notes.modify('delete /notes/note') WHERE PersonId = @id;
+END;
+GO
+CREATE PROCEDURE dbo.Halve @id int AS
+BEGIN
+    UPDATE dbo.Person SET Survey.modify('declare default element namespace "urn:s"; replace value of (/S/T)[1] with data(/S/T)[1] div 2') WHERE PersonId = @id;
+END;
+GO

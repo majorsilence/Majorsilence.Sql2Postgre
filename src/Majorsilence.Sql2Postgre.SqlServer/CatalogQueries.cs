@@ -67,6 +67,15 @@ internal static class CatalogQueries
         ORDER BY c.object_id, c.column_id;
         """;
 
+    // The XML schema collections of the database (1 is the built-in sys collection).
+    public const string XmlSchemaCollections = """
+        SELECT SCHEMA_NAME(c.schema_id) AS schema_name, c.name,
+               CAST(XML_SCHEMA_NAMESPACE(SCHEMA_NAME(c.schema_id), c.name) AS nvarchar(max)) AS schemas
+        FROM sys.xml_schema_collections c
+        WHERE c.xml_collection_id > 1
+        ORDER BY schema_name, c.name;
+        """;
+
     public const string KeyConstraints = """
         SELECT kc.parent_object_id AS object_id, CASE WHEN kc.is_system_named = 0 THEN kc.name END AS name,
                kc.type, i.type AS index_type, i.index_id

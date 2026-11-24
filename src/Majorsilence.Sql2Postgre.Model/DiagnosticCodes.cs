@@ -263,6 +263,9 @@ public static class DiagnosticCodes
     /// <summary>TRY_CONVERT(datetime2 | date, s, 126 | 127): the ISO 8601 layouts SQL Server reads; one with a month name is NULL.</summary>
     public const string TryConvertIso = "S2P3049";
 
+    /// <summary>Info: xml <c>modify()</c> rebuilds the document's text with an mssql_compat helper (WP 4.24).</summary>
+    public const string XmlModifyRebuilt = "S2P3050";
+
     /// <summary>TOP … PERCENT counts the rows first: the query runs twice.</summary>
     public const string TopPercent = "S2P4001";
 

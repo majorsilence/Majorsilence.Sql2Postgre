@@ -33,6 +33,29 @@ public static partial class XQueryPath
         "xs:string", "xs:decimal", "xs:integer", "xs:date", "xs:dateTime", "xs:boolean", "xs:double", "xs:float",
     };
 
+    /// <summary>
+    /// The prolog (its text, as <see cref="Convert"/> reads it before a path), the default element
+    /// namespace and prefixes it declares, and the expression after it.
+    /// </summary>
+    public static (string Prolog, string? DefaultNamespace, IReadOnlyList<(string Prefix, string Uri)> Namespaces, string Body) SplitProlog(string xquery)
+    {
+        var namespaces = new List<(string Prefix, string Uri)>();
+        string? defaultNamespace = null;
+        string body = xquery;
+        while (Prolog().Match(body) is { Success: true } m)
+        {
+            if (m.Groups["default"].Success)
+                defaultNamespace = m.Groups["uri"].Value;
+            else
+            {
+                namespaces.RemoveAll(n => n.Prefix == m.Groups["prefix"].Value);
+                namespaces.Add((m.Groups["prefix"].Value, m.Groups["uri"].Value));
+            }
+            body = body[m.Length..];
+        }
+        return (xquery[..^body.Length], defaultNamespace, namespaces, body.Trim());
+    }
+
     public static XPathExpression Convert(string xquery, IReadOnlyList<(string Prefix, string Uri)> outerNamespaces)
     {
         var namespaces = new List<(string Prefix, string Uri)>(outerNamespaces);

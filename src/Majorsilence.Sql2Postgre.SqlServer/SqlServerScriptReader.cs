@@ -115,6 +115,7 @@ public static partial class SqlServerScriptReader
         private readonly List<Sequence> _sequences = [];
         private readonly Dictionary<ObjectName, UserType> _userTypes = [];
         private readonly List<Module> _modules = [];
+        private readonly List<XmlSchemaCollection> _xmlSchemaCollections = [];
 
         public void Add(TSqlStatement statement)
         {
@@ -135,6 +136,9 @@ public static partial class SqlServerScriptReader
                     break;
                 case CreateSequenceStatement seq:
                     AddSequence(seq);
+                    break;
+                case CreateXmlSchemaCollectionStatement { Expression: StringLiteral schemas } xsc:
+                    _xmlSchemaCollections.Add(new XmlSchemaCollection(Track(NameOf(xsc.Name)), schemas.Value));
                     break;
                 case CreateTableStatement ct:
                     AddTable(ct);
@@ -461,7 +465,7 @@ public static partial class SqlServerScriptReader
                 _sequences.OrderBy(s => s.Name.Schema, StringComparer.Ordinal).ThenBy(s => s.Name.Name, StringComparer.Ordinal).ToList(),
                 userTypes,
                 _modules.OrderBy(m => m.Name.Schema, StringComparer.Ordinal).ThenBy(m => m.Name.Name, StringComparer.Ordinal).ToList(),
-                []);
+                [], XmlSchemaCollections: _xmlSchemaCollections.ToList());
             return new SourceReadResult(db, Diagnostics);
         }
 

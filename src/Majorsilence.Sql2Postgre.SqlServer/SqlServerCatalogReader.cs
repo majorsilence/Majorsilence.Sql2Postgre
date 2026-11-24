@@ -152,7 +152,11 @@ public static class SqlServerCatalogReader
         var dependencies = await QueryAsync(conn, CatalogQueries.Dependencies, r => new ObjectDependency(
             new ObjectName(r.GetString(0), r.GetString(1)), new ObjectName(r.GetString(2), r.GetString(3))), ct);
 
-        var db = new SourceDatabase(dbName, collation, compat, schemas, tables, sequences, userTypes, modules, dependencies);
+        var xmlSchemaCollections = await QueryAsync(conn, CatalogQueries.XmlSchemaCollections, r => new XmlSchemaCollection(
+            new ObjectName(r.GetString(0), r.GetString(1)), r.IsDBNull(2) ? "" : r.GetString(2)), ct);
+
+        var db = new SourceDatabase(dbName, collation, compat, schemas, tables, sequences, userTypes, modules, dependencies,
+            XmlSchemaCollections: xmlSchemaCollections);
         return new SourceReadResult(db, diagnostics);
     }
 

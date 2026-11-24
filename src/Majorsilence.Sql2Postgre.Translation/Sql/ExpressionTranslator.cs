@@ -674,6 +674,15 @@ public sealed partial class ExpressionTranslator(ConversionOptions options, Name
         return new PgFunctionCall($"{NameMapper.Quote(options.CompatSchemaName)}.{function}", args);
     }
 
+    /// <summary>A function of an mssql_compat helper file that creates several (<c>xml_modify</c>).</summary>
+    public PgExpr CompatIn(string helper, string function, IReadOnlyList<PgExpr> args, ExpressionContext c, TSqlFragment source)
+    {
+        if (!options.UseCompatSchema)
+            throw Untranslatable(source, $"this (it needs the mssql_compat helper {function}, and the compat schema is disabled)", DiagnosticCodes.CompatDisabled);
+        c.CompatFunctions.Add(helper);
+        return new PgFunctionCall($"{NameMapper.Quote(options.CompatSchemaName)}.{function}", args);
+    }
+
     public static string Text(TSqlFragment fragment)
     {
         if (fragment.ScriptTokenStream is null || fragment.FirstTokenIndex < 0)

@@ -627,6 +627,17 @@ public sealed partial class ProceduralTranslator
     {
         if (set.CursorDefinition is not null)
             return DeclareCursor(set.Variable.Name, set.CursorDefinition, set, st);
+        if (set.FunctionCallExists && set.Identifier?.Value.Equals("modify", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            // SET @x.modify('…'): the variable becomes the rebuilt document.
+            var (xmlTarget, xmlType, xmlDataType) = Target(set.Variable, st);
+            if (xmlType is { Name: not "xml" })
+                throw ExpressionTranslator.Untranslatable(set, $"modify() on {set.Variable.Name}, which is not xml", DiagnosticCodes.XmlModify);
+            var modified = _x.XmlModify(set, set.Parameters, new VariableReference { Name = set.Variable.Name },
+                Shared.ColumnFeatureReader.XmlSchemaCollection(xmlDataType), st.C);
+            st.Assigned.Add(set.Variable.Name.TrimStart('@'));
+            return [new PgAssign(xmlTarget, modified)];
+        }
         if (set.FunctionCallExists || set.Identifier is not null)
             throw ExpressionTranslator.Untranslatable(set, "a method call on a variable (SET @x.method(…))");
         var (target, type, dataType) = Target(set.Variable, st);

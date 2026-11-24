@@ -518,8 +518,8 @@ public sealed partial class QueryTranslator
 
     private PgAssignment Assignment(SetClause set, DmlTarget target, ExpressionContext c)
     {
-        if (set is FunctionCallSetClause { MutatorFunction.FunctionName.Value: var mutator } && mutator.Equals("modify", StringComparison.OrdinalIgnoreCase))
-            throw ExpressionTranslator.Untranslatable(set, "the xml modify() method (PostgreSQL's xml type has no update functions: build the new document instead)", DiagnosticCodes.XmlModify);
+        if (set is FunctionCallSetClause { MutatorFunction: { FunctionName.Value: var mutator } call } && mutator.Equals("modify", StringComparison.OrdinalIgnoreCase))
+            return XmlModify(set, call, target, c);
         if (set is not AssignmentSetClause a || a.Column is null)
             throw ExpressionTranslator.Untranslatable(set, "this SET clause");
         if (a.Variable is not null)
@@ -542,6 +542,27 @@ public sealed partial class QueryTranslator
         };
         string mapped = Column(target, column);
         return new PgAssignment(mapped, op is null ? value : new PgBinary(op, new PgColumnRef(mapped), value));
+    }
+
+    /// <summary>
+    /// <c>SET col.modify('…')</c>: the column becomes the rebuilt document. The document is read as
+    /// the target's column (qualified, as the UPDATE's FROM may have a column of the same name).
+    /// </summary>
+    private PgAssignment XmlModify(SetClause set, FunctionCall call, DmlTarget target, ExpressionContext c)
+    {
+        if (call.CallTarget is not MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: [.., var last] })
+            throw ExpressionTranslator.Untranslatable(set, "xml modify() on something other than a column", DiagnosticCodes.XmlModify);
+        string column = last.Value;
+        if (target.Relation.Column(column)?.Type is { Name: not "xml" })
+            throw ExpressionTranslator.Untranslatable(set, $"modify() on {column}, which is not xml", DiagnosticCodes.XmlModify);
+        var document = new ColumnReferenceExpression { MultiPartIdentifier = new MultiPartIdentifier() };
+        IEnumerable<string> qualifier = target.Alias is { } alias ? [alias] : target.Source is { } source ? [source.Schema, source.Name] : [];
+        foreach (string part in qualifier.Append(column))
+            document.MultiPartIdentifier.Identifiers.Add(new Identifier { Value = part });
+        string? collection = target.Source is { } table
+            ? _model.Table(table)?.Columns.FirstOrDefault(col => col.Name.Equals(column, StringComparison.OrdinalIgnoreCase))?.Features?.XmlSchemaCollection
+            : null;
+        return new PgAssignment(Column(target, column), _x.XmlModify(set, call.Parameters, document, collection, c));
     }
 
     private PgStatement Delete(DeleteStatement statement, ExpressionContext c)

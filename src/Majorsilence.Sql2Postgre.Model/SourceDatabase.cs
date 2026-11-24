@@ -131,10 +131,19 @@ public sealed record Module(ObjectName Name, ObjectKind Kind, string Definition,
 public sealed record ObjectDependency(ObjectName From, ObjectName To);
 
 /// <param name="AgentJobs">SQL Server Agent jobs with T-SQL steps in this database, read from msdb when asked for.</param>
+/// <param name="XmlSchemaCollections">The XML schema collections typed xml is validated against.</param>
 public sealed record SourceDatabase(string Name, string DefaultCollation, int CompatibilityLevel,
     IReadOnlyList<string> Schemas, IReadOnlyList<Table> Tables, IReadOnlyList<Sequence> Sequences,
     IReadOnlyList<UserType> UserTypes, IReadOnlyList<Module> Modules,
-    IReadOnlyList<ObjectDependency> Dependencies, IReadOnlyList<AgentJob>? AgentJobs = null);
+    IReadOnlyList<ObjectDependency> Dependencies, IReadOnlyList<AgentJob>? AgentJobs = null,
+    IReadOnlyList<XmlSchemaCollection>? XmlSchemaCollections = null);
+
+/// <summary>
+/// An XML schema collection (<c>CREATE XML SCHEMA COLLECTION</c>): its XML Schema documents, one
+/// <c>xsd:schema</c> element after another as <c>XML_SCHEMA_NAMESPACE</c> returns them. PostgreSQL
+/// has no typed xml; the converter reads the element types from it (xml <c>modify()</c>).
+/// </summary>
+public sealed record XmlSchemaCollection(ObjectName Name, string Schemas);
 
 /// <summary>
 /// A SQL Server Agent job (msdb.dbo.sysjobs) with its steps and schedules. Its T-SQL steps in this

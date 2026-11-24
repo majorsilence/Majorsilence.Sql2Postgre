@@ -219,6 +219,11 @@ user-defined function in a `VIRTUAL` column, so such a column is `STORED`. A fun
 a table, or whose result can change (`GETDATE()`), cannot be created before the tables, and the
 column is reported (S2P3001) and left out (S2P2014 for what uses it).
 
+A column that a trigger on its table names is `STORED` too: PostgreSQL 18 gives a `VIRTUAL`
+generated column no value (NULL) in a trigger's `inserted` and `deleted` transition tables, or
+in `NEW`, where SQL Server's trigger reads the computed value (AdventureWorks'
+`iduSalesOrderDetail` reads `inserted.LineTotal`).
+
 ### S2P2002 ClusteredIgnored (Info)
 
 SQL Server keeps a table's rows in its clustered index order. PostgreSQL has no clustered
@@ -631,8 +636,9 @@ A spatial method maps to a PostGIS function that answers slightly differently:
 
 ### S2P3040 XmlModify (Error)
 
-The xml `modify()` method (`insert`, `replace value of`, `delete`), in `UPDATE … SET
-x.modify(…)` or `SET @x.modify(…)`. PostgreSQL's xml type has no update functions. Build the new
+An xml `modify()` the converter does not translate (S2P3050 lists what it does): `delete`,
+and `insert` or `replace value of` forms beyond those, or `modify()` outside `UPDATE … SET
+x.modify(…)` and `SET @x.modify(…)`. PostgreSQL's xml type has no update functions. Build the new
 document instead, in the application or with `xmlelement`/`xmlconcat`, and assign it. For a
 value inside it, store that value in a column of its own.
 
@@ -851,6 +857,47 @@ padding, a lower-case `t`. One difference: SQL Server also reads a date with a m
 
 The helper is IMMUTABLE (it reads no setting), so a computed column can use it, as
 WideWorldImporters' `Sales.Invoices.ConfirmedDeliveryTime` does.
+
+### S2P3050 XmlModifyRebuilt (Info)
+
+`UPDATE … SET col.modify('…')` or `SET @x.modify('…')` becomes an assignment of the rebuilt
+document. The mssql_compat `xml_modify` helpers find the target with `xpath` and change the
+document's text at that node:
+
+```sql
+UPDATE person.person
+SET demographics = mssql_compat.xml_modify_insert(person.demographics, '(/d:IndividualSurvey)[1]',
+    CAST('{{"d","http://…/IndividualSurvey"}}' AS text[]), '<TotalPurchaseYTD>0.00</TotalPurchaseYTD>',
+    'http://…/IndividualSurvey', 'first')
+FROM inserted WHERE …;
+```
+
+- `insert <element constructor> as first into | as last into | into | before | after (path)[1]`.
+  The constructor is written as SQL Server writes the node (whitespace-only text between tags
+  dropped, CDATA as text, `<a></a>` as `<a/>`). Its elements take the prolog's default element
+  namespace; where the namespace in scope differs, the inserted element declares it with `xmlns`.
+- `replace value of (path)[1] with expr`, the target a text node (`text()`), an attribute
+  without a prefix, or (typed xml) an element of simple type. `expr` is a string or number
+  literal, `sql:column`, `sql:variable`, `data(path)`, `string(path)` or a path, or `+ - * div`
+  and unary `-` of them. They are typed as XQuery types them: a node of untyped xml is
+  xs:double in arithmetic, a node of typed xml has the type the column's XML schema collection
+  gives its element, `int`/`bigint`… are xs:integer, `decimal`/`money` xs:decimal, `float`
+  xs:double, `bit` xs:boolean. The result is written as SQL Server writes the type: integers and
+  decimals without trailing zeros (`8249`), doubles with 15 significant digits, in scientific
+  notation below 1E-6 and from 1E6 (`3.0E6`, `0.0E0`), booleans `true`/`false`.
+- As in SQL Server: a NULL document fails ("cannot be called on a null value"), so does a new
+  value that is empty (NULL, or text that is not a number in arithmetic), and a target that is
+  not found leaves the document as it is.
+
+Differences: where SQL Server writes a prefix for the inserted element's namespace
+(`<p1:z xmlns:p1="urn:x"/>`), the helper writes `<z xmlns="urn:x"/>`, the same element; and typed
+xml in SQL Server stores values normalised (`<T>0.00</T>` reads back as `<T>0</T>`, as `value()`
+sees either way), where PostgreSQL keeps the text the constructor or assignment wrote.
+
+Still S2P3040: `delete`, a constructor with enclosed expressions (`{…}`), more than one node
+or namespace prefixes, an attribute with a prefix, `div` of decimals or integers (SQL Server's
+scale for the quotient), `idiv`, `mod`, `()`, and `sql:column`/`sql:variable` of other types
+(dates, binary).
 
 ## S2P4xxx — queries and DML
 
@@ -1599,6 +1646,10 @@ whether the value changed in some row:
 - AFTER trigger: `inserted` and `deleted` are joined on the primary key, so a row whose key
   changed counts as changed. A table without a primary key gives true.
 - INSTEAD OF trigger: `NEW.c IS DISTINCT FROM OLD.c`.
+
+An xml or json column has no equality operator in PostgreSQL, so its text is compared
+(`c::text`); a document written differently but equal counts as changed, as it would in SQL
+Server, where any SET of the column counts.
 
 The answers differ only for `SET c = c`, where the value does not change. `UPDATE(column)` is
 true in an INSERT trigger and false in a DELETE trigger, as in SQL Server.

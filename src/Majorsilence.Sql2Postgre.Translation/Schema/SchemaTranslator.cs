@@ -50,8 +50,14 @@ public sealed partial class SchemaTranslator
 
     private readonly SortedSet<string> _moduleCompat = new(StringComparer.Ordinal);
 
+    /// <summary>The text of the triggers on each table.</summary>
+    private Dictionary<ObjectName, List<string>> _triggerTexts = new(ObjectNameComparer.Instance);
+
     public IReadOnlyList<TranslatedObject> Translate(SourceDatabase db)
     {
+        _triggerTexts = db.Modules.Where(m => m.Kind == ObjectKind.Trigger && m.ParentTable is not null)
+            .GroupBy(m => m.ParentTable!, ObjectNameComparer.Instance)
+            .ToDictionary(g => g.Key, g => g.Select(m => m.Definition).ToList(), ObjectNameComparer.Instance);
         var model = SemanticModel.Build(db);
         // A default or computed column may call a user-defined function that is IMMUTABLE (it reads
         // no table and gives the same result for the same arguments): it is created with the
@@ -430,7 +436,13 @@ public sealed partial class SchemaTranslator
             if (!computed.IsPersisted && !keyed && usesHelper && _options.TargetVersion >= 18)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
                     $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it calls a function ({string.Join(", ", result.CompatFunctions.Select(f => $"mssql_compat.{f}").Concat(result.UserFunctions.Select(f => f.ToString())))}), which PostgreSQL allows only in a STORED generated column."));
-            generated = new PgGenerated(result.Expression, computed.IsPersisted || keyed || usesHelper);
+            // PostgreSQL 18 gives a VIRTUAL generated column no value in a trigger's transition
+            // tables (inserted, deleted) or NEW, so a column a trigger on the table may read is STORED.
+            bool readByTrigger = !computed.IsPersisted && !keyed && !usesHelper && _options.TargetVersion >= 18 && ReadByTrigger(t, c.Name);
+            if (readByTrigger)
+                diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
+                    $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but a trigger on the table names it, and PostgreSQL gives a VIRTUAL generated column no value in a trigger's inserted and deleted rows."));
+            generated = new PgGenerated(result.Expression, computed.IsPersisted || keyed || usesHelper || readByTrigger);
         }
 
         PgExpr? defaultValue = null;
@@ -484,6 +496,13 @@ public sealed partial class SchemaTranslator
     }
 
     /// <summary>Whether an index, the primary key, a unique constraint or a foreign key (either side) uses the column.</summary>
+    /// <summary>Whether a trigger on the table names the column (as a word, bracketed or not).</summary>
+    private bool ReadByTrigger(Table t, string column) =>
+        _triggerTexts.TryGetValue(t.Name, out var texts)
+        && texts.Any(text => System.Text.RegularExpressions.Regex.IsMatch(text,
+            $@"(?<![\w@#$])\[?{System.Text.RegularExpressions.Regex.Escape(column)}\]?(?![\w@#$])",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant));
+
     private bool IsKeyedOrIndexed(Table t, string column)
     {
         bool Is(string name) => string.Equals(name, column, StringComparison.OrdinalIgnoreCase);

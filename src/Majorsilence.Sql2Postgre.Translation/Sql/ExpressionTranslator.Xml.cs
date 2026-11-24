@@ -16,7 +16,7 @@ namespace Majorsilence.Sql2Postgre.Translation.Sql;
 /// <item><c>x.exist(path)</c>: <c>boolean(path)</c>, as a bit.</item>
 /// <item><c>x.query(path)</c>: an xml column, the nodes concatenated (empty when there are none).</item>
 /// <item><c>x.nodes(path)</c> in FROM: XMLTABLE with one xml column per row (<see cref="XmlNodes"/>).</item>
-/// <item><c>x.modify(…)</c>: S2P3040.</item>
+/// <item><c>x.modify(…)</c> outside <c>SET</c>: S2P3040 (in <c>SET</c>, <see cref="XmlModify"/>).</item>
 /// </list>
 /// </summary>
 public sealed partial class ExpressionTranslator

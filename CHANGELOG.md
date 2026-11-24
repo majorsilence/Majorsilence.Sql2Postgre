@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **xml `modify()`** (WP 4.24): `UPDATE … SET col.modify('…')` and `SET @x.modify('…')` now
+  translate, through the new mssql_compat helper `xml_modify`, which rebuilds the document's text
+  at the node the path finds (S2P3050):
+  - `insert <element> as first into | as last into | into | before | after (path)[1]`;
+  - `replace value of (path)[1] with expr` on a text node, an attribute or (typed xml) an
+    element, `expr` from strings, numbers, `sql:column`, `sql:variable`, `data(path)` and
+    `+ - * div`, typed and written as SQL Server types and writes them (xs:double for untyped
+    nodes in arithmetic, the schema collection's type for typed ones).
+  - `delete` and the other forms stay reported (S2P3040). AdventureWorks has no Manual objects
+    left.
+  - The readers keep each XML schema collection's schema documents
+    (`SourceDatabase.XmlSchemaCollections`), from which the element types are read.
+- **Fixed for every trigger:**
+  - `UPDATE(col)` of an xml or json column failed when the trigger ran (PostgreSQL has no `=`
+    for them); the text is compared now. AdventureWorks' `Person.iuPerson` failed on every
+    UPDATE of `Person.Person`.
+  - A computed column that is not persisted became a VIRTUAL generated column on PostgreSQL
+    18 and 19, and those are NULL in a trigger's `inserted` / `deleted` rows. A computed column
+    a trigger on its table names is now STORED (S2P2001).
 - **AdventureWorks' last Manual objects** (WP 4.23):
   - A computed column or default may call a user-defined function that is IMMUTABLE: the
     function, and the ones it calls, are created with the tables, before the table.

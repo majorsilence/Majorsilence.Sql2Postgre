@@ -1683,6 +1683,40 @@ After WP 4.22 AdventureWorks had six Manual objects; two causes had a translatio
   with ROLLBACK in TRY, a delete turned into an update, an insert rewritten) and of the
   computed column; corpus scans on 15–19.
 
+#### WP 4.24 — xml.modify() (M)
+
+AdventureWorks' last two Manual triggers (`Person.iuPerson`, `Sales.iduSalesOrderDetail`) are
+Manual only for `xml.modify()` (S2P3040). PostgreSQL's xml type has no update functions, so the
+document is rebuilt: `SET col.modify('…')` and `SET @x.modify('…')` become assignments of an
+mssql_compat helper's result. The helpers find the target with `xpath` (the XPath the WP 4.3
+path translation gives, so predicates and namespaces work as in `value()`), count the elements or
+text nodes before it, and splice the document's text at that node.
+
+- **`insert <constructor> (as first | as last)? into | before | after (path)[1]`**: one element
+  constructor without enclosed expressions. Its elements take the prolog's default element
+  namespace; the helper declares it on the inserted element when the namespace in scope there
+  differs (SQL Server writes `xmlns=""` the same way).
+- **`replace value of (path)[1] with expr`**, the target a text node, an attribute without a
+  prefix, or (typed xml) an element of simple type. `expr` is a string, a number, `sql:column`,
+  `sql:variable`, `data(path)` or a path, or `+ - * div` of them, typed as XQuery types them:
+  untyped values become xs:double in arithmetic, typed ones take their type from the column's XML
+  schema collection (which the readers now keep), and the result is written as SQL Server writes
+  each type.
+- As in SQL Server: a NULL document fails (error 5302), an empty new value fails (6325), and a
+  target that is not found leaves the document as it is.
+- Still reported (S2P3040): `delete`, `replace value of` without a single target, a constructor
+  with enclosed expressions or more than one node, attributes with a prefix, and values of other
+  SQL types (dates, binary). The inserted node keeps the text it was written with, where typed
+  xml in SQL Server stores it normalised (`0.00` becomes `0`).
+- Found on the way, and fixed for every trigger: `UPDATE(col)` of an xml (or json) column
+  compared with `IS DISTINCT FROM`, which PostgreSQL has no operator for, so iuPerson failed on
+  every UPDATE of Person; the text is compared now. And on 18 and 19 a computed column that is
+  not persisted is VIRTUAL, which a trigger's transition tables and `NEW` give as NULL
+  (iduSalesOrderDetail reads `inserted.LineTotal`); a computed column a trigger on its table
+  names is STORED.
+- Tests: a both-engines grid of documents for each form; golden files; AdventureWorks' two
+  triggers in a both-engines run; corpus scans on 15–19.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package
