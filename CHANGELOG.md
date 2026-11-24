@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **AdventureWorks' last Manual objects** (WP 4.23):
+  - A computed column or default may call a user-defined function that is IMMUTABLE: the
+    function, and the ones it calls, are created with the tables, before the table.
+    AdventureWorks' `Sales.Customer` (its `AccountNumber` calls `ufnLeadingZeros`) now converts.
+  - INSTEAD OF triggers on tables become BEFORE … FOR EACH ROW triggers that run the body and
+    return NULL; the body's own statements on the table pass through (S2P6004, now a Warning).
+  - `ROLLBACK` in a trigger no longer raises at once (which ran a surrounding CATCH): the rest
+    of the trigger runs and the trigger then fails the statement, as SQL Server does.
+    `@@TRANCOUNT` in a trigger is 1, or 0 after its `ROLLBACK`.
+  - An IF or WHILE condition that starts with a CASE is written in parentheses; it did not
+    compile in PL/pgSQL (a procedure with `IF IS_ROLEMEMBER(N'db_owner') = 1`, for one, failed
+    when it ran).
 - **Test images are reused.** The container tests' own images (full-text SQL Server, pg_cron,
   PostGIS for 19) are built only when missing or when their Dockerfile folder or build
   arguments change (a hash in the `sql2pg.built-from` label), and a rebuild replaces the old

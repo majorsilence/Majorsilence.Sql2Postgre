@@ -551,7 +551,6 @@ public static class DiagnosticCodes
         [DependsOnUnconverted] = 0,
         [ExternalReference] = 8,
         [DynamicSqlUntranslatable] = 8,
-        [InsteadOfTable] = 8,
         [DdlTrigger] = 8,
         [ResultSetCursor] = 3,
         [DdlInRoutine] = 3,

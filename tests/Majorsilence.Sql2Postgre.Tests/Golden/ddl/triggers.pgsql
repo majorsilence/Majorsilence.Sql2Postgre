@@ -70,11 +70,27 @@ REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted
 FOR EACH STATEMENT
 EXECUTE FUNCTION public.history_columns();
 
--- sql2pg:object Trigger public.item_instead status=Manual
-/* sql2pg:untranslated S2P6004
-CREATE TRIGGER dbo.item_instead ON dbo.item INSTEAD OF DELETE AS
-    UPDATE dbo.item SET price = 0 WHERE id IN (SELECT id FROM deleted);
-*/
+-- sql2pg:object Trigger public.item_instead status=ConvertedWithWarnings
+CREATE FUNCTION public.item_instead()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+#variable_conflict use_column
+BEGIN
+    IF current_setting('sql2pg.instead_of_item_instead', true) = 'on' THEN
+        RETURN OLD;
+    END IF;
+    PERFORM set_config('sql2pg.instead_of_item_instead', 'on', true);
+    UPDATE public.item
+    SET price = 0
+    WHERE id IN (SELECT id FROM (SELECT old.*) AS deleted);
+    PERFORM set_config('sql2pg.instead_of_item_instead', '', true);
+    RETURN NULL;
+END;
+$$;
+CREATE TRIGGER item_instead BEFORE DELETE ON public.item
+FOR EACH ROW
+EXECUTE FUNCTION public.item_instead();
 
 -- sql2pg:object Trigger public.item_no_negative status=Converted
 CREATE FUNCTION public.item_no_negative()
@@ -82,11 +98,19 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 #variable_conflict use_column
+DECLARE
+    sql2pg_rolled_back boolean;
 BEGIN
     IF EXISTS (SELECT 1 FROM inserted WHERE price < 0) THEN
         RAISE EXCEPTION 'negative price';
-        RAISE EXCEPTION 'transaction rolled back by trigger %', TG_NAME;
+        sql2pg_rolled_back := true;
+        IF sql2pg_rolled_back THEN
+            RAISE EXCEPTION 'transaction rolled back by trigger %', TG_NAME;
+        END IF;
         RETURN NULL;
+    END IF;
+    IF sql2pg_rolled_back THEN
+        RAISE EXCEPTION 'transaction rolled back by trigger %', TG_NAME;
     END IF;
     RETURN NULL;
 END;

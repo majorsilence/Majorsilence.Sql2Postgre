@@ -1,0 +1,16 @@
+CREATE TABLE dbo.Vendor (VendorID int NOT NULL PRIMARY KEY, Name nvarchar(50) NOT NULL, ActiveFlag bit NOT NULL DEFAULT 1);
+GO
+CREATE TRIGGER dbo.dVendor ON dbo.Vendor INSTEAD OF DELETE NOT FOR REPLICATION AS
+BEGIN
+    DECLARE @Count int;
+    SET @Count = @@ROWCOUNT;
+    IF @Count = 0
+        RETURN;
+    SET NOCOUNT ON;
+    RAISERROR (N'Vendors cannot be deleted. They can only be marked as not active.', 10, 1);
+    IF @@TRANCOUNT > 0
+        ROLLBACK TRANSACTION;
+END;
+GO
+CREATE TRIGGER dbo.iVendor ON dbo.Vendor INSTEAD OF INSERT AS
+    INSERT INTO dbo.Vendor (VendorID, Name, ActiveFlag) SELECT VendorID, UPPER(Name), 1 FROM inserted;

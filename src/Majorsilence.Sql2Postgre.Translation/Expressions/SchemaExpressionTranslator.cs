@@ -12,6 +12,9 @@ namespace Majorsilence.Sql2Postgre.Translation.Expressions;
 public sealed record ExpressionResult(PgExpr? Expression, IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<string> Extensions)
 {
     public IReadOnlyList<string> CompatFunctions { get; init; } = [];
+
+    /// <summary>The user-defined functions the expression calls (created with the tables, before them).</summary>
+    public IReadOnlyList<ObjectName> UserFunctions { get; init; } = [];
 }
 
 /// <summary>
@@ -33,11 +36,22 @@ public sealed class SchemaExpressionTranslator
     /// <summary>Every mssql_compat helper a translated expression has called so far.</summary>
     public IReadOnlyCollection<string> UsedCompatFunctions => _usedCompat;
 
-    public SchemaExpressionTranslator(ConversionOptions options, NameMapper names, TypeMapper types, SemanticModel? model = null)
+    private readonly List<ObjectName> _called = [];
+
+    /// <param name="tableFunction">Whether a table definition may call the user-defined function (it can be created before the tables).</param>
+    public SchemaExpressionTranslator(ConversionOptions options, NameMapper names, TypeMapper types, SemanticModel? model = null,
+        Func<ObjectName, bool>? tableFunction = null)
     {
         _translator = new ExpressionTranslator(options, names, types, model ?? SemanticModel.Build(Empty))
         {
             UserFunctions = false,
+            TableFunction = tableFunction is null ? null : name =>
+            {
+                if (!tableFunction(name))
+                    return false;
+                _called.Add(name);
+                return true;
+            },
         };
     }
 
@@ -51,6 +65,7 @@ public sealed class SchemaExpressionTranslator
         SqlServerType? targetType = null, bool isPredicate = false, bool immutable = false)
     {
         var context = Context(table, columns, immutable);
+        _called.Clear();
         var parser = new TSql160Parser(initialQuotedIdentifiers: true);
         IList<ParseError> errors;
         TSqlFragment? fragment = isPredicate
@@ -64,7 +79,11 @@ public sealed class SchemaExpressionTranslator
             if (targetType?.Name == "bit")
                 result = ExpressionTranslator.AsBoolean(result);
             _usedCompat.UnionWith(context.CompatFunctions);
-            return new ExpressionResult(result, context.Diagnostics, context.Extensions.ToList()) { CompatFunctions = context.CompatFunctions.ToList() };
+            return new ExpressionResult(result, context.Diagnostics, context.Extensions.ToList())
+            {
+                CompatFunctions = context.CompatFunctions.ToList(),
+                UserFunctions = _called.Distinct().ToList(),
+            };
         }
         catch (UntranslatableException ex)
         {

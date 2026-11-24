@@ -1,0 +1,24 @@
+CREATE FUNCTION dbo.ufnLeadingZeros(@Value int) RETURNS varchar(8) WITH SCHEMABINDING AS
+BEGIN
+    DECLARE @ReturnValue varchar(8);
+    SET @ReturnValue = CONVERT(varchar(8), @Value);
+    SET @ReturnValue = REPLICATE('0', 8 - DATALENGTH(@ReturnValue)) + @ReturnValue;
+    RETURN (@ReturnValue);
+END;
+GO
+CREATE FUNCTION dbo.ufnPrefixed(@Prefix varchar(2), @Value int) RETURNS varchar(10) AS
+BEGIN
+    RETURN @Prefix + dbo.ufnLeadingZeros(@Value);
+END;
+GO
+CREATE FUNCTION dbo.ufnCustomerCount() RETURNS int AS
+BEGIN
+    RETURN (SELECT COUNT(*) FROM dbo.Customer);
+END;
+GO
+CREATE TABLE dbo.Customer (
+    CustomerID int NOT NULL PRIMARY KEY,
+    AccountNumber AS (ISNULL('AW' + dbo.ufnLeadingZeros(CustomerID), '')),
+    Code varchar(10) NOT NULL CONSTRAINT DF_Customer_Code DEFAULT (dbo.ufnPrefixed('C', 0)),
+    Position AS (dbo.ufnCustomerCount())
+);

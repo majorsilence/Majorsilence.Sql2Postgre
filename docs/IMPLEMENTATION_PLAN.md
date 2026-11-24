@@ -1654,6 +1654,35 @@ Three small things WPs 4.17–4.21 left open, each with a known cause:
 - Tests: golden files; a both-engines grid of `TRY_CONVERT` 126/127 inputs; the case-insensitive
   searches on 15, 17 and 18; the readers on retention and typed xml; corpus scans on 15–19.
 
+#### WP 4.23 — AdventureWorks' last Manual objects (M)
+
+After WP 4.22 AdventureWorks had six Manual objects; two causes had a translation:
+
+- **A user-defined function in a computed column or default** (`Sales.Customer.AccountNumber`
+  calls `dbo.ufnLeadingZeros`). Functions were created after the tables, so such a column was
+  left out, and `Sales.Customer` (and its key on the column) were Manual. A function a table
+  definition calls is now created with the tables, before the table, when it is IMMUTABLE by
+  the converter's volatility analysis (it reads no table and calls only immutable functions);
+  so are the functions it calls. The column is STORED (PostgreSQL 18 allows no user-defined
+  function in a VIRTUAL one).
+- **INSTEAD OF triggers on tables** (`HumanResources.dEmployee`, `Purchasing.dVendor`; S2P6004,
+  now a Warning). A BEFORE … FOR EACH ROW trigger that runs the body and returns NULL; while the
+  body runs, a transaction-local setting lets the body's own statements on the table through,
+  as SQL Server does not fire the trigger again for them. It runs per row, not for a statement
+  that matches no rows, and the statement reports 0 rows.
+- Found on the way, and fixed for every trigger: `ROLLBACK` in a trigger raised at once, so in
+  TRY it ran the CATCH block (dVendor's would then end without an error); it now sets a flag,
+  the rest of the trigger runs, and the trigger fails the statement when it returns, as SQL
+  Server ends the batch (error 3609). `@@TRANCOUNT` in a trigger is 1 (0 after its ROLLBACK).
+  And an IF or WHILE whose condition starts with a CASE (`IF CASE WHEN … THEN … END = 1`, as
+  `IS_ROLEMEMBER` translates) is written in parentheses: PL/pgSQL reads a condition up to the
+  first THEN, so it did not compile (the code phase sets `check_function_bodies = off`, so it
+  failed only when it ran).
+- Not covered: `xml.modify()` (S2P3040), in AdventureWorks' other two Manual triggers.
+- Tests: golden files; a both-engines run of AdventureWorks' trigger patterns (a delete refused
+  with ROLLBACK in TRY, a delete turned into an update, an insert rewritten) and of the
+  computed column; corpus scans on 15–19.
+
 #### Waiting for the maintainer
 
 - `.dacpac` input, through the `Microsoft.SqlServer.DacFx` package

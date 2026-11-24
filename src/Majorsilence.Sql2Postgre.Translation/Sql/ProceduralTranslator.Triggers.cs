@@ -21,6 +21,13 @@ public sealed record TriggerEvent(PgName Table, string Event, bool InsteadOf, IR
 
     /// <summary>Whether the event has old rows (<c>deleted</c>).</summary>
     public bool HasDeleted => Event is "UPDATE" or "DELETE";
+
+    /// <summary>
+    /// For an INSTEAD OF trigger on a table (a BEFORE … FOR EACH ROW trigger that returns NULL):
+    /// the transaction-local setting that is on while its body runs, so a statement the body runs
+    /// on the table passes through, as SQL Server does not fire the trigger again for it.
+    /// </summary>
+    public string? Guard { get; init; }
 }
 
 /// <summary>
@@ -48,9 +55,32 @@ public sealed partial class ProceduralTranslator
         return new PgTableRef(new PgName("", name), alias);
     }
 
-    /// <summary>What a trigger function returns: NULL after the event, the row itself instead of it (so it counts as done).</summary>
+    /// <summary>
+    /// What a trigger function returns: NULL after the event; instead of it on a view, the row
+    /// itself (so it counts as done); instead of it on a table, NULL, so the row is left as it is.
+    /// </summary>
     private static PgExpr TriggerResult(TriggerEvent trigger) =>
-        !trigger.InsteadOf ? PgLiteral.Null : new PgKeyword(trigger.Event == "DELETE" ? "OLD" : "NEW");
+        !trigger.InsteadOf || trigger.Guard is not null ? PgLiteral.Null : TriggerRow(trigger);
+
+    private static PgKeyword TriggerRow(TriggerEvent trigger) => new(trigger.Event == "DELETE" ? "OLD" : "NEW");
+
+    /// <summary>
+    /// The end of a trigger body: a ROLLBACK that ran raises its error now; an INSTEAD OF trigger
+    /// on a table turns its guard off.
+    /// </summary>
+    private static IEnumerable<PgPlStatement> TriggerReturn(TriggerEvent trigger, BodyState st)
+    {
+        if (st.RolledBack is { } rolledBack)
+            yield return new PgIf([new PgIfBranch(rolledBack, [TriggerRollback()])]);
+        if (trigger.Guard is { } guard)
+            yield return SetGuard(guard, "");
+        yield return new PgReturn(TriggerResult(trigger));
+    }
+
+    private static PgPerform SetGuard(string guard, string value) => new(new PgSelect
+    {
+        Targets = [new PgTarget(new PgFunctionCall("set_config", [PgLiteral.String(guard), PgLiteral.String(value), new PgKeyword("true")]))],
+    });
 
     /// <summary>The start of a trigger body: inserted and deleted known to the scope, and @@ROWCOUNT the rows of the triggering statement.</summary>
     private IEnumerable<PgPlStatement> TriggerPrologue(TriggerEvent trigger, BodyState st)
@@ -58,6 +88,14 @@ public sealed partial class ProceduralTranslator
         var relation = new RelationInfo(null, ObjectKind.Table, trigger.Columns);
         foreach (string name in PseudoTables)
             st.C.Scope.DefineCte(name, relation);
+        if (trigger.Guard is { } guard)
+        {
+            // A statement of the trigger's own body on the table: let it change the row.
+            yield return new PgIf([new PgIfBranch(
+                new PgBinary("=", new PgFunctionCall("current_setting", [PgLiteral.String(guard), new PgKeyword("true")]), PgLiteral.String("on")),
+                [new PgReturn(TriggerRow(trigger))])]);
+            yield return SetGuard(guard, "on");
+        }
         if (!st.ReadsRowCount)
             yield break;
         PgExpr rows = trigger.InsteadOf
@@ -108,7 +146,15 @@ public sealed partial class ProceduralTranslator
         }
     }
 
-    /// <summary>ROLLBACK in a trigger ends the triggering statement and its transaction with an error, as SQL Server ends the batch.</summary>
+    /// <summary>
+    /// ROLLBACK in a trigger: remembered, so @@TRANCOUNT is 0 after it and the trigger raises the
+    /// error when it returns (SQL Server runs the rest of the trigger, then ends the batch with
+    /// error 3609). The error undoes the triggering statement and its transaction.
+    /// </summary>
+    private static PgPlStatement TriggerRollback(BodyState st) =>
+        st.RolledBack is { } rolledBack ? new PgAssign(rolledBack, new PgKeyword("true")) : TriggerRollback();
+
+    /// <summary>The error a trigger's ROLLBACK ends the triggering statement with, as SQL Server ends the batch.</summary>
     private static PgPlStatement TriggerRollback() =>
         new PgRaise("EXCEPTION", "transaction rolled back by trigger %") { Arguments = [new PgKeyword("TG_NAME")] };
 }

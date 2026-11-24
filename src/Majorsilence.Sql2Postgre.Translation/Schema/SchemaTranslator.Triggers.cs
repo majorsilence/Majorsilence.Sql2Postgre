@@ -55,9 +55,6 @@ public sealed partial class SchemaTranslator
             return Untranslated(m, target, dependsOn, DiagnosticCodes.DependsOnUnconverted, $"{m.Name} is on {t.TriggerObject.Name.BaseIdentifier.Value}, which is not in the source database.");
         bool onView = model.Table(tableName) is null;
         bool insteadOf = t.TriggerType == TriggerType.InsteadOf;
-        if (insteadOf && !onView)
-            return Untranslated(m, target, dependsOn, DiagnosticCodes.InsteadOfTable,
-                $"{m.Name} is an INSTEAD OF trigger on the table {tableName}. PostgreSQL has INSTEAD OF triggers on views only: use a BEFORE trigger that returns NULL, or a rule, or move the logic to the code that writes the table.");
         dependsOn.Add(tableName);
 
         var events = t.TriggerActions.Select(a => TriggerEventName(a.TriggerActionType)).OfType<string>().Distinct().ToList();
@@ -66,6 +63,11 @@ public sealed partial class SchemaTranslator
         var statements = new List<PgStatement>();
         try
         {
+            if (insteadOf && !onView)
+                context.Report(DiagnosticCodes.InsteadOfTable, Severity.Warning,
+                    $"{m.Name} is an INSTEAD OF trigger on the table {tableName}, which PostgreSQL allows on views only. It becomes a BEFORE … FOR EACH ROW trigger that runs the body and returns NULL, "
+                    + "so the row is changed only by what the body does; the body's own statements on the table are not intercepted again, as in SQL Server. "
+                    + "It does not fire for a statement that matches no rows (SQL Server fires it once), and the statement reports 0 rows changed, where SQL Server reports rows.");
             if (insteadOf && !IsSingleStatement(t.StatementList?.Statements ?? []))
                 context.Report(DiagnosticCodes.InsteadOfPerRow, Severity.Warning,
                     $"{m.Name} runs once per row in PostgreSQL (INSTEAD OF triggers on views are FOR EACH ROW) and once per statement in SQL Server: "
@@ -81,13 +83,16 @@ public sealed partial class SchemaTranslator
                 var function = _names.Routine(new ObjectName(m.Name.Schema, m.Name.Name + suffix));
                 var key = model.Table(tableName)?.PrimaryKey?.Columns.Select(k => _names.Column(tableName, k.Name)).ToList() ?? [];
                 var trigger = new TriggerEvent(pgTable, e, insteadOf, relation.Columns, key,
-                    column => onView ? _names.Alias(column) : _names.Column(tableName, column));
+                    column => onView ? _names.Alias(column) : _names.Column(tableName, column))
+                {
+                    Guard = insteadOf && !onView ? "sql2pg.instead_of_" + System.Text.RegularExpressions.Regex.Replace(function.Name.ToLowerInvariant(), "[^a-z0-9_]", "_") : null,
+                };
                 var signature = new BodySignature(BodyKind.Trigger, function.Name, []) { Trigger = trigger };
                 var inner = new ExpressionContext(new Scope(), m.Name.Schema, m.Name);
                 var body = procedural.Body(t.StatementList?.Statements ?? [], signature, inner);
                 MergeInto(context, inner);
                 statements.Add(new PgCreateRoutine(function, false, [], body) { Returns = "trigger" });
-                statements.Add(new PgCreateTrigger(_names.Trigger(tableName, m.Name.Name + suffix), pgTable, insteadOf ? "INSTEAD OF" : "AFTER", e, function)
+                statements.Add(new PgCreateTrigger(_names.Trigger(tableName, m.Name.Name + suffix), pgTable, !insteadOf ? "AFTER" : onView ? "INSTEAD OF" : "BEFORE", e, function)
                 {
                     NewTable = insteadOf || !trigger.HasInserted ? null : "inserted",
                     OldTable = insteadOf || !trigger.HasDeleted ? null : "deleted",

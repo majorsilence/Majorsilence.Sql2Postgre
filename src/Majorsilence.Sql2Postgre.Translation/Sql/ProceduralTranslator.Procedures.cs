@@ -557,7 +557,7 @@ public sealed partial class ProceduralTranslator
                     "BEGIN TRANSACTION becomes COMMIT: the work before it is committed, as SQL Server's autocommit had done, and a new transaction starts.");
                 return [new PgTransactionControl(true)];
             case RollbackTransactionStatement when st.Signature.Kind == BodyKind.Trigger:
-                return [TriggerRollback()];
+                return [TriggerRollback(st)];
             case CommitTransactionStatement when st.Signature.Kind == BodyKind.Trigger:
                 throw ExpressionTranslator.Untranslatable(t, "COMMIT inside a trigger (it runs inside the triggering statement's transaction)", DiagnosticCodes.ProceduralStatement);
             case CommitTransactionStatement or RollbackTransactionStatement when st.TryDepth > 0:

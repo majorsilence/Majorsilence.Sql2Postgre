@@ -212,6 +212,13 @@ A computed column that is not `PERSISTED` is calculated on read in SQL Server. P
 has the same (`VIRTUAL`); before 18 a generated column is always `STORED`, so it takes space and
 is calculated on write. Values are the same.
 
+A computed column or default may call a user-defined function when the function is IMMUTABLE
+(it reads no table, and calls only immutable functions): the function, and those it calls, are
+then created with the tables, before the table (in `05-tables.sql`). PostgreSQL 18 allows no
+user-defined function in a `VIRTUAL` column, so such a column is `STORED`. A function that reads
+a table, or whose result can change (`GETDATE()`), cannot be created before the tables, and the
+column is reported (S2P3001) and left out (S2P2014 for what uses it).
+
 ### S2P2002 ClusteredIgnored (Info)
 
 SQL Server keeps a table's rows in its clustered index order. PostgreSQL has no clustered
@@ -293,7 +300,7 @@ every new and changed row. Drop the constraint if it should stay off.
 
 A primary key, unique constraint, check, foreign key or index uses a column that was left out of
 the table because its definition could not be translated (usually a computed column calling a
-user-defined function or a `hierarchyid` method). It is kept as a comment. Once the column has
+user-defined function that reads tables or is not immutable, or a `hierarchyid` method). It is kept as a comment. Once the column has
 been added by hand, create this object too.
 
 ### S2P2015 MaterializedViewRefresh (Warning)
@@ -1273,6 +1280,12 @@ a CATCH block whose transaction is doomed: AdventureWorks' `uspLogError` tests f
 - 0 when no `BEGIN TRAN` comes before. The test is then false, as in SQL Server, and earlier
   work is not rolled back.
 
+
+In a trigger, `@@TRANCOUNT` is 1, also in CATCH, since the trigger runs inside the triggering
+statement's transaction; after the trigger's `ROLLBACK` it is 0. A `ROLLBACK` in a trigger does
+not stop it: as in SQL Server, the rest of the trigger runs, and the trigger then fails the
+triggering statement, which undoes it and its transaction (SQL Server ends the batch with error
+3609). Work the trigger does after its `ROLLBACK` is undone too, where SQL Server keeps it.
 ### S2P5042 TransactionInTry (Error)
 
 `COMMIT` or `ROLLBACK` inside `TRY`, other than a `COMMIT` that ends it, or `EXEC` of a procedure
@@ -1597,16 +1610,33 @@ equivalent. Compare `inserted` with `deleted` column by column instead.
 
 ### S2P6003 InsteadOfPerRow (Warning)
 
-An INSTEAD OF trigger on a view runs once per row in PostgreSQL, and once per statement in SQL
-Server. This is reported when its body is more than one statement. The body sees one row in
+An INSTEAD OF trigger (on a view, or on a table: S2P6004) runs once per row in PostgreSQL, and
+once per statement in SQL Server. This is reported when its body is more than one statement. The body sees one row in
 `inserted`/`deleted` each time, so code that counts or aggregates them, or that should run once,
 needs a look.
 
-### S2P6004 InsteadOfTable (Error)
+### S2P6004 InsteadOfTable (Warning)
 
-An INSTEAD OF trigger on a table. PostgreSQL has INSTEAD OF triggers on views only. A `BEFORE …
-FOR EACH ROW` trigger that does the work and returns NULL (which skips the row) is the usual
-rewrite.
+An INSTEAD OF trigger on a table, which PostgreSQL allows on views only. It becomes a `BEFORE …
+FOR EACH ROW` trigger that runs the body, with `inserted` / `deleted` as the row, and returns
+NULL, so the row is changed only by what the body does:
+
+```sql
+CREATE TRIGGER dvendor BEFORE DELETE ON purchasing.vendor FOR EACH ROW EXECUTE FUNCTION purchasing.dvendor();
+```
+
+While the body runs, a transaction-local setting (`sql2pg.instead_of_<trigger>`) is on, and the
+trigger lets a row through when it is: a statement the body runs on the table itself (the
+`UPDATE` that marks a row deleted, the `INSERT` of rewritten rows) is not intercepted again, as
+SQL Server does not fire the trigger again for it.
+
+Differences, established on SQL Server 2022:
+
+- SQL Server fires the trigger once per statement, also for a statement that matches no rows;
+  PostgreSQL once per row, and not for no rows (S2P6003 for a body of more than one statement).
+- The statement reports 0 rows changed in PostgreSQL (each row's trigger returned NULL), and
+  `@@ROWCOUNT` after it is 0; SQL Server reports rows (2 for a statement that matched two rows
+  whose trigger updated both).
 
 ### S2P6005 DdlTrigger (Error)
 

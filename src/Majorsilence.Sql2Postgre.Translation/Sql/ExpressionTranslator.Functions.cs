@@ -363,15 +363,25 @@ public sealed partial class ExpressionTranslator
             spatial ? DiagnosticCodes.SpatialMethod : DiagnosticCodes.UnsupportedExpression);
     }
 
-    /// <summary>Whether calls to user-defined functions are translated (not in schema expressions, until Stage 3 orders them first).</summary>
+    /// <summary>
+    /// Whether calls to user-defined functions are translated anywhere. In a table's own
+    /// expressions (defaults, computed columns) they are not, except the ones
+    /// <see cref="TableFunction"/> allows: the table is created before most functions.
+    /// </summary>
     public bool UserFunctions { get; init; } = true;
+
+    /// <summary>
+    /// Whether a table definition may call the function (when <see cref="UserFunctions"/> is
+    /// false): it is created with the tables, before them. Records the call when it may.
+    /// </summary>
+    public Func<ObjectName, bool>? TableFunction { get; init; }
 
     /// <summary>A user-defined scalar function: called by its mapped name (it is converted in Stage 3).</summary>
     private PgExpr UserFunction(FunctionCall f, string schema, ExpressionContext c)
     {
         var name = new ObjectName(schema, f.FunctionName.Value);
-        if (!UserFunctions)
-            throw Untranslatable(f, $"the user-defined function {name} in a table definition (Stage 3 creates functions before the tables that use them)");
+        if (!UserFunctions && TableFunction?.Invoke(name) != true)
+            throw Untranslatable(f, $"the user-defined function {name} in a table definition (it reads tables, or its result can change, so it cannot be created before the tables)");
         if (model.Routine(name) is not { } routine)
             throw Untranslatable(f, $"the function {name}, which is not in this database");
         return new PgFunctionCall(names.Routine(name).Qualified, RoutineArguments(f.Parameters, routine, c));

@@ -293,6 +293,15 @@ public sealed partial class ProceduralTranslator
     /// </summary>
     private PgExpr TransactionState(ExpressionContext c, BodyState st, string what, string open)
     {
+        if (what == "@@TRANCOUNT" && st.Signature.Kind == BodyKind.Trigger)
+        {
+            // A trigger runs inside the triggering statement's transaction, in a CATCH block too.
+            c.Report(DiagnosticCodes.TransactionState, Severity.Info,
+                "@@TRANCOUNT in a trigger is 1 (0 after its ROLLBACK): the trigger runs inside the triggering statement's transaction (SQL Server counts any BEGIN TRAN around that statement too).");
+            return st.RolledBack is { } rolledBack
+                ? new PgCase(null, [new PgWhen(rolledBack, new PgLiteral("0"))], new PgLiteral("1"))
+                : new PgLiteral("1");
+        }
         if (!st.ErrorFrames.TryPeek(out var frame))
         {
             if (what == "@@TRANCOUNT")

@@ -65,7 +65,7 @@ public static partial class PgWriter
         PgBlock b => Block(b, targetVersion),
         PgAssign a => $"{Expression(a.Target)} := {Hang(Expression(a.Value))};\n",
         PgIf i => If(i, targetVersion),
-        PgWhile w => LabelLine(w.Label) + $"WHILE {Hang(Expression(w.Condition))} LOOP\n" + Nested(w.Statements, targetVersion) + EndLoop(w.Label),
+        PgWhile w => LabelLine(w.Label) + $"WHILE {Hang(Condition(w.Condition))} LOOP\n" + Nested(w.Statements, targetVersion) + EndLoop(w.Label),
         PgLoop l => LabelLine(l.Label) + "LOOP\n" + Nested(l.Statements, targetVersion) + EndLoop(l.Label),
         PgExit e => "EXIT" + LabelRef(e.Label) + (e.When is null ? "" : $" WHEN {Expression(e.When)}") + ";\n",
         PgContinue c => "CONTINUE" + LabelRef(c.Label) + (c.When is null ? "" : $" WHEN {Expression(c.When)}") + ";\n",
@@ -123,13 +123,50 @@ public static partial class PgWriter
         _ => throw new ArgumentException(d.GetType().Name, nameof(d)),
     };
 
+    /// <summary>
+    /// An IF, ELSIF or WHILE condition. PL/pgSQL takes the condition as the text up to the first
+    /// THEN (or LOOP) outside parentheses, so one with a CASE at its top level
+    /// (<c>CASE WHEN … THEN … END &gt; 0</c>) is written in parentheses.
+    /// </summary>
+    private static string Condition(PgExpr condition)
+    {
+        string text = Expression(condition);
+        return TopLevelKeyword(text, "THEN") || TopLevelKeyword(text, "LOOP") ? $"({text})" : text;
+    }
+
+    /// <summary>Whether the keyword appears in the SQL outside parentheses and quotes.</summary>
+    private static bool TopLevelKeyword(string sql, string keyword)
+    {
+        int depth = 0;
+        for (int i = 0; i < sql.Length; i++)
+        {
+            char ch = sql[i];
+            if (ch is '\'' or '"')
+            {
+                int end = sql.IndexOf(ch, i + 1);
+                while (end >= 0 && end + 1 < sql.Length && sql[end + 1] == ch)
+                    end = sql.IndexOf(ch, end + 2);
+                i = end < 0 ? sql.Length : end;
+            }
+            else if (ch == '(')
+                depth++;
+            else if (ch == ')')
+                depth--;
+            else if (depth == 0 && string.Compare(sql, i, keyword, 0, keyword.Length, StringComparison.OrdinalIgnoreCase) == 0
+                     && (i == 0 || !char.IsLetterOrDigit(sql[i - 1]) && sql[i - 1] != '_')
+                     && (i + keyword.Length == sql.Length || !char.IsLetterOrDigit(sql[i + keyword.Length]) && sql[i + keyword.Length] != '_'))
+                return true;
+        }
+        return false;
+    }
+
     private static string If(PgIf i, int targetVersion)
     {
         if (i.Branches.Count == 0)
             throw new ArgumentException("IF needs at least one branch.", nameof(i));
         var sb = new StringBuilder();
         for (int n = 0; n < i.Branches.Count; n++)
-            sb.Append(n == 0 ? "IF " : "ELSIF ").Append(Hang(Expression(i.Branches[n].Condition))).Append(" THEN\n")
+            sb.Append(n == 0 ? "IF " : "ELSIF ").Append(Hang(Condition(i.Branches[n].Condition))).Append(" THEN\n")
                 .Append(Nested(i.Branches[n].Statements, targetVersion));
         if (i.Else is not null)
             sb.Append("ELSE\n").Append(Nested(i.Else, targetVersion));

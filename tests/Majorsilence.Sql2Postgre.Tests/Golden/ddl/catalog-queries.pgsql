@@ -273,7 +273,7 @@ BEGIN
             WHERE table_schema = 'Sales'
             ORDER BY ordinal_position NULLS FIRST;
     END IF;
-    IF 0 = 0 AND CASE WHEN 'db_owner' = 'db_owner' THEN CAST(pg_has_role(current_user, (SELECT datdba FROM pg_database WHERE datname = current_database()), 'MEMBER') AS integer) ELSE (SELECT CAST(pg_has_role(current_user, r.oid, 'MEMBER') AS integer) FROM pg_roles AS r WHERE r.rolname = 'db_owner') END = 1 THEN
+    IF (0 = 0 AND CASE WHEN 'db_owner' = 'db_owner' THEN CAST(pg_has_role(current_user, (SELECT datdba FROM pg_database WHERE datname = current_database()), 'MEMBER') AS integer) ELSE (SELECT CAST(pg_has_role(current_user, r.oid, 'MEMBER') AS integer) FROM pg_roles AS r WHERE r.rolname = 'db_owner') END = 1) THEN
         RAISE NOTICE '%', 'no in-memory tables';
     END IF;
     OPEN result_set_2 FOR SELECT i.name, i.type_desc

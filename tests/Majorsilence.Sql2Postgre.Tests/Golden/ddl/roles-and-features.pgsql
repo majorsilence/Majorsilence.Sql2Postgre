@@ -264,7 +264,7 @@ BEGIN
     /* sql2pg:untranslated S2P3046
     PRINT N'PolyBase';
     */
-    IF CASE WHEN 'db_owner' = 'db_owner' THEN CAST(pg_has_role(current_user, (SELECT datdba FROM pg_database WHERE datname = current_database()), 'MEMBER') AS integer) ELSE (SELECT CAST(pg_has_role(current_user, r.oid, 'MEMBER') AS integer) FROM pg_roles AS r WHERE r.rolname = 'db_owner') END = 1 THEN
+    IF (CASE WHEN 'db_owner' = 'db_owner' THEN CAST(pg_has_role(current_user, (SELECT datdba FROM pg_database WHERE datname = current_database()), 'MEMBER') AS integer) ELSE (SELECT CAST(pg_has_role(current_user, r.oid, 'MEMBER') AS integer) FROM pg_roles AS r WHERE r.rolname = 'db_owner') END = 1) THEN
         RAISE NOTICE '%', 'owner';
     ELSE
         RAISE NOTICE '%', 'neither';

@@ -53,7 +53,11 @@ public sealed partial class SchemaTranslator
     public IReadOnlyList<TranslatedObject> Translate(SourceDatabase db)
     {
         var model = SemanticModel.Build(db);
-        _expressions = new SchemaExpressionTranslator(_options, _names, _types, model);
+        // A default or computed column may call a user-defined function that is IMMUTABLE (it reads
+        // no table and gives the same result for the same arguments): it is created with the
+        // tables, before the table that calls it.
+        _expressions = new SchemaExpressionTranslator(_options, _names, _types, model,
+            name => model.Routine(name) is not null && Volatility(name, model, []) == "IMMUTABLE");
         var queries = new QueryTranslator(new ExpressionTranslator(_options, _names, _types, model));
         var objects = new List<TranslatedObject>();
         var tables = db.Tables.Where(t => !Excluded(t.Name)).ToList();
@@ -126,6 +130,7 @@ public sealed partial class SchemaTranslator
                         $"{m.Kind} {m.Name} is not converted.")], [])
                 { Skipped = true });
         }
+        objects = WithTableFunctions(objects);
         objects.AddRange(TrigramIndexes(tables, queries.Expressions.LeadingWildcardSearches));
         objects.AddRange(AgentJobs(db));
         objects = PropagateUnconverted(objects, model);
@@ -310,8 +315,45 @@ public sealed partial class SchemaTranslator
             }
         }
 
+        dependsOn.AddRange(_columnFunctions);
+        _columnFunctions.Clear();
         return new TranslatedObject(t.Name, ObjectKind.Table, name.Qualified, Phase.Tables,
             [new PgCreateTable(name, columns) { Comments = comments }], diagnostics, dependsOn) { Extensions = extensions };
+    }
+
+    /// <summary>The user-defined functions the current table's defaults and computed columns call.</summary>
+    private readonly List<ObjectName> _columnFunctions = [];
+
+    /// <summary>Every user-defined function a table's default or computed column calls.</summary>
+    private readonly HashSet<ObjectName> _tableFunctions = new(ObjectNameComparer.Instance);
+
+    private void NoteColumnFunctions(ExpressionResult result)
+    {
+        _columnFunctions.AddRange(result.UserFunctions);
+        _tableFunctions.UnionWith(result.UserFunctions);
+    }
+
+    /// <summary>
+    /// The functions tables call, and the functions those call, move to the Tables phase: they
+    /// are created with the tables, before the ones that call them (the planner orders a phase by
+    /// its dependencies). The rest of the routines stay in the Code phase.
+    /// </summary>
+    private List<TranslatedObject> WithTableFunctions(List<TranslatedObject> objects)
+    {
+        var functions = objects.Where(o => o.Kind == ObjectKind.Function && o.Phase == Phase.Code)
+            .GroupBy(o => o.Source, ObjectNameComparer.Instance).ToDictionary(g => g.Key, g => g.First(), ObjectNameComparer.Instance);
+        var early = new HashSet<ObjectName>(ObjectNameComparer.Instance);
+        var pending = new Stack<ObjectName>(_tableFunctions);
+        while (pending.Count > 0)
+        {
+            var name = pending.Pop();
+            if (!functions.TryGetValue(name, out var function) || !early.Add(name))
+                continue;
+            foreach (var callee in function.DependsOn)
+                pending.Push(callee);
+        }
+        return objects.Select(o => o.Kind == ObjectKind.Function && early.Contains(o.Source) && o.Phase == Phase.Code
+            ? o with { Phase = Phase.Tables } : o).ToList();
     }
 
     private PgColumnDef? Column(Table t, Column c, List<Diagnostic> diagnostics, List<string> extensions, List<PgUntranslated> comments)
@@ -383,10 +425,11 @@ public sealed partial class SchemaTranslator
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
                     $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it is indexed or part of a key, which PostgreSQL allows only for a STORED generated column."));
             // PostgreSQL 18 allows no user-defined function, an mssql_compat helper included, in a VIRTUAL generated column.
-            bool usesHelper = result.CompatFunctions.Count > 0;
+            NoteColumnFunctions(result);
+            bool usesHelper = result.CompatFunctions.Count > 0 || result.UserFunctions.Count > 0;
             if (!computed.IsPersisted && !keyed && usesHelper && _options.TargetVersion >= 18)
                 diagnostics.Add(new Diagnostic(DiagnosticCodes.GeneratedColumnStored, Severity.Info, t.Name,
-                    $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it calls an mssql_compat helper ({string.Join(", ", result.CompatFunctions)}), which PostgreSQL allows only in a STORED generated column."));
+                    $"Computed column {t.Name}.{c.Name} is not persisted in SQL Server, but it calls a function ({string.Join(", ", result.CompatFunctions.Select(f => $"mssql_compat.{f}").Concat(result.UserFunctions.Select(f => f.ToString())))}), which PostgreSQL allows only in a STORED generated column."));
             generated = new PgGenerated(result.Expression, computed.IsPersisted || keyed || usesHelper);
         }
 
@@ -394,6 +437,7 @@ public sealed partial class SchemaTranslator
         if (c.DefaultExpression is { } def && identity is null && generated is null)
         {
             var result = _expressions.Translate(def, t.Name, t.Columns, c.Type);
+            NoteColumnFunctions(result);
             diagnostics.AddRange(result.Diagnostics);
             extensions.AddRange(result.Extensions);
             if (result.Expression is null)

@@ -59,6 +59,8 @@ public sealed partial class ProceduralTranslator
 {
     private const string RowVariable = "sql2pg_row";
     private const string RowCountVariable = "sql2pg_rowcount";
+
+    private const string RolledBackVariable = "sql2pg_rolled_back";
     private const string IdentityVariable = "sql2pg_identity";
 
     private readonly QueryTranslator _queries;
@@ -125,6 +127,9 @@ public sealed partial class ProceduralTranslator
         /// <summary>A table function's return table.</summary>
         public string? ReturnTable { get; set; }
 
+        /// <summary>In a trigger with a ROLLBACK: the variable that says it has run.</summary>
+        public PgColumnRef? RolledBack { get; set; }
+
         /// <summary>The SET ROWCOUNT in force (null when none).</summary>
         public int? RowLimit { get; set; }
 
@@ -189,6 +194,10 @@ public sealed partial class ProceduralTranslator
             ReadsIdentity = finder.Identity,
             HasTry = finder.Try,
         };
+        // A ROLLBACK in a trigger is remembered and raised when the trigger returns, as SQL Server
+        // ends the batch only after the trigger (the statements after it still run).
+        if (signature.Trigger is not null && finder.Rollback)
+            st.RolledBack = Helper(RolledBackVariable, "boolean", st);
         PlanDrops(statements, st);
         return WithHooks(st, () =>
         {
@@ -209,7 +218,7 @@ public sealed partial class ProceduralTranslator
             {
                 body.AddRange(Drops(st));
                 if (signature.Trigger is { } ended)
-                    body.Add(new PgReturn(TriggerResult(ended)));
+                    body.AddRange(TriggerReturn(ended, st));
             }
             if (st.StatementAfterDml && !st.XactAbortOn && !st.HasTry)
                 context.Report(DiagnosticCodes.ErrorStopsExecution, Severity.Info,
@@ -713,7 +722,7 @@ public sealed partial class ProceduralTranslator
     {
         var sig = st.Signature;
         if (sig.Trigger is { } trigger)
-            return [.. Drops(st), new PgReturn(TriggerResult(trigger))];
+            return [.. Drops(st), .. TriggerReturn(trigger, st)];
         if (sig.Kind == BodyKind.TableFunction && st.ReturnTable is { } table)
             return
             [
@@ -936,5 +945,9 @@ public sealed partial class ProceduralTranslator
             Identity |= string.Equals(node.FunctionName.Value, "SCOPE_IDENTITY", StringComparison.OrdinalIgnoreCase);
 
         public override void Visit(TryCatchStatement node) => Try = true;
+
+        public bool Rollback { get; private set; }
+
+        public override void Visit(RollbackTransactionStatement node) => Rollback = true;
     }
 }
